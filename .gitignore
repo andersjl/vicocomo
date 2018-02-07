@@ -1,0 +1,7 @@
+*.swp
+.~lock.*
+tmp/
+tests/f3
+!tests/f3/.gitkeep
+tests/config/db.php
+
