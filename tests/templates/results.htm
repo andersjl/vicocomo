@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title> Testing {{ @vicocomoTest.testSuite }} </title>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="{{ @BASE }}/css/vicocomotest.css"
+         type="text/css"
+    />
+  </head>
+  <body>
+    <div id="vicocomotest-header"
+      class="vicocomotest-{{ @vicocomoTest.passed ? 'success' : 'failure' }}"
+    >
+      <h1> Testing {{ @vicocomoTest.testSuite }} </h1>
+    </div>
+    <check if="{{ @vicocomoTest.testNotes }}">
+      <repeat group="{{ @vicocomoTest.testNotes }}" value="{{ @testNote }}">
+        <div class="vicocomotest-note">{{ @testNote }}</div>
+      </repeat>
+    </check>
+    <div class="vicocomotest-content">
+      <table>
+        <repeat group="{{ @vicocomoTest.testResults }}" value="{{ @result }}">
+          <tr>
+            <td>{{ @result[ "text"] }}</td>
+            <check if="{{ @result[ 'status'] === true }}">
+              <true><td class="vicocomotest-success">Pass</td><td></td></true>
+              <false>
+                <check if="{{ @result[ 'status'] === false }}">
+                  <true>
+                    <td class="vicocomotest-failure">Fail</td>
+                    <td>{{ @result[ "line"] }}</td>
+                  </true>
+                  <false><td></td><td></td></false>
+                </check>
+              </false>
+            </check>
+          </tr>
+        </repeat>
+      </table>
+    </div>
+  </body>
+</html>
+
