@@ -1,10 +1,8 @@
-use diesel::result::QueryResult;
-pub use vicocomo_derive::{CreateModel, DeleteModel, QueryModel};
+mod html;
 
-pub trait QueryModel<Connection>: Sized {
-    // Return a vector with all records in the table.
-    fn load(db: &Connection) -> QueryResult<Vec<Self>>;
-}
+use diesel::result::QueryResult;
+pub use html::*;
+pub use vicocomo_derive::{CreateModel, DeleteModel, PathTag, QueryModel};
 
 pub trait CreateModel<Connection, NewStruct> {
     // Return a struct with data from an inserted database row.
@@ -23,4 +21,9 @@ pub trait DeleteModel<Connection, PkType> {
 
     // Return the numbor of successfulle deleted database rows.
     fn delete_batch(db: &Connection, batch: &[PkType]) -> QueryResult<usize>;
+}
+
+pub trait QueryModel<Connection>: Sized {
+    // Return a vector with all records in the table.
+    fn load(db: &Connection) -> QueryResult<Vec<Self>>;
 }

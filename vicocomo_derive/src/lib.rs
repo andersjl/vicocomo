@@ -7,7 +7,9 @@ use proc_macro::TokenStream;
 mod create;
 mod delete;
 mod model;
+mod path_tag;
 mod query;
+mod utils;
 
 #[proc_macro_derive(CreateModel, attributes(new_struct))]
 pub fn create_model_derive(input: TokenStream) -> TokenStream {
@@ -23,6 +25,11 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
         input,
         vec![model::ModelField::PkParam],
     ))
+}
+
+#[proc_macro_derive(PathTag, attributes(path_tag_data, path_tag_attr))]
+pub fn path_tag_derive(input: TokenStream) -> TokenStream {
+    path_tag::generate_path_tag_impl(input)
 }
 
 #[proc_macro_derive(QueryModel, attributes(order_by, table_name, unique))]

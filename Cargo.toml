@@ -6,4 +6,5 @@ edition = "2018"
 
 [dependencies]
 diesel = "*"
+serde = { version = "*", features = ["derive"] }
 vicocomo_derive = { path = "vicocomo_derive" }

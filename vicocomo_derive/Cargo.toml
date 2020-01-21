@@ -9,6 +9,6 @@ proc-macro = true
 
 [dependencies]
 case = "*"
-syn = "*"
+syn = { version = "*", features = ["full"] }
 quote = "*"
 

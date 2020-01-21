@@ -1,13 +1,11 @@
+use crate::utils::*;
 use proc_macro::TokenStream;
-use syn::{
-    punctuated::Punctuated, token::Comma, Attribute, Expr, Ident, Type,
-};
+use syn::{punctuated::Punctuated, token::Comma, Expr, Ident, Type};
 
 #[derive(Clone, Debug)]
 pub struct Order(pub Ident, pub bool);
-#[derive(Clone, Debug)]
 pub struct Param(pub Ident, pub Type);
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PkParam(pub Expr, pub Type);
 #[derive(Eq, PartialEq)]
 pub enum ModelField {
@@ -47,15 +45,15 @@ impl Model {
         let attrs = struct_tokens.attrs;
         let struct_id = struct_tokens.ident;
         let table_id =
-            get_id_from_attr(&struct_id, "table_name", &attrs, |id| {
+            get_id_from_attr(&attrs, "table_name", &struct_id, |id| {
                 format!("{}s", id).to_snake()
             });
         let new_struct_id: Option<Ident> =
             if compute.contains(&ModelField::NewStruct) {
                 Some(get_id_from_attr(
-                    &struct_id,
-                    "new_struct",
                     &attrs,
+                    "new_struct",
+                    &struct_id,
                     |struct_id| format!("New{}", struct_id),
                 ))
             } else {
@@ -224,32 +222,4 @@ impl Model {
             unique_fields,
         }
     }
-}
-
-fn get_id_from_attr<F>(
-    struct_id: &Ident,
-    attr_name: &str,
-    attrs: &[Attribute],
-    default: F,
-) -> Ident
-where
-    F: Fn(&Ident) -> String,
-{
-    use syn::{export::Span, Lit, Meta};
-    let error_msg = format!("expected #[{} = \"some_name\"", attr_name);
-    let table_name =
-        match attrs.iter().filter(|a| a.path.is_ident(attr_name)).last() {
-            Some(attr) => match attr
-                .parse_meta()
-                .expect(&format!("cannot parse {} attribute", attr_name))
-            {
-                Meta::NameValue(value) => match value.lit {
-                    Lit::Str(name) => name.value(),
-                    _ => panic!(error_msg),
-                },
-                _ => panic!(error_msg),
-            },
-            None => default(struct_id),
-        };
-    Ident::new(&table_name, Span::call_site())
 }
