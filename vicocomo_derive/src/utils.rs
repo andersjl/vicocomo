@@ -29,7 +29,14 @@ pub fn get_strings_from_attr(
     count: Option<usize>,
 ) -> Vec<Vec<String>> {
     use syn::{Lit, Meta, NestedMeta};
-    let error_msg = format!("expected #[{}(\"val\", ...)]", attr_name);
+    let error_msg = format!(
+        "expected #[{}(\"val\", ...)]{}",
+        attr_name,
+        match count {
+            Some(c) => format!(" with exactly {} args", c),
+            None => String::new(),
+        }
+    );
     attrs
         .iter()
         .filter(|a| a.path.is_ident(attr_name))

@@ -19,7 +19,7 @@ pub fn generate_path_tag_impl(input: TokenStream) -> TokenStream {
                                 .last()
                             {
                                 Some(segment) => {
-                                    if "PathTagData"
+                                    if "HtmlTag"
                                         == segment.ident.to_string().as_str()
                                     {
                                         so_far = Ok(());
@@ -37,7 +37,7 @@ pub fn generate_path_tag_impl(input: TokenStream) -> TokenStream {
         },
         _ => (),
     }
-    so_far.expect("expected struct <name>(PathTagData)");
+    so_far.expect("expected struct <name>(HtmlTag)");
     let struct_id = struct_tokens.ident;
     let attrs = struct_tokens.attrs;
     let path_tag_data_strings =
@@ -50,35 +50,38 @@ pub fn generate_path_tag_impl(input: TokenStream) -> TokenStream {
     let mut path_tag_attr_names: Vec<String> = vec![];
     let mut path_tag_attr_values: Vec<String> = vec![];
     for strings in get_strings_from_attr(&attrs, "path_tag_attr", Some(2)) {
+        if path_attr_name_str == strings[0] {
+            panic!(
+                "#[path_tag_attr(\"{}\", ...)] not allowed, \
+                 alredy defined as path attribute name!",
+                path_attr_name_str
+            );
+        }
         path_tag_attr_names.push(strings[0].clone());
         path_tag_attr_values.push(strings[1].clone());
     }
     let gen = quote! {
         impl #struct_id {
-            pub fn new(a_path: Option<&str>) -> Self {
-                let mut result =
-                    Self(PathTagData::new(#tag_str, #path_attr_name_str));
-                match a_path {
-                    Some(path) => result.0.set_path(path),
-                    None => (),
-                };
+            pub fn new(path: Option<&str>) -> Self {
+                let mut result = Self(HtmlTag::new(#tag_str));
+                result.0.set_attr(#path_attr_name_str, path);
                 #(
-                    result.0.attrs.push(HtmlAttr::new(
+                    result.0.set_attr(
                         #path_tag_attr_names,
                         Some(#path_tag_attr_values)
-                    ));
+                    );
                 )*
                 result
             }
         }
 
         impl PathTag for #struct_id {
-            fn set_path(&mut self, a_path: &str) {
-                self.0.set_path(a_path);
+            fn set_path(&mut self, path: &str) {
+                self.0.set_attr(#path_attr_name_str, Some(path));
             }
 
-            fn add_attr(&mut self, attr: &HtmlAttr) {
-                self.0.attrs.push(attr.clone());
+            fn set_attr(&mut self, attr: &str, values: Option<&str>) {
+                self.0.set_attr(attr, values);
             }
         }
 
