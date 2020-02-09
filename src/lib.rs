@@ -1,8 +1,10 @@
 mod html;
 
 use diesel::result::QueryResult;
-pub use html::*;
-pub use vicocomo_derive::{CreateModel, DeleteModel, PathTag, QueryModel};
+//pub use html::*;
+pub use vicocomo_derive::{
+    configure, CreateModel, DeleteModel, PathTag, QueryModel,
+};
 
 pub trait CreateModel<Connection, NewStruct> {
     // Return a struct with data from an inserted database row.

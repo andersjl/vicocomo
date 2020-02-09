@@ -2,11 +2,11 @@ use crate::model::{Model, Order, Param};
 use proc_macro::TokenStream;
 use syn::Ident;
 
-pub fn generate_query_model_impl(model: &Model) -> TokenStream {
+pub fn query_model_impl(model: &Model) -> TokenStream {
     use quote::quote;
     use syn::{
-        export::Span, punctuated::Punctuated, token::Comma, Expr,
-        ExprMethodCall, FnArg,
+        export::Span, parse_quote, punctuated::Punctuated, token::Comma,
+        Expr, ExprMethodCall, FnArg,
     };
     let table_id = &model.table_id;
     let struct_id = &model.struct_id;

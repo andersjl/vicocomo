@@ -26,8 +26,8 @@ impl Model {
     pub fn new(input: TokenStream, compute: Vec<ModelField>) -> Self {
         use case::CaseExt;
         use syn::{
-            parse, AttrStyle, Data::Struct, DeriveInput, Fields::Named,
-            FieldsNamed, Lit, Meta, NestedMeta,
+            parse, parse_quote, AttrStyle, Data::Struct, DeriveInput,
+            Fields::Named, FieldsNamed, Lit, Meta, NestedMeta,
         };
         let struct_tokens: DeriveInput = parse(input).unwrap();
         let data = struct_tokens.data;

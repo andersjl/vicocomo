@@ -1,6 +1,6 @@
 [package]
 name = "vicocomo_derive"
-version = "0.1.0"
+version = "0.1.3"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 
@@ -9,6 +9,7 @@ proc-macro = true
 
 [dependencies]
 case = "*"
-syn = { version = "*", features = ["full"] }
 quote = "*"
+regex = "*"
+syn = { version = "*", features = ["full"] }
 

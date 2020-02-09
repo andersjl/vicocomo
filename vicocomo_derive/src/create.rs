@@ -1,7 +1,7 @@
 use crate::model::Model;
 use proc_macro::TokenStream;
 
-pub fn generate_create_model_impl(model: &Model) -> TokenStream {
+pub fn create_model_impl(model: &Model) -> TokenStream {
     use quote::quote;
     let table_id = &model.table_id;
     let struct_id = &model.struct_id;
