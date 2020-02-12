@@ -62,23 +62,30 @@ mod utils;
 //        http_method: post, // above get is the default HTTP method
 //        path: "postpth",   // post | "/postpth"           | Othr | post_req
 //    }},                    // =====+======================+======+==========
-//  }
+//  // Not Found handler     //      |                      |      |
+//    notfnd(Hand) { func }, // all not handled elsewhere   | Hand | func
+//  }                        // default a simple 404 with text body
 //
-//  Definition of "Controller" in route(Controller):  The controller is given
-//  as some::path::to::controller.  If the path has only one segment, as in
-//  the examples above, crate::controllers:: is prepended.
+//  Definition of "Controller" in route(Controller) and notfnd(Controller):
+//  The controller is given as some::path::to::controller.  If the path has
+//  only one segment, as in the examples, crate::controllers:: is prepended.
 //
 //  The handling method is called as some::path::to::controller::handler(...).
 //  So the controller may be a module, struct, or enum as long as the handling
 //  method does not have a receiver.  In the struct/enum case it would
 //  probably be a constructor.
 //
-//  Handling method signature: (
+//  route handling method signature: (
 //    &crate::Connection,       // database connection
 //    actix_session::Session,   // session object
 //    std::sync::Arc<handlebars::Handlebars>,   // the template engine
 //    String,                   // request body
 //    path parameter type, ...  // as many as there are path parameters
+//  ) -> actix-web::HttpResponse
+//
+//  notfnd handling method signature: (
+//    method: &actix_web::http::Method,
+//    uri: &actix_web::http::uri::Uri,
 //  ) -> actix-web::HttpResponse
 //
 #[proc_macro]

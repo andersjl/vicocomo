@@ -1,7 +1,7 @@
 mod html;
 
 use diesel::result::QueryResult;
-//pub use html::*;
+pub use html::*;
 pub use vicocomo_derive::{
     configure, CreateModel, DeleteModel, PathTag, QueryModel,
 };

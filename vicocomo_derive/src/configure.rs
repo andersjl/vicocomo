@@ -30,6 +30,7 @@ pub fn configure_impl(input: TokenStream) -> TokenStream {
     );
     let meth_args_min: Punctuated<Expr, token::Comma> =
         parse_quote!(&pool.get().unwrap(), sess, hb.into_inner(), body,);
+    let not_found_handler: Path = parse_quote!(crate::not_found);
     for item in items {
         match item {
             ConfigItem::Route {
@@ -88,7 +89,8 @@ pub fn configure_impl(input: TokenStream) -> TokenStream {
                     meth_args.extend(handler.path_args);
                     meth_args_vec.push(meth_args);
                 }
-            }
+            },
+            _ => panic!("NYI ConfigItem variant"),
         }
     }
     TokenStream::from(quote! {
@@ -127,6 +129,9 @@ pub fn configure_impl(input: TokenStream) -> TokenStream {
                     )
                  #( .service(__vicocomo__handlers::#handler_fn_vec) )*
                     .service(actix_files::Files::new("/", "./static"))
+                    .default_service(actix_web::web::route().to(
+                        __vicocomo__handlers::not_found
+                    ))
             })
             .bind(format!(
                 "0.0.0.0:{}",
@@ -134,6 +139,14 @@ pub fn configure_impl(input: TokenStream) -> TokenStream {
             ))?
             .run()
             .await
+        }
+
+        fn not_found(
+            method: &actix_web::http::Method, uri: &actix_web::http::uri::Uri,
+        ) -> actix_web::HttpResponse {
+            actix_web::HttpResponse::NotFound()
+                .content_type("text; charset=utf-8")
+                .body(format!("404 Not Found: {} {}", method, uri))
         }
 
         #[allow(non_snake_case)]
@@ -146,6 +159,12 @@ pub fn configure_impl(input: TokenStream) -> TokenStream {
                     #controller_vec::#contr_meth_vec(#meth_args_vec)
                 }
             )*
+
+            pub async fn not_found(
+                req: actix_web::HttpRequest
+            ) -> actix_web::HttpResponse {
+                #not_found_handler(req.method(), req.uri())
+            }
         }
     })
 }
@@ -155,6 +174,10 @@ struct ConfigInput {
 }
 
 enum ConfigItem {
+    NotFnd {
+        controller: Path,
+        handlers: Vec<RouteHandler>,
+    },
     Route {
         controller: Path,
         handlers: Vec<RouteHandler>,
@@ -184,34 +207,45 @@ impl Parse for ConfigInput {
 
 impl Parse for ConfigItem {
     fn parse(input: ParseStream) -> Result<Self> {
-        use syn::parenthesized;
         match input.parse::<Ident>()?.to_string().as_str() {
+            "notfnd" => {
+                let (controller, handlers) = get_handlers(input)?;
+                Ok(Self::NotFnd {
+                    controller,
+                    handlers,
+                })
+            },
             "route" => {
-                let content;
-                parenthesized!(content in input);
-                let controller: Path = content.parse()?;
-                let content;
-                braced!(content in input);
-                let handlers: Vec<RouteHandler> = content
-                    .parse_terminated::<RouteHandler, token::Comma>(
-                        RouteHandler::parse,
-                    )?
-                    .into_iter()
-                    .collect();
+                let (controller, handlers) = get_handlers(input)?;
                 Ok(Self::Route {
                     controller,
                     handlers,
                 })
-            }
+            },
             _ => Err(input.error("expected `route( ... ) { ... }`")),
         }
     }
 }
 
+fn get_handlers(input: ParseStream) -> Result<(Path, Vec<RouteHandler>)> {
+    use syn::parenthesized;
+    let content;
+    parenthesized!(content in input);
+    let controller: Path = content.parse()?;
+    let content;
+    braced!(content in input);
+    let handlers: Vec<RouteHandler> = content
+        .parse_terminated::<RouteHandler, token::Comma>(
+            RouteHandler::parse,
+        )?
+        .into_iter()
+        .collect();
+    Ok((controller, handlers))
+}
+
 impl Parse for RouteHandler {
     fn parse(input: ParseStream) -> Result<Self> {
         use quote::format_ident;
-        // use syn::export::Span;
         let contr_meth: Ident = input.parse()?;
         let get_method = format_ident!("get");
         let post_method = format_ident!("post");

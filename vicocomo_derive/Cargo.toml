@@ -1,6 +1,6 @@
 [package]
 name = "vicocomo_derive"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 
