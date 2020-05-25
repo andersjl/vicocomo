@@ -42,9 +42,7 @@ pub fn path_tag_impl(input: TokenStream) -> TokenStream {
     let attrs = struct_tokens.attrs;
     let path_tag_data_strings =
         get_strings_from_attr(&attrs, "path_tag_data", Some(2));
-    if 1 != path_tag_data_strings.len() {
-        panic!("expected #[path_tag_data(\"some_tag_name\", \"some_path_attr_name\")]")
-    }
+//println!("{:?}", path_tag_data_strings);
     let tag_str = path_tag_data_strings[0][0].clone();
     let path_attr_name_str = path_tag_data_strings[0][1].clone();
     let mut path_tag_attr_names: Vec<String> = vec![];
@@ -52,7 +50,7 @@ pub fn path_tag_impl(input: TokenStream) -> TokenStream {
     for strings in get_strings_from_attr(&attrs, "path_tag_attr", Some(2)) {
         if path_attr_name_str == strings[0] {
             panic!(
-                "#[path_tag_attr(\"{}\", ...)] not allowed, \
+                "#[vicocomo_path_tag_attr(\"{}\", ...)] not allowed, \
                  alredy defined as path attribute name!",
                 path_attr_name_str
             );

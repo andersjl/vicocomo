@@ -294,7 +294,7 @@ impl fmt::Display for PathTagData {
 // ScriptTag -----------------------------------------------------------------
 // A script tag with a src attribute -----------------------------------------
 #[derive(Clone, Debug, vicocomo_derive::PathTag)]
-#[path_tag_data("script", "src")]
+#[vicocomo_path_tag_data("script", "src")]
 pub struct ScriptTag(HtmlTag);
 
 // An encapsuled vector of ScriptTag-turned-strings accessed by to_json().
@@ -313,8 +313,8 @@ impl Scripts {
 // StyleTag ------------------------------------------------------------------
 // A link tag with an href attribute and rel="stylesheet".
 #[derive(Clone, Debug, vicocomo_derive::PathTag)]
-#[path_tag_data("link", "href")]
-#[path_tag_attr("rel", "stylesheet")]
+#[vicocomo_path_tag_data("link", "href")]
+#[vicocomo_path_tag_attr("rel", "stylesheet")]
 pub struct StyleTag(HtmlTag);
 
 // An encapsuled vector of StyleTag-turned-strings accessed by to_json().

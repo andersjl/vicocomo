@@ -1,10 +1,13 @@
 [package]
-name = "vicocomo"
-version = "0.1.5"
+name = "vicocomo_postgres"
+version = "0.1.0"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 
 [dependencies]
-itertools = "*"
+postgres = "*"
+postgres-types = "*"
 serde = { version = "*", features = ["derive"] }
-vicocomo_derive = { path = "vicocomo_derive" }
+serde_json = "*"
+vicocomo = { path = ".." }
+

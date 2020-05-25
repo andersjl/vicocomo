@@ -101,19 +101,14 @@ pub fn configure_impl(input: TokenStream) -> TokenStream {
             use actix_web;
             use actix_rt;
             use actix_session;
-            use diesel;
             use dotenv;
             use handlebars;
             dotenv::dotenv().ok();
             let database_url = std::env::var("DATABASE_URL")
                 .expect("DATABASE_URL must be set");
-            let conmgr =
-                diesel::r2d2::ConnectionManager::<diesel::PgConnection>::new(
-                    database_url
-                );
-            let pool: Pool = diesel::r2d2::Pool::builder()
-                .build(conmgr)
-                .expect("Failed to create pool.");
+            let mut conn = vicocomo::PgConn::connect(&database_url).expect(
+                "cannot connect"
+            );
             let mut handlebars = handlebars::Handlebars::new();
             handlebars
                 .register_templates_directory(".hbs", "templates")
@@ -235,9 +230,7 @@ fn get_handlers(input: ParseStream) -> Result<(Path, Vec<RouteHandler>)> {
     let content;
     braced!(content in input);
     let handlers: Vec<RouteHandler> = content
-        .parse_terminated::<RouteHandler, token::Comma>(
-            RouteHandler::parse,
-        )?
+        .parse_terminated::<RouteHandler, token::Comma>(RouteHandler::parse)?
         .into_iter()
         .collect();
     Ok((controller, handlers))
