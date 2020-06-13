@@ -293,7 +293,7 @@ impl fmt::Display for PathTagData {
 
 // ScriptTag -----------------------------------------------------------------
 // A script tag with a src attribute -----------------------------------------
-#[derive(Clone, Debug, vicocomo_derive::PathTag)]
+#[derive(Clone, Debug, vicocomo_proc_macro::PathTag)]
 #[vicocomo_path_tag_data("script", "src")]
 pub struct ScriptTag(HtmlTag);
 
@@ -312,7 +312,7 @@ impl Scripts {
 
 // StyleTag ------------------------------------------------------------------
 // A link tag with an href attribute and rel="stylesheet".
-#[derive(Clone, Debug, vicocomo_derive::PathTag)]
+#[derive(Clone, Debug, vicocomo_proc_macro::PathTag)]
 #[vicocomo_path_tag_data("link", "href")]
 #[vicocomo_path_tag_attr("rel", "stylesheet")]
 pub struct StyleTag(HtmlTag);

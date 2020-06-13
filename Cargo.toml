@@ -7,4 +7,4 @@ edition = "2018"
 [dependencies]
 itertools = "*"
 serde = { version = "*", features = ["derive"] }
-vicocomo_derive = { path = "vicocomo_derive" }
+vicocomo_proc_macro = { path = "vicocomo_proc_macro" }
