@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::convert::TryInto;
-use vicocomo::{database::{DbConn, Type, Value}, Delete, Find, Save};
+use vicocomo::{DbConn, Delete, Find, Save};
 use vicocomo_postgres::PgConn;
 
 enum Show{Nothing, OneLine, PrettyUgly}
@@ -350,7 +350,7 @@ pub fn main() {
         ").unwrap();
 }
 
-fn show_multi<'a>(db: &mut impl vicocomo::DbConn<'a>) {
+fn show_multi<'a>(db: &mut impl DbConn<'a>) {
     match SHOW {
         Show::Nothing => (),
         Show::OneLine =>
@@ -360,7 +360,7 @@ fn show_multi<'a>(db: &mut impl vicocomo::DbConn<'a>) {
     }
 }
 
-fn show_single<'a>(db: &mut impl vicocomo::DbConn<'a>) {
+fn show_single<'a>(db: &mut impl DbConn<'a>) {
     match SHOW {
         Show::Nothing => (),
         Show::OneLine =>

@@ -1,5 +1,5 @@
-use super::database::DbConn;
-use super::error::Error;
+use crate::DbConn;
+use crate::Error;
 
 #[allow(unused_variables)]
 pub trait Delete<'a, PkType> {
@@ -20,7 +20,7 @@ pub trait Delete<'a, PkType> {
 
 #[allow(unused_variables)]
 pub trait Find<'a>: Sized {
-    // Return a vector with all records in the table.
+    // Return a vector with all records in the table in the default order.
     //
     fn load(db: &mut impl DbConn<'a>) -> Result<Vec<Self>, Error>;
 }

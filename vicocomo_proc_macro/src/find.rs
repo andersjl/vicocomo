@@ -1,7 +1,4 @@
-use crate::{
-    model::{Field, Model, Order},
-    utils::*,
-};
+use crate::{model::{Field, Model, Order}, utils::*};
 use proc_macro::TokenStream;
 use syn::{export::Span, Ident};
 
@@ -36,7 +33,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         upd_opt_cols,
     } = model;
 
-    // == general where functions ============================================
+    // == general functions ==================================================
     // -- load(db) -----------------------------------------------------------
     // SELECT col1, col2, col3 FROM table ORDER BY col3, col1
     let load_sql = filter_sql(

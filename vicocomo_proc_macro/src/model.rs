@@ -119,21 +119,21 @@ impl Model {
                 let type_str = ts.to_string().as_str();
                 result.push(match type_str.as_str() {
                     "f32" | "f64" => {
-                        parse_quote!(vicocomo::database::Type::Float)
+                        parse_quote!(vicocomo::DbType::Float)
                     }
                     "i32" | "i64" | "u32" | "u64" => {
-                        parse_quote!(vicocomo::database::Type::Int)
+                        parse_quote!(vicocomo::DbType::Int)
                     }
-                    "String" => parse_quote!(vicocomo::database::Type::Text),
+                    "String" => parse_quote!(vicocomo::DbType::Text),
                     "Option < f32 >" | "Option < f64 >" => {
-                        parse_quote!(vicocomo::database::Type::NulFloat)
+                        parse_quote!(vicocomo::DbType::NulFloat)
                     }
                     "Option < i32 >" | "Option < i64 >"
                     | "Option < u32 >" | "Option < u64 >" => {
-                        parse_quote!(vicocomo::database::Type::NulInt)
+                        parse_quote!(vicocomo::DbType::NulInt)
                     }
                     "Option < String >" => {
-                        parse_quote!(vicocomo::database::Type::NulText)
+                        parse_quote!(vicocomo::DbType::NulText)
                     }
                     _ => panic!(
                         "Type {} currently not allowed in a vicocomo model",
@@ -346,21 +346,21 @@ impl Model {
                 });
                 dbt = Some(match type_string.as_str() {
                     "f32" | "f64" => {
-                        parse_quote!(vicocomo::database::Type::Float)
+                        parse_quote!(vicocomo::DbType::Float)
                     }
                     "i32" | "i64" | "u32" | "u64" => {
-                        parse_quote!(vicocomo::database::Type::Int)
+                        parse_quote!(vicocomo::DbType::Int)
                     }
-                    "String" => parse_quote!(vicocomo::database::Type::Text),
+                    "String" => parse_quote!(vicocomo::DbType::Text),
                     "Option < f32 >" | "Option < f64 >" => {
-                        parse_quote!(vicocomo::database::Type::NulFloat)
+                        parse_quote!(vicocomo::DbType::NulFloat)
                     }
                     "Option < i32 >" | "Option < i64 >"
                     | "Option < u32 >" | "Option < u64 >" => {
-                        parse_quote!(vicocomo::database::Type::NulInt)
+                        parse_quote!(vicocomo::DbType::NulInt)
                     }
                     "Option < String >" => {
-                        parse_quote!(vicocomo::database::Type::NulText)
+                        parse_quote!(vicocomo::DbType::NulText)
                     }
                     _ => panic!(
                         "Type {} currently not allowed in a vicocomo model",

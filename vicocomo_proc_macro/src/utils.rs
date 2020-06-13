@@ -98,12 +98,12 @@ pub fn pk_cols_params_expr(
     parse_quote!(
         {
             let mut pk_cols: Vec<String> = vec![];
-            let mut params: Vec<vicocomo::database::Value> = vec![];
+            let mut values: Vec<vicocomo::DbValue> = vec![];
             let mut par_ix = 0;
             #(
                 par_ix += 1;
                 pk_cols.push(format!("{} = ${}", #pk_mand_cols, par_ix));
-                params.push(self.#pk_mand_fields.clone().into());
+                values.push(self.#pk_mand_fields.clone().into());
             )*
             #(
                 match &self.#pk_opt_fields {
@@ -112,7 +112,7 @@ pub fn pk_cols_params_expr(
                         pk_cols.push(
                             format!("{} = ${}", #pk_opt_cols, par_ix)
                         );
-                        params.push(val.clone().into());
+                        values.push(val.clone().into());
                     }
                     None => return Err(vicocomo::Error::Database(format!(
                         "missing primary key {}",
@@ -120,7 +120,7 @@ pub fn pk_cols_params_expr(
                     ))),
                 }
             )*
-            (pk_cols, params, par_ix)
+            (pk_cols, values, par_ix)
         }
     )
 }

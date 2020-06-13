@@ -2,14 +2,36 @@ use crate::Error;
 use std::{convert::TryInto, fmt};
 
 pub trait DbConn<'a> {
-    fn exec(&mut self, sql: &str, params: &[Value]) -> Result<u64, Error>;
+    // Execute an SQL statement.
+    //
+    // sql is the statement, which may be parameterized using "$1", "$2", ...
+    // to indicate the position of the parameter in values.
+    //
+    // values are the values for the parameters in sql.
+    //
+    // Returns the number of affected rows.
+    //
+    fn exec(&mut self, sql: &str, values: &[DbValue]) -> Result<u64, Error>;
 
+    // Execute an SQL query and return the result.
+    //
+    // sql is the query, which may be parameterized using "$1", "$2", ...
+    // to indicate the position of the parameter in values.
+    //
+    // values are the values for the parameters in sql.
+    //
+    // types indicates how the implementation should convert the result to
+    // DbValue vectors.  types.len() must equal the length of each of the
+    // returned DbValue vectors.
+    //
+    // Returns the result as a vector of vectors ov DbValue.
+    //
     fn query(
         &mut self,
         sql: &str,
-        params: &[Value],
-        types: &[Type],
-    ) -> Result<Vec<Vec<Value>>, Error>;
+        values: &[DbValue],
+        types: &[DbType],
+    ) -> Result<Vec<Vec<DbValue>>, Error>;
 
     fn transaction(
         &'a mut self,
@@ -21,14 +43,14 @@ pub trait DbConn<'a> {
 pub trait DbTrans<'a> {
     fn commit(self: Box<Self>) -> Result<(), Error>;
 
-    fn exec(&mut self, sql: &str, params: &[Value]) -> Result<u64, Error>;
+    fn exec(&mut self, sql: &str, values: &[DbValue]) -> Result<u64, Error>;
 
     fn query(
         &mut self,
         sql: &str,
-        params: &[Value],
-        types: &[Type],
-    ) -> Result<Vec<Vec<Value>>, Error>;
+        values: &[DbValue],
+        types: &[DbType],
+    ) -> Result<Vec<Vec<DbValue>>, Error>;
 
     fn rollback(self: Box<Self>) -> Result<(), Error>;
 
@@ -42,8 +64,8 @@ pub trait DbTrans<'a> {
     }
 }
 
-#[derive(Debug)]
-pub enum Type {
+#[derive(Clone, Debug)]
+pub enum DbType {
     Float,    // f64
     Int,      // i64
     Text,     // String
@@ -52,21 +74,21 @@ pub enum Type {
     NulText,  // Option<String>
 }
 
-impl From<Value> for Type {
-    fn from(v: Value) -> Self {
+impl From<DbValue> for DbType {
+    fn from(v: DbValue) -> Self {
         match v {
-            Value::Float(_) => Self::Float,
-            Value::Int(_) => Self::Int,
-            Value::Text(_) => Self::Text,
-            Value::NulFloat(_) => Self::NulFloat,
-            Value::NulInt(_) => Self::NulInt,
-            Value::NulText(_) => Self::NulText,
+            DbValue::Float(_) => Self::Float,
+            DbValue::Int(_) => Self::Int,
+            DbValue::Text(_) => Self::Text,
+            DbValue::NulFloat(_) => Self::NulFloat,
+            DbValue::NulInt(_) => Self::NulInt,
+            DbValue::NulText(_) => Self::NulText,
         }
     }
 }
 
 #[derive(Clone, Debug)]
-pub enum Value {
+pub enum DbValue {
     Float(f64),
     Int(i64),
     Text(String),
@@ -84,26 +106,26 @@ macro_rules! write_opt {
     };
 }
 
-impl fmt::Display for Value {
+impl fmt::Display for DbValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self {
-            Value::Float(v) => write!(f, "{}", v),
-            Value::Int(v) => write!(f, "{}", v),
-            Value::Text(v) => write!(f, "{}", v),
-            Value::NulFloat(v) => write_opt!(f, v),
-            Value::NulInt(v) => write_opt!(f, v),
-            Value::NulText(v) => write_opt!(f, v),
+            DbValue::Float(v) => write!(f, "{}", v),
+            DbValue::Int(v) => write!(f, "{}", v),
+            DbValue::Text(v) => write!(f, "{}", v),
+            DbValue::NulFloat(v) => write_opt!(f, v),
+            DbValue::NulInt(v) => write_opt!(f, v),
+            DbValue::NulText(v) => write_opt!(f, v),
         }
     }
 }
 macro_rules! convert_value {
     // Option<i32>, "i32", NulInt, i64
     (Option<$oth_typ:ty>, $oth_nam:literal, $variant:ident, $as: ty) => {
-        impl TryInto<Option<$oth_typ>> for Value {
+        impl TryInto<Option<$oth_typ>> for DbValue {
             type Error = crate::Error;
             fn try_into(self) -> Result<Option<$oth_typ>, Self::Error> {
                 match self {
-                    Value::$variant(opt) => Ok(match opt {
+                    DbValue::$variant(opt) => Ok(match opt {
                         Some(val) => Some(val as $oth_typ),
                         None => None,
                     }),
@@ -115,7 +137,7 @@ macro_rules! convert_value {
             }
         }
 
-        impl From<Option<$oth_typ>> for Value {
+        impl From<Option<$oth_typ>> for DbValue {
             fn from(opt: Option<$oth_typ>) -> Self {
                 Self::$variant(match opt {
                     Some(val) => Some(val as $as),
@@ -126,11 +148,11 @@ macro_rules! convert_value {
     };
     // i32, "i32", Int, i64
     ($oth_typ:ty, $oth_nam:literal, $variant:ident, $as: ty) => {
-        impl TryInto<$oth_typ> for Value {
+        impl TryInto<$oth_typ> for DbValue {
             type Error = crate::Error;
             fn try_into(self) -> Result<$oth_typ, Self::Error> {
                 match self {
-                    Value::$variant(val) => Ok(val as $oth_typ),
+                    DbValue::$variant(val) => Ok(val as $oth_typ),
                     _ => Err(Error::InvalidInput(format!(
                         "cannot convert {:?} into {}",
                         self, $oth_nam
@@ -139,7 +161,7 @@ macro_rules! convert_value {
             }
         }
 
-        impl From<$oth_typ> for Value {
+        impl From<$oth_typ> for DbValue {
             fn from(val: $oth_typ) -> Self {
                 Self::$variant(val as $as)
             }
@@ -148,11 +170,11 @@ macro_rules! convert_value {
     // i64, "i64", Int
     // Option<i64>, "Option<i64>", NulInt
     ($oth_typ:ty, $oth_nam:literal, $variant:ident) => {
-        impl TryInto<$oth_typ> for Value {
+        impl TryInto<$oth_typ> for DbValue {
             type Error = crate::Error;
             fn try_into(self) -> Result<$oth_typ, Self::Error> {
                 match self {
-                    Value::$variant(val) => Ok(val),
+                    DbValue::$variant(val) => Ok(val),
                     _ => Err(Error::InvalidInput(format!(
                         "cannot convert {:?} into {}",
                         self, $oth_nam
@@ -161,7 +183,7 @@ macro_rules! convert_value {
             }
         }
 
-        impl From<$oth_typ> for Value {
+        impl From<$oth_typ> for DbValue {
             fn from(val: $oth_typ) -> Self {
                 Self::$variant(val)
             }

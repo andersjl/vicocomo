@@ -78,11 +78,11 @@ pub fn save_model_impl(model: &Model) -> TokenStream {
                 ) -> Result<Vec<Self>, vicocomo::Error> {
                     let mut inserts: std::collections::HashMap<
                         Vec<String>,
-                        Vec<Vec<Value>>,
+                        Vec<Vec<vicocomo::DbValue>>,
                     > = std::collections::HashMap::new();
                     for data_itm in data {
                         let mut ins_cols1 = vec![];
-                        let mut pars: Vec<vicocomo::database::Value> = vec![];
+                        let mut pars: Vec<vicocomo::DbValue> = vec![];
                         #(
                             ins_cols1.push(#all_mand_cols.to_string());
                             pars.push(data_itm.#all_mand_fields.clone().into());
