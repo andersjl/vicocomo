@@ -21,10 +21,12 @@ struct MultiPk {
     #[vicocomo_primary]
     id2: u32,
     #[vicocomo_optional]
+    #[vicocomo_order_by(2, "asc")]
     name: Option<String>,
     data: Option<f32>,
     #[vicocomo_unique = "uni-lbl"]
     un1: i32,
+    #[vicocomo_order_by(1, "desc")]
     #[vicocomo_unique = "uni-lbl"]
     un2: i32,
 }
@@ -40,12 +42,14 @@ struct SinglePk {
     #[vicocomo_optional]
     #[vicocomo_primary]
     id: Option<u32>,
+    #[vicocomo_order_by(2, "asc")]
     #[vicocomo_optional]
     name: Option<String>,
     data: Option<f32>,
     #[vicocomo_unique = "uni-lbl"]
     un1: i32,
     #[vicocomo_unique = "uni-lbl"]
+    #[vicocomo_order_by(1, "desc")]
     un2: i32,
 }
 
@@ -88,14 +92,14 @@ pub fn main() {
         id2: 1,
         name: None,
         data: Some(17f32),
-        un1: 1,
+        un1: 2,
         un2: 1,
     };
     println!("inserting {:?} .. ", m);
     assert!(m.insert(&mut db).is_ok());
     assert!(format!("{:?}", m) ==
         "MultiPk { id: Some(1), id2: 1, name: Some(\"default\"), \
-            data: Some(17.0), un1: 1, un2: 1 }",
+            data: Some(17.0), un1: 2, un2: 1 }",
     );
     println!("    OK");
     show_multi(&mut db);
@@ -106,7 +110,7 @@ pub fn main() {
             name: Some(String::from("hej")),
             data: None,
             un1: 1,
-            un2: 2,
+            un2: 1,
         },
         MultiPk {
             id: None,
@@ -114,7 +118,7 @@ pub fn main() {
             name: Some(String::from("hopp")),
             data: None,
             un1: 1,
-            un2: 3,
+            un2: 2,
         },
     ];
     println!("inserting batch {:?} ..", ms);
@@ -122,9 +126,9 @@ pub fn main() {
     assert!(res.is_ok());
     assert!(format!("{:?}", res) ==
         "Ok([MultiPk { id: Some(1), id2: 2, name: Some(\"hej\"), \
-            data: None, un1: 1, un2: 2 }, \
+            data: None, un1: 1, un2: 1 }, \
             MultiPk { id: Some(1), id2: 3, name: Some(\"hopp\"), \
-            data: None, un1: 1, un2: 3 }])"
+            data: None, un1: 1, un2: 2 }])"
     );
     println!("    OK");
     show_multi(&mut db);
@@ -155,6 +159,16 @@ pub fn main() {
         "MultiPk { id: Some(3), id2: 42, name: Some(\"hej\"), \
             data: None, un1: 1, un2: 42 }"
     );
+    let mut un2 = 1000;
+    let mut name = "aaa".to_string();
+    for m in MultiPk::load(&mut db).unwrap() {
+        assert!(m.un2 <= un2);
+        if m.un2 == un2 {
+            assert!(m.name.clone().unwrap() >= name);
+        }
+        un2 = m.un2;
+        name = m.name.unwrap().clone();
+    }
     println!("    OK");
     show_multi(&mut db);
     println!("error inserting existing ..");
@@ -216,14 +230,14 @@ pub fn main() {
         id: None,
         name: None,
         data: Some(17f32),
-        un1: 1,
+        un1: 2,
         un2: 1,
     };
     println!("inserting {:?} ..", s);
     assert!(s.insert(&mut db).is_ok());
     assert!(format!("{:?}", s) ==
         "SinglePk { id: Some(1), name: Some(\"default\"), data: Some(17.0), \
-            un1: 1, un2: 1 }",
+            un1: 2, un2: 1 }",
     );
     println!("    OK");
     show_single(&mut db);
@@ -233,14 +247,14 @@ pub fn main() {
             name: Some(String::from("hej")),
             data: None,
             un1: 1,
-            un2: 2,
+            un2: 1,
         },
         SinglePk {
             id: None,
             name: Some(String::from("hopp")),
             data: None,
             un1: 1,
-            un2: 3,
+            un2: 2,
         },
     ];
     println!("inserting batch {:?} ..", ss);
@@ -248,9 +262,9 @@ pub fn main() {
     assert!(res.is_ok());
     assert!(format!("{:?}", res) ==
         "Ok([SinglePk { id: Some(2), name: Some(\"hej\"), data: None, \
-            un1: 1, un2: 2 }, \
+            un1: 1, un2: 1 }, \
             SinglePk { id: Some(3), name: Some(\"hopp\"), data: None, \
-            un1: 1, un2: 3 }])"
+            un1: 1, un2: 2 }])"
     );
     println!("    OK");
     show_single(&mut db);
@@ -280,6 +294,16 @@ pub fn main() {
         "SinglePk { id: Some(42), name: Some(\"hej\"), data: None, \
             un1: 1, un2: 42 }"
     );
+    let mut un2 = 1000;
+    let mut name = "aaa".to_string();
+    for s in MultiPk::load(&mut db).unwrap() {
+        assert!(s.un2 <= un2);
+        if s.un2 == un2 {
+            assert!(s.name.clone().unwrap() >= name);
+        }
+        un2 = s.un2;
+        name = s.name.unwrap().clone();
+    }
     println!("    OK");
     show_single(&mut db);
     println!("error inserting existing ..");
