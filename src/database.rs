@@ -11,7 +11,8 @@ pub trait DbConn<'a> {
     //
     // Returns the number of affected rows.
     //
-    fn exec(&mut self, sql: &str, values: &[DbValue]) -> Result<u64, Error>;
+    fn exec(&mut self, sql: &str, values: &[DbValue])
+        -> Result<usize, Error>;
 
     // Execute an SQL query and return the result.
     //
@@ -43,7 +44,8 @@ pub trait DbConn<'a> {
 pub trait DbTrans<'a> {
     fn commit(self: Box<Self>) -> Result<(), Error>;
 
-    fn exec(&mut self, sql: &str, values: &[DbValue]) -> Result<u64, Error>;
+    fn exec(&mut self, sql: &str, values: &[DbValue])
+        -> Result<usize, Error>;
 
     fn query(
         &mut self,

@@ -1,4 +1,7 @@
-use crate::{model::{Field, Model, Order}, utils::*};
+use crate::{
+    model::{Model, Order},
+    utils::*,
+};
 use proc_macro::TokenStream;
 use syn::{export::Span, Ident};
 
@@ -35,24 +38,90 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
 
     // == general functions ==================================================
     // -- load(db) -----------------------------------------------------------
+    let default_order = if model.order_fields().is_empty() {
+        String::new()
+    } else {
+        format!(
+            "ORDER BY {}",
+            model
+                .order_fields()
+                .iter()
+                .map(|f| {
+                    format!(
+                        "{} {}",
+                        f.col.value(),
+                        match f.ord.as_ref().unwrap() {
+                            Order::Asc(_) => "ASC",
+                            Order::Desc(_) => "DESC",
+                        },
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
+    let all_cols_join = all_cols.join(", ");
     // SELECT col1, col2, col3 FROM table ORDER BY col3, col1
-    let load_sql = filter_sql(
-        &all_cols.join(", "),
-        table_name,
-        None,
-        &model.order_fields(),
+    let load_sql = format!(
+        "SELECT {} FROM {} {}",
+        &all_cols_join, table_name, default_order,
     );
     let load_models = rows_to_models_expr(
         parse_quote!(db.query(#load_sql, &[], &[ #( #all_db_types ),* ])?),
         all_mand_fields.as_slice(),
         all_opt_fields.as_slice(),
     );
+    let query_sql = format!(
+        "SELECT {} FROM {} {{}} {{}} {{}} {{}}",
+        &all_cols_join, &table_name,
+    );
+    let found_models = rows_to_models_expr(
+        parse_quote!(found_rows),
+        all_mand_fields.as_slice(),
+        all_opt_fields.as_slice(),
+    );
     let mut gen = quote! {
-        impl<'a> vicocomo::Find<'a> for #struct_id {
+        impl<'a> vicocomo::MdlFind<'a> for #struct_id {
             fn load(
                 db: &mut impl vicocomo::DbConn<'a>,
             ) -> Result<Vec<Self>, vicocomo::Error> {
                 #load_models
+            }
+            fn query(
+                db: &mut impl vicocomo::DbConn<'a>,
+                query: &vicocomo::MdlQuery
+            ) -> Result<Vec<Self>, vicocomo::Error> {
+                let filter = match query.filter.as_ref() {
+                    Some(f) => format!("WHERE {}", f),
+                    None => String::new(),
+                };
+                let limit = match query.limit {
+                    Some(l) => format!("LIMIT {}", l),
+                    None => String::new(),
+                };
+                let offset = match query.offset {
+                    Some(l) => format!("OFFSET {}", l),
+                    None => String::new(),
+                };
+                let order = match &query.order {
+                    vicocomo::MdlOrder::Custom(ord) =>
+                        format!("ORDER BY {}", ord),
+                    vicocomo::MdlOrder::Dflt => #default_order.to_string(),
+                    vicocomo::MdlOrder::NoOrder => String::new(),
+                };
+                let mut values: Vec<vicocomo::DbValue> = Vec::new();
+                for opt in query.values.as_slice() {
+                    match opt {
+                        Some(v) => values.push(v.clone()),
+                        None => return Err(vicocomo::Error::InvalidInput(
+                            "value is None".to_string()
+                        )),
+                    }
+                }
+                let sql = format!(#query_sql, filter, order, limit, offset);
+                let mut found_rows =
+                    db.query(&sql, &values, &[ #( #all_db_types ),* ])?;
+                #found_models
             }
         }
     };
@@ -222,37 +291,4 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
 
 fn id_to_par(fld_id: &Ident) -> Ident {
     Ident::new(&format!("{}_par", fld_id), Span::call_site())
-}
-
-fn filter_sql(
-    all_cols: &str,
-    tbl_nam: &str,
-    filter: Option<&str>,
-    ord: &[&Field],
-) -> String {
-    let filter = match filter {
-        Some(f) => format!(" WHERE {}", f),
-        None => String::new(),
-    };
-    let ord = if 0 == ord.len() {
-        String::new()
-    } else {
-        format!(
-            " ORDER BY {}",
-            ord.iter()
-                .map(|f| {
-                    format!(
-                        "{} {}",
-                        f.col.value(),
-                        match f.ord.as_ref().unwrap() {
-                            Order::Asc(_) => "ASC",
-                            Order::Desc(_) => "DESC",
-                        },
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", "),
-        )
-    };
-    format!("SELECT {} FROM {}{}{}", &all_cols, tbl_nam, &filter, &ord)
 }

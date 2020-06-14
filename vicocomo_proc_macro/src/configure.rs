@@ -89,7 +89,7 @@ pub fn configure_impl(input: TokenStream) -> TokenStream {
                     meth_args.extend(handler.path_args);
                     meth_args_vec.push(meth_args);
                 }
-            },
+            }
             _ => panic!("NYI ConfigItem variant"),
         }
     }
@@ -209,14 +209,14 @@ impl Parse for ConfigItem {
                     controller,
                     handlers,
                 })
-            },
+            }
             "route" => {
                 let (controller, handlers) = get_handlers(input)?;
                 Ok(Self::Route {
                     controller,
                     handlers,
                 })
-            },
+            }
             _ => Err(input.error("expected `route( ... ) { ... }`")),
         }
     }

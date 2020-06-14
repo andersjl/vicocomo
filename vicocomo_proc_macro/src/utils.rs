@@ -154,7 +154,7 @@ pub fn rows_to_models_expr(rows: Expr, man: &[Ident], opt: &[Ident]) -> Expr {
     parse_quote!(
         {
             let mut error: Option<vicocomo::Error> = None;
-            let mut models = vec![];
+            let mut models = Vec::new();
             for mut row in #rows.drain(..) {
                 #(
                     let #man;

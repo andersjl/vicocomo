@@ -345,9 +345,7 @@ impl Model {
                     &field.ty
                 });
                 dbt = Some(match type_string.as_str() {
-                    "f32" | "f64" => {
-                        parse_quote!(vicocomo::DbType::Float)
-                    }
+                    "f32" | "f64" => parse_quote!(vicocomo::DbType::Float),
                     "i32" | "i64" | "u32" | "u64" => {
                         parse_quote!(vicocomo::DbType::Int)
                     }
@@ -470,10 +468,10 @@ impl Model {
             all_upd_cols.iter().map(|c| c.value()).collect::<Vec<_>>();
         concat! { all_upd_db_types, upd_mand_db_types, upd_opt_db_types }
         let pk_type = Self::type_vec_to_type(&mut pk_types);
-/*
-println!("all_cols: {:?}", all_cols);
-println!("all_db_types: {:?}", all_db_types.iter().map(|t| debug_to_tokens(t)).collect::<Vec<_>>());
-*/
+        /*
+        println!("all_cols: {:?}", all_cols);
+        println!("all_db_types: {:?}", all_db_types.iter().map(|t| debug_to_tokens(t)).collect::<Vec<_>>());
+        */
         Self {
             struct_id,
             table_name,

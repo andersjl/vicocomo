@@ -42,7 +42,7 @@ pub fn path_tag_impl(input: TokenStream) -> TokenStream {
     let attrs = struct_tokens.attrs;
     let path_tag_data_strings =
         get_strings_from_attr(&attrs, "path_tag_data", Some(2));
-//println!("{:?}", path_tag_data_strings);
+    //println!("{:?}", path_tag_data_strings);
     let tag_str = path_tag_data_strings[0][0].clone();
     let path_attr_name_str = path_tag_data_strings[0][1].clone();
     let mut path_tag_attr_names: Vec<String> = vec![];

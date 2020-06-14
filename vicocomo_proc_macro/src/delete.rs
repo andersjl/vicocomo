@@ -6,7 +6,7 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
     use crate::utils::*;
     use quote::quote;
     use syn::{export::Span, parse_quote, Expr, LitStr};
-//println!("Delete");
+    //println!("Delete");
     let struct_id = &model.struct_id;
     let all_pk_fields = &model.all_pk_fields;
     let pk_mand_fields = &model.pk_mand_fields;
@@ -83,14 +83,14 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
         pk_opt_field_names,
         pk_opt_fields,
     );
-/*
-let debug: Expr = parse_quote!(#pk_cols_params);
-println!("pk_cols_params: {}", debug_to_tokens(&debug));
-*/
+    /*
+    let debug: Expr = parse_quote!(#pk_cols_params);
+    println!("pk_cols_params: {}", debug_to_tokens(&debug));
+    */
     let gen = quote! {
-        impl<'a> vicocomo::Delete<'a, #pk_type> for #struct_id {
+        impl<'a> vicocomo::MdlDelete<'a, #pk_type> for #struct_id {
             fn delete(self, db: &mut impl vicocomo::DbConn<'a>)
-                -> Result<u64, vicocomo::Error>
+                -> Result<usize, vicocomo::Error>
             {
                 let deleted = db.exec(#self_sql, #self_expr)?;
                 if 1 != deleted {
@@ -106,7 +106,7 @@ println!("pk_cols_params: {}", debug_to_tokens(&debug));
             fn delete_batch(
                 db: &mut impl vicocomo::DbConn<'a>,
                 batch: &[#pk_type],
-            ) -> Result<u64, vicocomo::Error> {
+            ) -> Result<usize, vicocomo::Error> {
                 Ok(db.exec(
                     &format!(#batch_sql_format, #batch_placeholders),
                     #batch_expr,

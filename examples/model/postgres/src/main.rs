@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::convert::TryInto;
-use vicocomo::{DbConn, Delete, Find, Save};
+use vicocomo::{ DbConn, DbValue, MdlDelete, MdlFind, MdlQueryBld, MdlSave};
 use vicocomo_postgres::PgConn;
 
 enum Show{Nothing, OneLine, PrettyUgly}
@@ -204,7 +204,7 @@ pub fn main() {
     println!("deleting existing {:?} ..", m);
     let res = m.clone().delete(&mut db);
     assert!(res.is_ok());
-    assert!(res.unwrap() == 1);
+    assert!(res.unwrap() == 1usize);
     println!("    OK");
     show_multi(&mut db);
     println!("error deleting non-existing {:?}", m);
@@ -219,7 +219,7 @@ pub fn main() {
         println!("deleting {} out of batch {:?}", del, pks);
         let res = MultiPk::delete_batch(&mut db, pks);
         assert!(res.is_ok());
-        assert!(res.unwrap() == *del as u64);
+        assert!(res.unwrap() == *del as usize);
         println!("    OK");
         show_multi(&mut db);
     }
@@ -336,10 +336,192 @@ pub fn main() {
             un1: 1, un2: 42 }"
     );
     println!("    OK");
+    let query = MdlQueryBld::new()
+        .col("un2")
+        .eq(Some(&DbValue::Int(1)))
+        .or("name")
+        .gt(Some(&DbValue::NulText(Some(String::from("hopp")))))
+        .query()
+        .unwrap();
+    println!("query() with default order ..");
+    let found = SinglePk::query(&mut db, &query);
+    assert!(
+        format!("{:?}", found.unwrap()) == "[\
+            SinglePk { \
+                id: Some(42), \
+                name: Some(\"nytt namn\"), \
+                data: None, \
+                un1: 1, \
+                un2: 42 \
+            }, \
+            SinglePk { \
+                id: Some(1), \
+                name: Some(\"default\"), \
+                data: Some(17.0), \
+                un1: 2, \
+                un2: 1 \
+            }, \
+            SinglePk { \
+                id: Some(2), \
+                name: Some(\"hej\"), \
+                data: None, \
+                un1: 1, \
+                un2: 1 \
+            }\
+        ]"
+    );
+    println!("    OK");
+    println!("query() with custom order ..");
+    let mut query = MdlQueryBld::new()
+        .col("un2")
+        .eq(Some(&DbValue::Int(1)))
+        .or("name")
+        .gt(Some(&DbValue::NulText(Some(String::from("hopp")))))
+        .order("un1, name DESC")
+        .query()
+        .unwrap();
+    let found = SinglePk::query(&mut db, &query);
+    assert!(
+        format!("{:?}", found.unwrap()) == "[\
+            SinglePk { \
+                id: Some(42), \
+                name: Some(\"nytt namn\"), \
+                data: None, \
+                un1: 1, \
+                un2: 42 \
+            }, \
+            SinglePk { \
+                id: Some(2), \
+                name: Some(\"hej\"), \
+                data: None, \
+                un1: 1, \
+                un2: 1 \
+            }, \
+            SinglePk { \
+                id: Some(1), \
+                name: Some(\"default\"), \
+                data: Some(17.0), \
+                un1: 2, \
+                un2: 1 \
+            }\
+        ]"
+    );
+    println!("    OK");
+    println!("filter() without filter with custom order ..");
+    query = MdlQueryBld::new().order("un1, name DESC").query().unwrap();
+    let found = SinglePk::query(&mut db, &query);
+    assert!(
+        format!("{:?}", found.unwrap()) == "[\
+            SinglePk { \
+                id: Some(42), \
+                name: Some(\"nytt namn\"), \
+                data: None, \
+                un1: 1, \
+                un2: 42 \
+            }, \
+            SinglePk { \
+                id: Some(3), \
+                name: Some(\"hopp\"), \
+                data: None, \
+                un1: 1, \
+                un2: 2 \
+            }, \
+            SinglePk { \
+                id: Some(2), \
+                name: Some(\"hej\"), \
+                data: None, \
+                un1: 1, \
+                un2: 1 \
+            }, \
+            SinglePk { \
+                id: Some(1), \
+                name: Some(\"default\"), \
+                data: Some(17.0), \
+                un1: 2, \
+                un2: 1 \
+            }\
+        ]"
+    );
+    println!("    OK");
+    println!("filter() without filter with limit ..");
+    query.set_limit(Some(2));
+    let found = SinglePk::query(&mut db, &query);
+    assert!(
+        format!("{:?}", found.unwrap()) == "[\
+            SinglePk { \
+                id: Some(42), \
+                name: Some(\"nytt namn\"), \
+                data: None, \
+                un1: 1, \
+                un2: 42 \
+            }, \
+            SinglePk { \
+                id: Some(3), \
+                name: Some(\"hopp\"), \
+                data: None, \
+                un1: 1, \
+                un2: 2 \
+            }\
+        ]"
+    );
+    println!("    OK");
+    println!("filter() without filter with offset ..");
+    query.set_limit(None);
+    query.set_offset(Some(1));
+    let found = SinglePk::query(&mut db, &query);
+    assert!(
+        format!("{:?}", found.unwrap()) == "[\
+            SinglePk { \
+                id: Some(3), \
+                name: Some(\"hopp\"), \
+                data: None, \
+                un1: 1, \
+                un2: 2 \
+            }, \
+            SinglePk { \
+                id: Some(2), \
+                name: Some(\"hej\"), \
+                data: None, \
+                un1: 1, \
+                un2: 1 \
+            }, \
+            SinglePk { \
+                id: Some(1), \
+                name: Some(\"default\"), \
+                data: Some(17.0), \
+                un1: 2, \
+                un2: 1 \
+            }\
+        ]"
+    );
+    println!("    OK");
+    println!("filter() without filter with limit and offset ..");
+    query.set_limit(Some(2));
+    query.set_offset(Some(1));
+    let found = SinglePk::query(&mut db, &query);
+    assert!(
+        format!("{:?}", found.unwrap()) == "[\
+            SinglePk { \
+                id: Some(3), \
+                name: Some(\"hopp\"), \
+                data: None, \
+                un1: 1, \
+                un2: 2 \
+            }, \
+            SinglePk { \
+                id: Some(2), \
+                name: Some(\"hej\"), \
+                data: None, \
+                un1: 1, \
+                un2: 1 \
+            }\
+        ]"
+    );
+    println!("    OK");
     println!("deleting existing {:?} ..", s);
     let res = s.clone().delete(&mut db);
     assert!(res.is_ok());
-    assert!(res.unwrap() == 1);
+    assert!(res.unwrap() == 1usize);
     println!("    OK");
     show_single(&mut db);
     println!("error deleting non-existing {:?}", s);
@@ -350,7 +532,7 @@ pub fn main() {
         println!("deleting {} out of batch {:?}", del, pks);
         let res = SinglePk::delete_batch(&mut db, pks);
         assert!(res.is_ok());
-        assert!(res.unwrap() == *del as u64);
+        assert!(res.unwrap() == *del);
         println!("    OK");
         show_multi(&mut db);
     }

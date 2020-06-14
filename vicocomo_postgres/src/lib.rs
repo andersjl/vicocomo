@@ -14,13 +14,13 @@ macro_rules! from_values {
                 DbValue::Text(v) => v as &(dyn postgres_types::ToSql + Sync),
                 DbValue::NulFloat(v) => {
                     v as &(dyn postgres_types::ToSql + Sync)
-                },
+                }
                 DbValue::NulInt(v) => {
                     v as &(dyn postgres_types::ToSql + Sync)
-                },
+                }
                 DbValue::NulText(v) => {
                     v as &(dyn postgres_types::ToSql + Sync)
-                },
+                }
             })
             .collect::<Vec<_>>()[..]
     };
@@ -40,17 +40,18 @@ impl PgConn {
 }
 
 impl<'a> DbConn<'a> for PgConn {
-    fn exec(&mut self, sql: &str, values: &[DbValue]) -> Result<u64, Error> {
-/*
-print!("PgConn.0.exec(\n    {:?},\n    {:?},\n)", sql, from_values!(values));
-let result =
-*/
+    fn exec(&mut self, sql: &str, vals: &[DbValue]) -> Result<usize, Error> {
+        /*
+        print!("PgConn.0.exec(\n    {:?},\n    {:?},\n)", sql, from_values!(vals));
+        let result =
+        */
         self.0
-            .execute(sql, from_values!(values))
+            .execute(sql, from_values!(vals))
+            .map(|i| i as usize)
             .map_err(|e| Error::Database(e.to_string()))
-/*
-; println!(" -> {:?}", result); result
-*/
+        /*
+        ; println!(" -> {:?}", result); result
+        */
     }
 
     fn query(
@@ -59,14 +60,14 @@ let result =
         values: &[DbValue],
         types: &[DbType],
     ) -> Result<Vec<Vec<DbValue>>, Error> {
-/*
-print!("PgConn.0.query(\n    {:?},\n    {:?},\n)", sql, from_values!(values));
-let result =
-*/
+        /*
+        print!("PgConn.0.query(\n    {:?},\n    {:?},\n)", sql, from_values!(values));
+        let result =
+        */
         Ok(do_query(self.0.query(sql, from_values!(values)), types)?)
-/*
-; println!(" -> {:?}", result); result
-*/
+        /*
+        ; println!(" -> {:?}", result); result
+        */
     }
 
     fn transaction(
@@ -88,9 +89,10 @@ impl<'a> DbTrans<'a> for PgTrans<'a> {
         self.0.commit().map_err(|e| Error::Database(e.to_string()))
     }
 
-    fn exec(&mut self, sql: &str, values: &[DbValue]) -> Result<u64, Error> {
+    fn exec(&mut self, sql: &str, vals: &[DbValue]) -> Result<usize, Error> {
         self.0
-            .execute(sql, from_values!(values))
+            .execute(sql, from_values!(vals))
+            .map(|i| i as usize)
             .map_err(|e| Error::Database(e.to_string()))
     }
 
@@ -125,7 +127,7 @@ fn do_query(
     pg_rows: Result<Vec<postgres::Row>, postgres::Error>,
     types: &[DbType],
 ) -> Result<Vec<Vec<DbValue>>, Error> {
-//print!("vicocomo_postgres::do_query(\n    {:?},\n    {:?},\n)", pg_rows, types);
+    //print!("vicocomo_postgres::do_query(\n    {:?},\n    {:?},\n)", pg_rows, types);
     let mut vicocomo_rows = vec![];
     for postgres_row in
         pg_rows.map_err(|e| Error::Database(e.to_string()))?.iter()
