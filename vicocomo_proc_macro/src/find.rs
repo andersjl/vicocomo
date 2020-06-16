@@ -134,7 +134,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
             .iter()
             .map(|f| f.id.to_string())
             .collect::<Vec<_>>()
-            .join("_");
+            .join("_and_");
         let mut find_pars: Punctuated<FnArg, Comma> = Punctuated::new();
         let mut find_args: Punctuated<Expr, Comma> = Punctuated::new();
         let mut par_vals: Punctuated<Expr, Comma> = Punctuated::new();

@@ -1,7 +1,7 @@
 use quote::ToTokens;
 use syn::{export::Span, parse_quote, Attribute, Expr, Ident, LitStr};
 
-pub fn debug_to_tokens<T: ToTokens>(obj: &T) -> String {
+pub fn tokens_to_string<T: ToTokens>(obj: &T) -> String {
     let mut ts = proc_macro2::TokenStream::new();
     obj.to_tokens(&mut ts);
     ts.to_string()

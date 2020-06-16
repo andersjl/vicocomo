@@ -206,3 +206,43 @@ convert_value! { Option<u64>, "u64", NulInt, i64 }
 convert_value! { Option<i32>, "i32", NulInt, i64 }
 convert_value! { Option<u32>, "u32", NulInt, i64 }
 convert_value! { Option<String>, "Option<String>", NulText }
+
+/*
+impl TryInto<Option<NaiveDate>> for DbValue {
+    type Error = crate::Error;
+    fn try_into(self) -> Result<Option<NaiveDate>, Self::Error> {
+        match self {
+            DbValue::NulInt(opt) =>
+                Ok(opt.map(|val|
+                    NaiveDate::from_num_days_from_ce(val as i32)
+                )),
+            _ => Err(Error::InvalidInput(format!(
+                "cannot convert {:?} into Option<NaiveDate>",
+                self,
+            ))),
+    }
+}
+impl From<Option<NaiveDate>> for DbValue {
+    fn from(opt: Option<NaiveDate>) -> Self {
+        Self::NulInt(opt.map(|val| val.num_days_from_ce() as i64))
+    }
+}
+impl TryInto<NaiveDate> for DbValue {
+    type Error = crate::Error;
+    fn try_into(self) -> Result<NaiveDate, Self::Error> {
+        match self {
+            DbValue::Int(val) =>
+                Ok(NaiveDate::from_num_days_from_ce(val as i32)),
+            _ => Err(Error::InvalidInput(format!(
+                "cannot convert {:?} into NaiveDate",
+                self,
+            ))),
+    }
+
+impl From<NaiveDate> for DbValue {
+    fn from(val: NaiveDate) -> Self {
+        Self::Int(val.num_days_from_ce() as i64)
+    }
+}
+*/
+

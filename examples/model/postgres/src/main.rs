@@ -145,7 +145,7 @@ pub fn main() {
     assert!(res.is_none());
     println!("    OK");
     println!("not finding non-existing by unique fields ..");
-    let res = MultiPk::find_by_un1_un2(&mut db, m.un1, m.un2);
+    let res = MultiPk::find_by_un1_and_un2(&mut db, m.un1, m.un2);
     assert!(res.is_none());
     println!("    OK");
     println!("error updating non-existing ..");
@@ -194,7 +194,7 @@ pub fn main() {
     );
     println!("    OK");
     println!("finding existing by unique fields ..");
-    let res = MultiPk::find_by_un1_un2(&mut db, m.un1, m.un2);
+    let res = MultiPk::find_by_un1_and_un2(&mut db, m.un1, m.un2);
     assert!(res.is_some());
     assert!(format!("{:?}", res.unwrap()) ==
         "MultiPk { id: Some(3), id2: 42, name: Some(\"nytt namn\"), \
@@ -280,7 +280,7 @@ pub fn main() {
     assert!(res.is_none());
     println!("    OK");
     println!("not finding non-existing by unique fields ..");
-    let res = SinglePk::find_by_un1_un2(&mut db, s.un1, s.un2);
+    let res = SinglePk::find_by_un1_and_un2(&mut db, s.un1, s.un2);
     assert!(res.is_none());
     println!("    OK");
     println!("error updating non-existing ..");
@@ -329,7 +329,7 @@ pub fn main() {
     );
     println!("    OK");
     println!("finding existing by unique fields ..");
-    let res = SinglePk::find_by_un1_un2(&mut db, s.un1, s.un2);
+    let res = SinglePk::find_by_un1_and_un2(&mut db, s.un1, s.un2);
     assert!(res.is_some());
     assert!(format!("{:?}", res.unwrap()) ==
         "SinglePk { id: Some(42), name: Some(\"nytt namn\"), data: None, \
@@ -407,7 +407,7 @@ pub fn main() {
         ]"
     );
     println!("    OK");
-    println!("filter() without filter with custom order ..");
+    println!("query() without filter with custom order ..");
     query = MdlQueryBld::new().order("un1, name DESC").query().unwrap();
     let found = SinglePk::query(&mut db, &query);
     assert!(
@@ -443,7 +443,7 @@ pub fn main() {
         ]"
     );
     println!("    OK");
-    println!("filter() without filter with limit ..");
+    println!("query() without filter with limit ..");
     query.set_limit(Some(2));
     let found = SinglePk::query(&mut db, &query);
     assert!(
@@ -465,7 +465,7 @@ pub fn main() {
         ]"
     );
     println!("    OK");
-    println!("filter() without filter with offset ..");
+    println!("query() without filter with offset ..");
     query.set_limit(None);
     query.set_offset(Some(1));
     let found = SinglePk::query(&mut db, &query);
@@ -495,7 +495,7 @@ pub fn main() {
         ]"
     );
     println!("    OK");
-    println!("filter() without filter with limit and offset ..");
+    println!("query() without filter with limit and offset ..");
     query.set_limit(Some(2));
     query.set_offset(Some(1));
     let found = SinglePk::query(&mut db, &query);

@@ -5,6 +5,21 @@ pub enum Error {
     Other(String),
 }
 
+impl Error {
+    pub fn database(txt: &str) -> Self {
+        Self::Database(txt.to_string())
+    }
+    pub fn invalid_input(txt: &str) -> Self {
+        Self::InvalidInput(txt.to_string())
+    }
+    pub fn nyi() -> Self {
+        Self::other("NYI")
+    }
+    pub fn other(txt: &str) -> Self {
+        Self::Other(txt.to_string())
+    }
+}
+
 impl std::error::Error for Error {}
 
 impl std::fmt::Display for Error {

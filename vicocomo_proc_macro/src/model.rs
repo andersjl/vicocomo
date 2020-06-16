@@ -205,7 +205,7 @@ impl Model {
         const EXPECT_OPTIONAL_ERROR: &'static str =
             "expected #[vicocomo_optional]";
         const EXPECT_ORDER_ERROR: &'static str =
-            "expected #[vicocomo_order_by(<int>, <\"asc\"/\"desc\">)]";
+            "expected #[vicocomo_order_by(<int>, <\"ASC\"/\"DESC\">)]";
         const EXPECT_PRIMARY_ERROR: &'static str =
             "expected #[vicocomo_primary]";
         const EXPECT_UNIQUE_ERROR: &'static str =
@@ -339,7 +339,7 @@ impl Model {
                 }.to_tokens(&mut ts);
                 let type_string = ts.to_string();
                 */
-                let type_string = debug_to_tokens(if opt {
+                let type_string = tokens_to_string(if opt {
                     Self::strip_option(&field.ty)
                 } else {
                     &field.ty
@@ -354,7 +354,8 @@ impl Model {
                         parse_quote!(vicocomo::DbType::NulFloat)
                     }
                     "Option < i32 >" | "Option < i64 >"
-                    | "Option < u32 >" | "Option < u64 >" => {
+                    | "Option < u32 >" | "Option < u64 >"
+                    | "Option < usize >" => {
                         parse_quote!(vicocomo::DbType::NulInt)
                     }
                     "Option < String >" => {
@@ -470,7 +471,7 @@ impl Model {
         let pk_type = Self::type_vec_to_type(&mut pk_types);
         /*
         println!("all_cols: {:?}", all_cols);
-        println!("all_db_types: {:?}", all_db_types.iter().map(|t| debug_to_tokens(t)).collect::<Vec<_>>());
+        println!("all_db_types: {:?}", all_db_types.iter().map(|t| tokens_to_string(t)).collect::<Vec<_>>());
         */
         Self {
             struct_id,

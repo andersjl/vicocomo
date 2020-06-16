@@ -143,7 +143,7 @@ pub fn path_tag_derive(input: TokenStream) -> TokenStream {
 //         #[vicocomo_optional]       // not sent to DBMS if None
 //         #[vicocomo_unique = "un1"] // UNIQUE(db_col, opt_not_null)
 //         opt_not_null: Option<i32>  // INTEGER NOT NULL DEFAULT 42
-//         #[vicocomo_order_by(1, desc)]  // ORDER BY opt_null DESC, nullable
+//         #[vicocomo_order_by(1, "desc")] // ORDER BY opt_null DESC, nullable
 //         #[vicocomo_optional]       // not sent to DBMS if None
 //         opt_null: Option<Option<i32>>  // INTEGER DEFAULT 43
 //                                    // None -> 43, Some(None) -> NULL

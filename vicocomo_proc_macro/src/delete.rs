@@ -85,7 +85,7 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
     );
     /*
     let debug: Expr = parse_quote!(#pk_cols_params);
-    println!("pk_cols_params: {}", debug_to_tokens(&debug));
+    println!("pk_cols_params: {}", tokens_to_string(&debug));
     */
     let gen = quote! {
         impl<'a> vicocomo::MdlDelete<'a, #pk_type> for #struct_id {
