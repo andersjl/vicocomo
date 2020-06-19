@@ -287,39 +287,47 @@ pub fn main() {
     let res = s.update(&mut db);
     assert!(res.is_err());
     println!("    OK");
-    println!("inserting non-existing ..");
-    let res = s.insert(&mut db);
-    assert!(res.is_ok());
-    assert!(format!("{:?}", s) ==
-        "SinglePk { id: Some(42), name: Some(\"hej\"), data: None, \
-            un1: 1, un2: 42 }"
-    );
-    let mut un2 = 1000;
-    let mut name = "aaa".to_string();
-    for s in MultiPk::load(&mut db).unwrap() {
-        assert!(s.un2 <= un2);
-        if s.un2 == un2 {
-            assert!(s.name.clone().unwrap() >= name);
+    {
+        println!(",- transaction begin ------------------------------------");
+        let mut trans = db.transaction().unwrap();
+        println!("| inserting non-existing ..");
+        let res = s.insert(&mut trans);
+        assert!(res.is_ok());
+        assert!(format!("{:?}", s) ==
+            "SinglePk { id: Some(42), name: Some(\"hej\"), data: None, \
+                un1: 1, un2: 42 }"
+        );
+        let mut un2 = 1000;
+        let mut name = "aaa".to_string();
+        for s in MultiPk::load(&mut trans).unwrap() {
+            assert!(s.un2 <= un2);
+            if s.un2 == un2 {
+                assert!(s.name.clone().unwrap() >= name);
+            }
+            un2 = s.un2;
+            name = s.name.unwrap().clone();
         }
-        un2 = s.un2;
-        name = s.name.unwrap().clone();
+        println!("|   OK");
+        show_single(&mut trans);
+        s.name = Some("nytt namn".to_string());
+        println!("| updating existing {:?} ..", s);
+        let res = s.update(&mut trans);
+        assert!(res.is_ok());
+        assert!(format!("{:?}", s) ==
+            "SinglePk { id: Some(42), name: Some(\"nytt namn\"), data: None, \
+                un1: 1, un2: 42 }"
+        );
+        println!("|   OK");
+        Box::new(trans).commit().unwrap();
+        println!("'- transaction commit -----------------------------------");
+        assert!(s.find_equal(&mut db).is_some());
+        println!("    OK");
     }
-    println!("    OK");
     show_single(&mut db);
     println!("error inserting existing ..");
     let res = s.insert(&mut db);
     assert!(res.is_err());
     println!("    OK");
-    s.name = Some("nytt namn".to_string());
-    println!("updating existing {:?} ..", s);
-    let res = s.update(&mut db);
-    assert!(res.is_ok());
-    assert!(format!("{:?}", s) ==
-        "SinglePk { id: Some(42), name: Some(\"nytt namn\"), data: None, \
-            un1: 1, un2: 42 }"
-    );
-    println!("    OK");
-    show_single(&mut db);
     println!("finding existing ..");
     let res = s.find_equal(&mut db);
     assert!(res.is_some());
@@ -518,15 +526,28 @@ pub fn main() {
         ]"
     );
     println!("    OK");
+    {
+        println!(",- transaction begin ------------------------------------");
+        let mut trans = db.transaction().unwrap();
+        println!("| deleting existing {:?} ..", s);
+        let res = s.clone().delete(&mut trans);
+        assert!(res.is_ok());
+        assert!(res.unwrap() == 1);
+        println!("|   OK");
+        show_single(&mut trans);
+        println!("| error deleting non-existing {:?}", s);
+        let res = s.clone().delete(&mut trans);
+        assert!(res.is_err());
+        println!("|   OK");
+        Box::new(trans).rollback().unwrap();
+        assert!(s.find_equal(&mut db).is_some());
+        println!("'- transaction rollback ---------------------------------");
+        println!("    OK");
+    }
     println!("deleting existing {:?} ..", s);
     let res = s.clone().delete(&mut db);
     assert!(res.is_ok());
-    assert!(res.unwrap() == 1usize);
-    println!("    OK");
-    show_single(&mut db);
-    println!("error deleting non-existing {:?}", s);
-    let res = s.delete(&mut db);
-    assert!(res.is_err());
+    assert!(res.unwrap() == 1);
     println!("    OK");
     for (pks, del) in [([42, 43], 0), ([42, 3], 1), ([2, 1], 2)].iter() {
         println!("deleting {} out of batch {:?}", del, pks);

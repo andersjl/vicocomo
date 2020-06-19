@@ -2,6 +2,14 @@ use crate::Error;
 use std::{convert::TryInto, fmt};
 
 pub trait DbConn<'a> {
+    // The type of the transaction() return value.
+    type Transaction: DbConn<'a>;
+
+    // Commit the present transaction.  The default method returns an error.
+    fn commit(self: Box<Self>) -> Result<(), Error> {
+        Err(Error::database("not in a transaction"))
+    }
+
     // Execute an SQL statement.
     //
     // sql is the statement, which may be parameterized using "$1", "$2", ...
@@ -34,36 +42,13 @@ pub trait DbConn<'a> {
         types: &[DbType],
     ) -> Result<Vec<Vec<DbValue>>, Error>;
 
-    fn transaction(
-        &'a mut self,
-        statements: fn(Box<dyn DbTrans + 'a>) -> Result<(), Error>,
-    ) -> Result<(), Error>;
-}
-
-#[allow(unused_variables)]
-pub trait DbTrans<'a> {
-    fn commit(self: Box<Self>) -> Result<(), Error>;
-
-    fn exec(&mut self, sql: &str, values: &[DbValue])
-        -> Result<usize, Error>;
-
-    fn query(
-        &mut self,
-        sql: &str,
-        values: &[DbValue],
-        types: &[DbType],
-    ) -> Result<Vec<Vec<DbValue>>, Error>;
-
-    fn rollback(self: Box<Self>) -> Result<(), Error>;
-
-    fn transaction(
-        &'a mut self,
-        statements: fn(Box<dyn DbTrans + 'a>) -> Result<(), Error>,
-    ) -> Result<(), Error> {
-        Err(Error::Database(
-            "nested transactions not supported by implementation".to_string(),
-        ))
+    // Rollback the present transaction.  The default method returns an error.
+    fn rollback(self: Box<Self>) -> Result<(), Error> {
+        Err(Error::database("not in a transaction"))
     }
+
+    // Return a transaction object.
+    fn transaction(&'a mut self) -> Result<Self::Transaction, Error>;
 }
 
 #[derive(Clone, Debug)]

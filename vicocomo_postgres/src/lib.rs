@@ -1,6 +1,6 @@
 use postgres;
 use postgres_types;
-use vicocomo::{DbConn, DbTrans, DbType, DbValue, Error};
+use vicocomo::{DbConn, DbType, DbValue, Error};
 
 pub struct PgConn(postgres::Client);
 
@@ -40,6 +40,8 @@ impl PgConn {
 }
 
 impl<'a> DbConn<'a> for PgConn {
+    type Transaction = PgTrans<'a>;
+
     fn exec(&mut self, sql: &str, vals: &[DbValue]) -> Result<usize, Error> {
         /*
         print!("PgConn.0.exec(\n    {:?},\n    {:?},\n)", sql, from_values!(vals));
@@ -70,21 +72,20 @@ impl<'a> DbConn<'a> for PgConn {
         */
     }
 
-    fn transaction(
-        &'a mut self,
-        statements: fn(Box<dyn DbTrans + 'a>) -> Result<(), Error>,
-    ) -> Result<(), Error> {
-        statements(Box::new(PgTrans(
+    fn transaction(&'a mut self) -> Result<Self::Transaction, Error> {
+        Ok(PgTrans(
             self.0
                 .transaction()
                 .map_err(|e| Error::Database(e.to_string()))?,
-        )))
+        ))
     }
 }
 
-struct PgTrans<'a>(postgres::Transaction<'a>);
+pub struct PgTrans<'a>(postgres::Transaction<'a>);
 
-impl<'a> DbTrans<'a> for PgTrans<'a> {
+impl<'a> DbConn<'a> for PgTrans<'a> {
+    type Transaction = PgTrans<'a>;
+
     fn commit(self: Box<Self>) -> Result<(), Error> {
         self.0.commit().map_err(|e| Error::Database(e.to_string()))
     }
@@ -111,15 +112,12 @@ impl<'a> DbTrans<'a> for PgTrans<'a> {
             .map_err(|e| Error::Database(e.to_string()))
     }
 
-    fn transaction(
-        &'a mut self,
-        statements: fn(Box<dyn DbTrans + 'a>) -> Result<(), Error>,
-    ) -> Result<(), Error> {
-        statements(Box::new(PgTrans(
+    fn transaction(&'a mut self) -> Result<Self::Transaction, Error> {
+        Ok(PgTrans(
             self.0
                 .transaction()
                 .map_err(|e| Error::Database(e.to_string()))?,
-        )))
+        ))
     }
 }
 
