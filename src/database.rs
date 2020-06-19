@@ -1,4 +1,4 @@
-use crate::Error;
+use crate::{db_value_convert, Error};
 use std::{convert::TryInto, fmt};
 
 pub trait DbConn<'a> {
@@ -105,92 +105,15 @@ impl fmt::Display for DbValue {
         }
     }
 }
-macro_rules! convert_value {
-    // Option<i32>, "i32", NulInt, i64
-    (Option<$oth_typ:ty>, $oth_nam:literal, $variant:ident, $as: ty) => {
-        impl TryInto<Option<$oth_typ>> for DbValue {
-            type Error = crate::Error;
-            fn try_into(self) -> Result<Option<$oth_typ>, Self::Error> {
-                match self {
-                    DbValue::$variant(opt) => Ok(match opt {
-                        Some(val) => Some(val as $oth_typ),
-                        None => None,
-                    }),
-                    _ => Err(Error::InvalidInput(format!(
-                        "cannot convert {:?} into Option<{}>",
-                        self, $oth_nam
-                    ))),
-                }
-            }
-        }
 
-        impl From<Option<$oth_typ>> for DbValue {
-            fn from(opt: Option<$oth_typ>) -> Self {
-                Self::$variant(match opt {
-                    Some(val) => Some(val as $as),
-                    None => None,
-                })
-            }
-        }
-    };
-    // i32, "i32", Int, i64
-    ($oth_typ:ty, $oth_nam:literal, $variant:ident, $as: ty) => {
-        impl TryInto<$oth_typ> for DbValue {
-            type Error = crate::Error;
-            fn try_into(self) -> Result<$oth_typ, Self::Error> {
-                match self {
-                    DbValue::$variant(val) => Ok(val as $oth_typ),
-                    _ => Err(Error::InvalidInput(format!(
-                        "cannot convert {:?} into {}",
-                        self, $oth_nam
-                    ))),
-                }
-            }
-        }
-
-        impl From<$oth_typ> for DbValue {
-            fn from(val: $oth_typ) -> Self {
-                Self::$variant(val as $as)
-            }
-        }
-    };
-    // i64, "i64", Int
-    // Option<i64>, "Option<i64>", NulInt
-    ($oth_typ:ty, $oth_nam:literal, $variant:ident) => {
-        impl TryInto<$oth_typ> for DbValue {
-            type Error = crate::Error;
-            fn try_into(self) -> Result<$oth_typ, Self::Error> {
-                match self {
-                    DbValue::$variant(val) => Ok(val),
-                    _ => Err(Error::InvalidInput(format!(
-                        "cannot convert {:?} into {}",
-                        self, $oth_nam
-                    ))),
-                }
-            }
-        }
-
-        impl From<$oth_typ> for DbValue {
-            fn from(val: $oth_typ) -> Self {
-                Self::$variant(val)
-            }
-        }
-    };
-}
-convert_value! { f64, "f64", Float }
-convert_value! { f32, "f32", Float, f64 }
-convert_value! { i64, "i64", Int }
-convert_value! { u64, "u64", Int, i64 }
-convert_value! { i32, "i32", Int, i64 }
-convert_value! { u32, "u32", Int, i64 }
-convert_value! { String, "String", Text }
-convert_value! { Option<f64>, "Option<f64>", NulFloat }
-convert_value! { Option<f32>, "f32", NulFloat, f64 }
-convert_value! { Option<i64>, "Option<i64>", NulInt }
-convert_value! { Option<u64>, "u64", NulInt, i64 }
-convert_value! { Option<i32>, "i32", NulInt, i64 }
-convert_value! { Option<u32>, "u32", NulInt, i64 }
-convert_value! { Option<String>, "Option<String>", NulText }
+db_value_convert! { f32, Float }
+db_value_convert! { f64, Float }
+db_value_convert! { i32, Int }
+db_value_convert! { i64, Int }
+db_value_convert! { u32, Int }
+db_value_convert! { u64, Int }
+db_value_convert! { usize, Int }
+db_value_convert! { String, Text }
 
 /*
 impl TryInto<Option<NaiveDate>> for DbValue {
