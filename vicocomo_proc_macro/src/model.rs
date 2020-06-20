@@ -346,16 +346,15 @@ impl Model {
                 });
                 dbt = Some(match type_string.as_str() {
                     "f32" | "f64" => parse_quote!(vicocomo::DbType::Float),
-                    "i32" | "i64" | "u32" | "u64" => {
-                        parse_quote!(vicocomo::DbType::Int)
-                    }
+                    "bool" | "i32" | "i64" | "u32" | "u64" | "usize"
+                        | "NaiveDate" => parse_quote!(vicocomo::DbType::Int),
                     "String" => parse_quote!(vicocomo::DbType::Text),
                     "Option < f32 >" | "Option < f64 >" => {
                         parse_quote!(vicocomo::DbType::NulFloat)
                     }
-                    "Option < i32 >" | "Option < i64 >"
-                    | "Option < u32 >" | "Option < u64 >"
-                    | "Option < usize >" => {
+                    "Option < bool >" | "Option < i32 >" | "Option < i64 >"
+                    | "Option < u32 >" | "Option < u64 >" | "Option < usize >"
+                    | "Option < NaiveDate >" => {
                         parse_quote!(vicocomo::DbType::NulInt)
                     }
                     "Option < String >" => {

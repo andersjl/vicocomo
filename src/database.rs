@@ -1,4 +1,5 @@
 use crate::{db_value_convert, Error};
+use chrono::{Datelike, NaiveDate};
 use std::{convert::TryInto, fmt};
 
 pub trait DbConn<'a> {
@@ -106,51 +107,19 @@ impl fmt::Display for DbValue {
     }
 }
 
+db_value_convert! { bool, Int, value != 0 }
 db_value_convert! { f32, Float }
 db_value_convert! { f64, Float }
 db_value_convert! { i32, Int }
 db_value_convert! { i64, Int }
+db_value_convert! {
+    NaiveDate,
+    Int,
+    NaiveDate::from_num_days_from_ce(value as i32),
+    other.num_days_from_ce() as i64,
+}
+db_value_convert! { String, Text }
 db_value_convert! { u32, Int }
 db_value_convert! { u64, Int }
 db_value_convert! { usize, Int }
-db_value_convert! { String, Text }
-
-/*
-impl TryInto<Option<NaiveDate>> for DbValue {
-    type Error = crate::Error;
-    fn try_into(self) -> Result<Option<NaiveDate>, Self::Error> {
-        match self {
-            DbValue::NulInt(opt) =>
-                Ok(opt.map(|val|
-                    NaiveDate::from_num_days_from_ce(val as i32)
-                )),
-            _ => Err(Error::InvalidInput(format!(
-                "cannot convert {:?} into Option<NaiveDate>",
-                self,
-            ))),
-    }
-}
-impl From<Option<NaiveDate>> for DbValue {
-    fn from(opt: Option<NaiveDate>) -> Self {
-        Self::NulInt(opt.map(|val| val.num_days_from_ce() as i64))
-    }
-}
-impl TryInto<NaiveDate> for DbValue {
-    type Error = crate::Error;
-    fn try_into(self) -> Result<NaiveDate, Self::Error> {
-        match self {
-            DbValue::Int(val) =>
-                Ok(NaiveDate::from_num_days_from_ce(val as i32)),
-            _ => Err(Error::InvalidInput(format!(
-                "cannot convert {:?} into NaiveDate",
-                self,
-            ))),
-    }
-
-impl From<NaiveDate> for DbValue {
-    fn from(val: NaiveDate) -> Self {
-        Self::Int(val.num_days_from_ce() as i64)
-    }
-}
-*/
 

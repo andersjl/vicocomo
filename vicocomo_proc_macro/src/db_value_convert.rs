@@ -94,12 +94,14 @@ struct ConvertDef {
 impl Parse for ConvertDef {
     fn parse(input: ParseStream) -> parse::Result<Self> {
         use syn::token;
-        Ok(Self {
+        let result = Self {
             other: input.parse()?,
             variant: input.parse::<token::Comma>().and(input.parse())?,
             into: input.parse::<token::Comma>().ok().and(input.parse().ok()),
             from: input.parse::<token::Comma>().ok().and(input.parse().ok()),
-        })
+        };
+        match input.parse::<token::Comma>() { _ => ()}
+        Ok(result)
     }
 }
 

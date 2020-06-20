@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+use chrono::NaiveDate;
 use std::convert::TryInto;
 use vicocomo::{ DbConn, DbValue, MdlDelete, MdlFind, MdlQueryBld, MdlSave};
 use vicocomo_postgres::PgConn;
@@ -10,6 +11,7 @@ const SHOW: Show = Show::Nothing;
 #[derive(
     Clone,
     Debug,
+    PartialEq,
     vicocomo::DeleteModel,
     vicocomo::FindModel,
     vicocomo::SaveModel,
@@ -20,15 +22,23 @@ struct MultiPk {
     id: Option<u32>,
     #[vicocomo_primary]
     id2: u32,
+    bool_mand: bool,
+    bool_mand_nul: Option<bool>,
+    f32_mand: f32,
     #[vicocomo_optional]
-    #[vicocomo_order_by(2, "asc")]
-    name: Option<String>,
-    data: Option<f32>,
-    #[vicocomo_unique = "uni-lbl"]
-    un1: i32,
-    #[vicocomo_order_by(1, "desc")]
-    #[vicocomo_unique = "uni-lbl"]
-    un2: i32,
+    f32_opt: Option<f32>,
+    f64_mand: f64,
+    #[vicocomo_optional]
+    f64_opt_nul: Option<Option<f64>>,
+    i32_mand: i32,
+    #[vicocomo_optional]
+    i32_opt_nul: Option<Option<i32>>,
+    i64_mand: i64,
+    date_mand: NaiveDate,
+    string_mand: String,
+    u32_mand: u32,
+    u64_mand: u64,
+    usize_mand: usize,
 }
 
 #[derive(
@@ -65,12 +75,22 @@ pub fn main() {
         DROP TABLE IF EXISTS multi_pks;
         DROP TABLE IF EXISTS single_pks;
         CREATE TABLE multi_pks
-        (   id    BIGINT NOT NULL DEFAULT 1
-        ,   id2   BIGINT
-        ,   name  TEXT NOT NULL DEFAULT 'default'
-        ,   data  FLOAT(53)
-        ,   un1   BIGINT
-        ,   un2   BIGINT
+        (   id               BIGINT NOT NULL DEFAULT 1
+        ,   id2              BIGINT
+        ,   bool_mand        BIGINT NOT NULL
+        ,   bool_mand_nul    BIGINT
+        ,   f32_mand         FLOAT(53) NOT NULL
+        ,   f32_opt          FLOAT(53) NOT NULL DEFAULT 1.0
+        ,   f64_mand         FLOAT(53) NOT NULL
+        ,   f64_opt_nul      FLOAT(53) DEFAULT 1.0
+        ,   i32_mand         BIGINT NOT NULL
+        ,   i32_opt_nul      BIGINT DEFAULT 1
+        ,   i64_mand         BIGINT NOT NULL
+        ,   date_mand        BIGINT NOT NULL
+        ,   string_mand      TEXT NOT NULL
+        ,   u32_mand         BIGINT NOT NULL
+        ,   u64_mand         BIGINT NOT NULL
+        ,   usize_mand       BIGINT NOT NULL
         ,   PRIMARY KEY(id, id2)
         );
         CREATE TABLE single_pks
@@ -90,62 +110,35 @@ pub fn main() {
     let mut m = MultiPk {
         id: None,
         id2: 1,
-        name: None,
-        data: Some(17f32),
-        un1: 2,
-        un2: 1,
+        bool_mand: false,
+        bool_mand_nul: None,
+        f32_mand: 0.0,
+        f32_opt: None,
+        f64_mand: 0.0,
+        f64_opt_nul: None,
+        i32_mand: 0,
+        i32_opt_nul: None,
+        i64_mand: 0,
+        date_mand: NaiveDate::from_num_days_from_ce(0),
+        string_mand: String::new(),
+        u32_mand: 0,
+        u64_mand: 0,
+        usize_mand: 0,
     };
     println!("inserting {:?} .. ", m);
     assert!(m.insert(&mut db).is_ok());
     assert!(format!("{:?}", m) ==
-        "MultiPk { id: Some(1), id2: 1, name: Some(\"default\"), \
-            data: Some(17.0), un1: 2, un2: 1 }",
+        "MultiPk { id: Some(1), id2: 1, bool_mand: false, \
+            bool_mand_nul: None, f32_mand: 0.0, f32_opt: Some(1.0), \
+            f64_mand: 0.0, f64_opt_nul: Some(Some(1.0)), i32_mand: 0, \
+            i32_opt_nul: Some(Some(1)), i64_mand: 0, date_mand: 0000-12-31, \
+            string_mand: \"\", u32_mand: 0, u64_mand: 0, usize_mand: 0 }",
     );
     println!("    OK");
     show_multi(&mut db);
-    let ms = vec![
-        MultiPk {
-            id: None,
-            id2: 2,
-            name: Some(String::from("hej")),
-            data: None,
-            un1: 1,
-            un2: 1,
-        },
-        MultiPk {
-            id: None,
-            id2: 3,
-            name: Some(String::from("hopp")),
-            data: None,
-            un1: 1,
-            un2: 2,
-        },
-    ];
-    println!("inserting batch {:?} ..", ms);
-    let res = MultiPk::insert_batch(&mut db, &ms[..]);
-    assert!(res.is_ok());
-    assert!(format!("{:?}", res) ==
-        "Ok([MultiPk { id: Some(1), id2: 2, name: Some(\"hej\"), \
-            data: None, un1: 1, un2: 1 }, \
-            MultiPk { id: Some(1), id2: 3, name: Some(\"hopp\"), \
-            data: None, un1: 1, un2: 2 }])"
-    );
-    println!("    OK");
-    show_multi(&mut db);
-    m = MultiPk {
-        id: Some(3),
-        id2: 42,
-        name: Some(String::from("hej")),
-        data: None,
-        un1: 1,
-        un2: 42,
-    };
+    m.id2 = 42;
     println!("not finding non-existing {:?} ..", m);
     let res = m.find_equal(&mut db);
-    assert!(res.is_none());
-    println!("    OK");
-    println!("not finding non-existing by unique fields ..");
-    let res = MultiPk::find_by_un1_and_un2(&mut db, m.un1, m.un2);
     assert!(res.is_none());
     println!("    OK");
     println!("error updating non-existing ..");
@@ -155,74 +148,50 @@ pub fn main() {
     println!("inserting non-existing ..");
     let res = m.insert(&mut db);
     assert!(res.is_ok());
-    assert!(format!("{:?}", m) ==
-        "MultiPk { id: Some(3), id2: 42, name: Some(\"hej\"), \
-            data: None, un1: 1, un2: 42 }"
-    );
-    let mut un2 = 1000;
-    let mut name = "aaa".to_string();
-    for m in MultiPk::load(&mut db).unwrap() {
-        assert!(m.un2 <= un2);
-        if m.un2 == un2 {
-            assert!(m.name.clone().unwrap() >= name);
-        }
-        un2 = m.un2;
-        name = m.name.unwrap().clone();
-    }
     println!("    OK");
-    show_multi(&mut db);
     println!("error inserting existing ..");
     let res = m.insert(&mut db);
     assert!(res.is_err());
     println!("    OK");
-    m.name = Some("nytt namn".to_string());
-    println!("updating existing {:?} ..", m);
-    let res = m.update(&mut db);
-    assert!(res.is_ok());
+    println!("updating existing ..");
+    m.bool_mand = true;
+    m.bool_mand_nul = Some(false);
+    m.f32_mand = 32.0;
+    m.f32_opt = Some(32.0);
+    m.f64_mand = 64.0;
+    m.f64_opt_nul = Some(None);
+    m.i32_mand = -32;
+    m.i32_opt_nul = Some(Some(-32));
+    m.i64_mand = 64;
+    m.date_mand = NaiveDate::from_num_days_from_ce(1) ;
+    m.string_mand = "hello".to_string();
+    m.u32_mand = 32;
+    m.u64_mand = 64;
+    m.usize_mand = 1;
+    m.update(& mut db);
     assert!(format!("{:?}", m) ==
-        "MultiPk { id: Some(3), id2: 42, name: Some(\"nytt namn\"), \
-            data: None, un1: 1, un2: 42 }"
+        "MultiPk { id: Some(1), id2: 42, bool_mand: true, \
+            bool_mand_nul: Some(false), f32_mand: 32.0, f32_opt: Some(32.0), \
+            f64_mand: 64.0, f64_opt_nul: Some(None), i32_mand: -32, \
+            i32_opt_nul: Some(Some(-32)), i64_mand: 64, \
+            date_mand: 0001-01-01, string_mand: \"hello\", u32_mand: 32, \
+            u64_mand: 64, usize_mand: 1 }",
     );
     println!("    OK");
-    show_multi(&mut db);
     println!("finding existing ..");
     let res = m.find_equal(&mut db);
     assert!(res.is_some());
-    assert!(format!("{:?}", res.unwrap()) ==
-        "MultiPk { id: Some(3), id2: 42, name: Some(\"nytt namn\"), \
-            data: None, un1: 1, un2: 42 }"
-    );
-    println!("    OK");
-    println!("finding existing by unique fields ..");
-    let res = MultiPk::find_by_un1_and_un2(&mut db, m.un1, m.un2);
-    assert!(res.is_some());
-    assert!(format!("{:?}", res.unwrap()) ==
-        "MultiPk { id: Some(3), id2: 42, name: Some(\"nytt namn\"), \
-            data: None, un1: 1, un2: 42 }"
-    );
+    assert!(res.unwrap() == m);
     println!("    OK");
     println!("deleting existing {:?} ..", m);
     let res = m.clone().delete(&mut db);
     assert!(res.is_ok());
-    assert!(res.unwrap() == 1usize);
+    assert!(res.unwrap() == 1);
     println!("    OK");
-    show_multi(&mut db);
     println!("error deleting non-existing {:?}", m);
     let res = m.delete(&mut db);
     assert!(res.is_err());
     println!("    OK");
-    for (pks, del) in [
-        ([(1, 2), (1, 3)], 0),
-        ([(1, 2), (3, 1)], 1),
-        ([(2, 1), (1, 1)], 2),
-    ].iter() {
-        println!("deleting {} out of batch {:?}", del, pks);
-        let res = MultiPk::delete_batch(&mut db, pks);
-        assert!(res.is_ok());
-        assert!(res.unwrap() == *del as usize);
-        println!("    OK");
-        show_multi(&mut db);
-    }
 
     // --- SinglePk ----------------------------------------------------------
 
@@ -299,7 +268,7 @@ pub fn main() {
         );
         let mut un2 = 1000;
         let mut name = "aaa".to_string();
-        for s in MultiPk::load(&mut trans).unwrap() {
+        for s in SinglePk::load(&mut trans).unwrap() {
             assert!(s.un2 <= un2);
             if s.un2 == un2 {
                 assert!(s.name.clone().unwrap() >= name);
@@ -555,18 +524,8 @@ pub fn main() {
         assert!(res.is_ok());
         assert!(res.unwrap() == *del);
         println!("    OK");
-        show_multi(&mut db);
-    }
-    /*
-    for pks in [[42, 43], [42, 3], [2, 1]].iter() {
-        println!(
-            "deleting batch: {:?} -> {:?}",
-             pks,
-             SinglePk::delete_batch(&mut db, pks),
-        );
         show_single(&mut db);
     }
-    */
 
     // --- The End -----------------------------------------------------------
 

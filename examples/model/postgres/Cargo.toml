@@ -5,7 +5,8 @@ authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 
 [dependencies]
-  dotenv = "*"
-  vicocomo = { path = "../../.." }
-  vicocomo_postgres = { path = "../../../vicocomo_postgres" }
+chrono = "*"
+dotenv = "*"
+vicocomo = { path = "../../.." }
+vicocomo_postgres = { path = "../../../vicocomo_postgres" }
 
