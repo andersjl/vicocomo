@@ -122,4 +122,3 @@ db_value_convert! { String, Text }
 db_value_convert! { u32, Int }
 db_value_convert! { u64, Int }
 db_value_convert! { usize, Int }
-

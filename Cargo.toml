@@ -8,4 +8,8 @@ edition = "2018"
 chrono = "*"
 itertools = "*"
 serde = { version = "*", features = ["derive"] }
-vicocomo_proc_macro = { path = "vicocomo_proc_macro" }
+vicocomo_db_macro = { path = "vicocomo_db_macro" }
+vicocomo_derive_utils = { path = "vicocomo_derive_utils" }
+vicocomo_html_derive = { path = "vicocomo_html_derive" }
+vicocomo_model_derive = { path = "vicocomo_model_derive" }
+vicocomo_route_macro = { path = "vicocomo_route_macro" }

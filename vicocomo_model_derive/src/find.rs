@@ -1,7 +1,4 @@
-use crate::{
-    model::{Model, Order},
-    utils::*,
-};
+use crate::model::{Model, Order};
 use proc_macro::TokenStream;
 use syn::{export::Span, Ident};
 
@@ -66,7 +63,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         "SELECT {} FROM {} {}",
         &all_cols_join, table_name, default_order,
     );
-    let load_models = rows_to_models_expr(
+    let load_models = Model::rows_to_models_expr(
         parse_quote!(db.query(#load_sql, &[], &[ #( #all_db_types ),* ])?),
         all_mand_fields.as_slice(),
         all_opt_fields.as_slice(),
@@ -75,7 +72,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         "SELECT {} FROM {} {{}} {{}} {{}} {{}}",
         &all_cols_join, &table_name,
     );
-    let found_models = rows_to_models_expr(
+    let found_models = Model::rows_to_models_expr(
         parse_quote!(found_rows),
         all_mand_fields.as_slice(),
         all_opt_fields.as_slice(),
@@ -184,7 +181,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
             },
             Span::call_site(),
         );
-        let find_model = rows_to_models_expr(
+        let find_model = Model::rows_to_models_expr(
             parse_quote!(outp),
             all_mand_fields.as_slice(),
             all_opt_fields.as_slice(),

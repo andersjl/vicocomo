@@ -1,0 +1,16 @@
+[package]
+name = "vicocomo_pesenter_macro"
+version = "0.1.5"
+authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+case = "*"
+proc-macro2 = "*"
+quote = "*"
+regex = "*"
+syn = { version = "*", features = ["full", "extra-traits", "clone-impls"] }
+

@@ -9,6 +9,6 @@ pub use html::*;
 pub use model::{
     MdlDelete, MdlFind, MdlOrder, MdlQuery, MdlQueryBld, MdlSave,
 };
-pub use vicocomo_proc_macro::{
-    db_value_convert, DeleteModel, FindModel, PathTag, SaveModel,
-};
+pub use vicocomo_db_macro::db_value_convert;
+pub use vicocomo_html_derive::PathTag;
+pub use vicocomo_model_derive::{DeleteModel, FindModel, SaveModel};

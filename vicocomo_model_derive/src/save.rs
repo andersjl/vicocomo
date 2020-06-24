@@ -1,4 +1,4 @@
-use crate::{model::Model, utils::*};
+use crate::model::Model;
 use proc_macro::TokenStream;
 
 #[allow(unused_variables)]
@@ -43,19 +43,13 @@ pub fn save_model_impl(model: &Model) -> TokenStream {
         &model.table_name,
         &all_upd_cols.join(", "),
     );
-    let update_err = query_err("update");
-    let ins_placeholders = placeholders_expr(
+    let update_err = Model::query_err("update");
+    let ins_placeholders = Model::placeholders_expr(
         parse_quote!(ins_pars.len()),
         parse_quote!(ins_cols2.len()),
     );
-    let pk_cols_params = pk_cols_params_expr(
-        pk_mand_cols,
-        pk_mand_fields,
-        pk_opt_cols,
-        pk_opt_field_names,
-        pk_opt_fields,
-    );
-    let get_models = rows_to_models_expr(
+    let pk_cols_params = model.pk_cols_params_expr();
+    let get_models = Model::rows_to_models_expr(
         parse_quote!(
             db.query(
                 &format!(

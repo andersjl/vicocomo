@@ -225,75 +225,75 @@ pub trait PathTag {
 }
 
 /*
-    #[derive(Clone, Debug)]
-    pub struct PathTagData {
-        path_attr_name: String,
-        tag_data: HtmlTag,
-    }
+#[derive(Clone, Debug)]
+pub struct PathTagData {
+    path_attr_name: String,
+    tag_data: HtmlTag,
+}
 
-    impl PathTagData {
-        pub fn new(tag: &str, path_attr_name: &str) -> Self {
-            result = Self {
-                path_attr_name,
-                tag_data: HtmlTag::new(tag),
-                tag: a_tag.to_string(),
-                path: HtmlAttr::new(path_attr_name, Some("#")),
-                attrs: vec![],
-                void: (&VOID_ELEMENTS).iter().find(|&&e| e == a_tag).is_some(),
-            }
-        }
-
-        pub fn tag(&self) -> String {
-            self.tag.clone()
-        }
-
-        pub fn path(&self) -> String {
-            self.path.value()
-        }
-
-        pub fn clear(&mut self) {
-            self.set_path("#");
-            self.attrs = vec![];
+impl PathTagData {
+    pub fn new(tag: &str, path_attr_name: &str) -> Self {
+        result = Self {
+            path_attr_name,
+            tag_data: HtmlTag::new(tag),
+            tag: a_tag.to_string(),
+            path: HtmlAttr::new(path_attr_name, Some("#")),
+            attrs: vec![],
+            void: (&VOID_ELEMENTS).iter().find(|&&e| e == a_tag).is_some(),
         }
     }
 
-    impl PathTag for PathTagData {
-        fn add_attr(&mut self, attr: &HtmlAttr) {
-            self.attrs.push(attr.clone());
-        }
-
-        fn set_path(&mut self, a_path: &str) {
-            self.path.clear();
-            self.path.push(a_path);
-        }
+    pub fn tag(&self) -> String {
+        self.tag.clone()
     }
 
-    impl fmt::Display for PathTagData {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            let end_tag = if self.void {
-                "".to_string()
-            } else {
-                "</".to_string() + &self.tag + ">"
-            };
-            let attr_string = if self.attrs.is_empty() {
-                "".to_string()
-            } else {
-                " ".to_string()
-                    + &self
-                        .attrs
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<_>>()
-                        .join(" ")
-            };
-            write!(f, "<{} {}{}>{}", self.tag, self.path, attr_string, end_tag,)
-        }
+    pub fn path(&self) -> String {
+        self.path.value()
     }
-    */
 
-    // ScriptTag -----------------------------------------------------------------
-    // A script tag with a src attribute -----------------------------------------
-    #[derive(Clone, Debug, crate::PathTag)]
+    pub fn clear(&mut self) {
+        self.set_path("#");
+        self.attrs = vec![];
+    }
+}
+
+impl PathTag for PathTagData {
+    fn add_attr(&mut self, attr: &HtmlAttr) {
+        self.attrs.push(attr.clone());
+    }
+
+    fn set_path(&mut self, a_path: &str) {
+        self.path.clear();
+        self.path.push(a_path);
+    }
+}
+
+impl fmt::Display for PathTagData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let end_tag = if self.void {
+            "".to_string()
+        } else {
+            "</".to_string() + &self.tag + ">"
+        };
+        let attr_string = if self.attrs.is_empty() {
+            "".to_string()
+        } else {
+            " ".to_string()
+                + &self
+                    .attrs
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+        };
+        write!(f, "<{} {}{}>{}", self.tag, self.path, attr_string, end_tag,)
+    }
+}
+*/
+
+// ScriptTag -----------------------------------------------------------------
+// A script tag with a src attribute -----------------------------------------
+#[derive(Clone, Debug, crate::PathTag)]
 #[vicocomo_path_tag_data("script", "src")]
 pub struct ScriptTag(HtmlTag);
 

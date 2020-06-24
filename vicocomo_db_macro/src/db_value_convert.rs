@@ -1,14 +1,21 @@
 #![allow(dead_code)]
 
-use crate::utils::*;
 use proc_macro::TokenStream;
-use syn::{parse::{self, Parse, ParseStream}, Expr, Ident, Type};
+use syn::{
+    parse::{self, Parse, ParseStream},
+    Expr, Ident, Type,
+};
+use vicocomo_derive_utils::*;
 
 pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
     use quote::{format_ident, quote};
     use syn::{export::Span, parse_macro_input, parse_quote, LitStr};
-    let ConvertDef { other, variant, into, from } =
-        parse_macro_input!(input as ConvertDef);
+    let ConvertDef {
+        other,
+        variant,
+        into,
+        from,
+    } = parse_macro_input!(input as ConvertDef);
     let contained_type: Type = match variant.to_string().as_str() {
         "Float" => parse_quote!(f64),
         "Int" => parse_quote!(i64),
@@ -100,8 +107,9 @@ impl Parse for ConvertDef {
             into: input.parse::<token::Comma>().ok().and(input.parse().ok()),
             from: input.parse::<token::Comma>().ok().and(input.parse().ok()),
         };
-        match input.parse::<token::Comma>() { _ => ()}
+        match input.parse::<token::Comma>() {
+            _ => (),
+        }
         Ok(result)
     }
 }
-

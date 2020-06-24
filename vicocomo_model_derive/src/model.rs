@@ -1,6 +1,6 @@
-use crate::utils::*;
 use proc_macro::TokenStream;
-use syn::{Expr, Ident, LitStr, Type};
+use syn::{export::Span, parse_quote, Expr, Ident, LitStr, Type};
+use vicocomo_derive_utils::*;
 
 #[derive(Eq, Hash, PartialEq)]
 pub enum ExtraInfo {
@@ -76,16 +76,6 @@ macro_rules! concat {
 }
 
 impl Model {
-    /*
-    pub fn columns(&self) -> Vec<&str> {
-        self.fields.iter().map(|f| f.col.as_str()).collect()
-    }
-
-    pub fn opt_fields(&self) -> Vec<&Field> {
-        self.fields.iter().filter(|f| f.opt).collect()
-    }
-    */
-
     pub fn order_fields(&self) -> Vec<&Field> {
         let mut to_sort = self
             .fields
@@ -95,55 +85,6 @@ impl Model {
         to_sort.sort_by_key(|f| f.ord.as_ref().unwrap().prio());
         to_sort
     }
-
-    /*
-    pub fn pk_fields(&self) -> Vec<&Field> {
-        self.fields
-            .iter()
-            .filter(|f| match &f.uni {
-                Some(s) => "pk" == s,
-                None => false,
-            })
-            .collect()
-    }
-
-    pub fn database_types(&self) -> Punctuated<Expr, Comma> {
-        // use proc_macro2;
-        // use quote::ToTokens;
-        use syn::parse_quote;
-        self.fields
-            .iter()
-            .fold(Punctuated::new(), |mut result, field| {
-                let mut ts = proc_macro2::TokenStream::new();
-                field.ty.to_tokens(&mut ts);
-                let type_str = ts.to_string().as_str();
-                result.push(match type_str.as_str() {
-                    "f32" | "f64" => {
-                        parse_quote!(vicocomo::DbType::Float)
-                    }
-                    "i32" | "i64" | "u32" | "u64" => {
-                        parse_quote!(vicocomo::DbType::Int)
-                    }
-                    "String" => parse_quote!(vicocomo::DbType::Text),
-                    "Option < f32 >" | "Option < f64 >" => {
-                        parse_quote!(vicocomo::DbType::NulFloat)
-                    }
-                    "Option < i32 >" | "Option < i64 >"
-                    | "Option < u32 >" | "Option < u64 >" => {
-                        parse_quote!(vicocomo::DbType::NulInt)
-                    }
-                    "Option < String >" => {
-                        parse_quote!(vicocomo::DbType::NulText)
-                    }
-                    _ => panic!(
-                        "Type {} currently not allowed in a vicocomo model",
-                        type_str,
-                    ),
-                });
-                result
-            })
-    }
-    */
 
     pub fn unique_fields(&self) -> Vec<Vec<&Field>> {
         use std::collections::HashMap;
@@ -178,8 +119,8 @@ impl Model {
     pub fn new(input: TokenStream, compute: Vec<ExtraInfo>) -> Self {
         use case::CaseExt;
         use syn::{
-            export::Span, parse, parse_quote, AttrStyle, Data::Struct,
-            DeriveInput, Fields::Named, FieldsNamed, Lit, Meta, NestedMeta,
+            parse, AttrStyle, Data::Struct, DeriveInput, Fields::Named,
+            FieldsNamed, Lit, Meta, NestedMeta,
         };
         let struct_tokens: DeriveInput = parse(input).unwrap();
         let data = struct_tokens.data;
@@ -330,15 +271,6 @@ impl Model {
                 }
             }
             if compute.contains(&ExtraInfo::DatabaseTypes) {
-                /*
-                let mut ts = proc_macro2::TokenStream::new();
-                if opt {
-                    Self::strip_option(&field.ty)
-                } else {
-                    &field.ty
-                }.to_tokens(&mut ts);
-                let type_string = ts.to_string();
-                */
                 let type_string = tokens_to_string(if opt {
                     Self::strip_option(&field.ty)
                 } else {
@@ -347,13 +279,17 @@ impl Model {
                 dbt = Some(match type_string.as_str() {
                     "f32" | "f64" => parse_quote!(vicocomo::DbType::Float),
                     "bool" | "i32" | "i64" | "u32" | "u64" | "usize"
-                        | "NaiveDate" => parse_quote!(vicocomo::DbType::Int),
+                    | "NaiveDate" => parse_quote!(vicocomo::DbType::Int),
                     "String" => parse_quote!(vicocomo::DbType::Text),
                     "Option < f32 >" | "Option < f64 >" => {
                         parse_quote!(vicocomo::DbType::NulFloat)
                     }
-                    "Option < bool >" | "Option < i32 >" | "Option < i64 >"
-                    | "Option < u32 >" | "Option < u64 >" | "Option < usize >"
+                    "Option < bool >"
+                    | "Option < i32 >"
+                    | "Option < i64 >"
+                    | "Option < u32 >"
+                    | "Option < u64 >"
+                    | "Option < usize >"
                     | "Option < NaiveDate >" => {
                         parse_quote!(vicocomo::DbType::NulInt)
                     }
@@ -431,8 +367,8 @@ impl Model {
                 }
             };
         }
-        // The derive macro implementations is much simplified by always having
-        // mandatory fields before optional
+        // The derive macro implementations are much simplified by always
+        // having mandatory fields before optional
         concat! {
             all_cols,
             pk_mand_cols,
@@ -468,10 +404,6 @@ impl Model {
             all_upd_cols.iter().map(|c| c.value()).collect::<Vec<_>>();
         concat! { all_upd_db_types, upd_mand_db_types, upd_opt_db_types }
         let pk_type = Self::type_vec_to_type(&mut pk_types);
-        /*
-        println!("all_cols: {:?}", all_cols);
-        println!("all_db_types: {:?}", all_db_types.iter().map(|t| tokens_to_string(t)).collect::<Vec<_>>());
-        */
         Self {
             struct_id,
             table_name,
@@ -539,20 +471,107 @@ impl Model {
         result.into()
     }
 
-    /*
-    fn filter<P>(&self, p: P) -> Vec<&Field>
-    where
-        P: FnMut(&&Field) -> bool,
-    {
-        self.fields.iter().filter(p).collect()
+    pub fn pk_cols_params_expr(&self) -> Expr {
+        let pk_mand_cols = &self.pk_mand_cols;
+        let pk_mand_fields = &self.pk_mand_fields;
+        let pk_opt_cols = &self.pk_opt_cols;
+        let pk_opt_field_names = &self.pk_opt_field_names;
+        let pk_opt_fields = &self.pk_opt_fields;
+        parse_quote!(
+            {
+                let mut pk_cols: Vec<String> = vec![];
+                let mut values: Vec<vicocomo::DbValue> = vec![];
+                let mut par_ix = 0;
+                #(
+                    par_ix += 1;
+                    pk_cols.push(format!("{} = ${}", #pk_mand_cols, par_ix));
+                    values.push(self.#pk_mand_fields.clone().into());
+                )*
+                #(
+                    match &self.#pk_opt_fields {
+                        Some(val) => {
+                            par_ix += 1;
+                            pk_cols.push(
+                                format!("{} = ${}", #pk_opt_cols, par_ix)
+                            );
+                            values.push(val.clone().into());
+                        }
+                        None => return Err(vicocomo::Error::Database(format!(
+                            "missing primary key {}",
+                            #pk_opt_field_names,
+                        ))),
+                    }
+                )*
+                (pk_cols, values, par_ix)
+            }
+        )
     }
 
-    fn type_to_string(typ: &Type) -> String {
-     // use proc_macro2;
-        use quote::ToTokens;
-        let mut ts = proc_macro2::TokenStream::new();
-        typ.to_tokens(&mut ts);
-        ts.to_string()
+    pub fn placeholders_expr(row_cnt: Expr, col_cnt: Expr) -> Expr {
+        parse_quote!(
+            (0..#row_cnt)
+                .map(|row_ix| {
+                    format!(
+                        "({})",
+                        (0..#col_cnt)
+                            .map(|col_ix| {
+                                format!( "${}", 1 + #col_cnt * row_ix + col_ix,)
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    )
+                }).collect::<Vec<_>>()
+                .join(", ")
+        )
     }
-    */
+
+    pub fn query_err(query: &str) -> LitStr {
+        LitStr::new(
+            format!("{} {{}} records, expected {{}}", query).as_str(),
+            Span::call_site(),
+        )
+    }
+
+    pub fn rows_to_models_expr(
+        rows: Expr,
+        man: &[Ident],
+        opt: &[Ident],
+    ) -> Expr {
+        parse_quote!(
+            {
+                let mut error: Option<vicocomo::Error> = None;
+                let mut models = Vec::new();
+                for mut row in #rows.drain(..) {
+                    #(
+                        let #man;
+                        match row.drain(..1).next().unwrap().try_into() {
+                            Ok(val) => #man = val,
+                            Err(err) => {
+                                error = Some(err);
+                                break;
+                            },
+                        }
+                    )*
+                    #(
+                        let #opt;
+                        match row.drain(..1).next().unwrap().try_into() {
+                            Ok(val) => #opt = Some(val),
+                            Err(err) => {
+                                error = Some(err);
+                                break;
+                            },
+                        }
+                    )*
+                    models.push(Self {
+                        #( #man , )*
+                        #( #opt , )*
+                    });
+                }
+                match error {
+                    Some(err) => Err(err),
+                    None => Ok(models),
+                }
+            }
+        )
+    }
 }

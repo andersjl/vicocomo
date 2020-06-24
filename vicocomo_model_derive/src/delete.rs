@@ -3,7 +3,6 @@ use proc_macro::TokenStream;
 
 #[allow(unused_variables)]
 pub fn delete_model_impl(model: &Model) -> TokenStream {
-    use crate::utils::*;
     use quote::quote;
     use syn::{export::Span, parse_quote, Expr, LitStr};
     //println!("Delete");
@@ -73,20 +72,12 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
         .as_str(),
         Span::call_site(),
     );
-    let delete_err = query_err("delete");
-    let batch_placeholders =
-        placeholders_expr(parse_quote!(batch.len()), parse_quote!(#pk_len));
-    let pk_cols_params = pk_cols_params_expr(
-        pk_mand_cols,
-        pk_mand_fields,
-        pk_opt_cols,
-        pk_opt_field_names,
-        pk_opt_fields,
+    let delete_err = Model::query_err("delete");
+    let batch_placeholders = Model::placeholders_expr(
+        parse_quote!(batch.len()),
+        parse_quote!(#pk_len),
     );
-    /*
-    let debug: Expr = parse_quote!(#pk_cols_params);
-    println!("pk_cols_params: {}", tokens_to_string(&debug));
-    */
+    let pk_cols_params = model.pk_cols_params_expr();
     let gen = quote! {
         impl<'a> vicocomo::MdlDelete<'a, #pk_type> for #struct_id {
             fn delete(self, db: &mut impl vicocomo::DbConn<'a>)

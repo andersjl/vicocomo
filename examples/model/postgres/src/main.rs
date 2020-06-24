@@ -2,10 +2,14 @@
 
 use chrono::NaiveDate;
 use std::convert::TryInto;
-use vicocomo::{ DbConn, DbValue, MdlDelete, MdlFind, MdlQueryBld, MdlSave};
+use vicocomo::{DbConn, DbValue, MdlDelete, MdlFind, MdlQueryBld, MdlSave};
 use vicocomo_postgres::PgConn;
 
-enum Show{Nothing, OneLine, PrettyUgly}
+enum Show {
+    Nothing,
+    OneLine,
+    PrettyUgly,
+}
 const SHOW: Show = Show::Nothing;
 
 #[derive(
@@ -46,7 +50,7 @@ struct MultiPk {
     Debug,
     vicocomo::DeleteModel,
     vicocomo::FindModel,
-    vicocomo::SaveModel
+    vicocomo::SaveModel,
 )]
 struct SinglePk {
     #[vicocomo_optional]
@@ -64,14 +68,14 @@ struct SinglePk {
 }
 
 pub fn main() {
-
     dotenv::dotenv().ok();
 
     let database_url =
         std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     let mut db = PgConn::connect(&database_url).expect("cannot connect");
-    match db.connection().batch_execute("
+    match db.connection().batch_execute(
+        "
         DROP TABLE IF EXISTS multi_pks;
         DROP TABLE IF EXISTS single_pks;
         CREATE TABLE multi_pks
@@ -100,7 +104,8 @@ pub fn main() {
         ,   un1  BIGINT
         ,   un2  BIGINT
         );
-    ") {
+    ",
+    ) {
         Ok(_) => println!("created tables\n"),
         Err(e) => panic!("{}", e),
     }
@@ -127,8 +132,9 @@ pub fn main() {
     };
     println!("inserting {:?} .. ", m);
     assert!(m.insert(&mut db).is_ok());
-    assert!(format!("{:?}", m) ==
-        "MultiPk { id: Some(1), id2: 1, bool_mand: false, \
+    assert!(
+        format!("{:?}", m)
+            == "MultiPk { id: Some(1), id2: 1, bool_mand: false, \
             bool_mand_nul: None, f32_mand: 0.0, f32_opt: Some(1.0), \
             f64_mand: 0.0, f64_opt_nul: Some(Some(1.0)), i32_mand: 0, \
             i32_opt_nul: Some(Some(1)), i64_mand: 0, date_mand: 0000-12-31, \
@@ -163,14 +169,15 @@ pub fn main() {
     m.i32_mand = -32;
     m.i32_opt_nul = Some(Some(-32));
     m.i64_mand = 64;
-    m.date_mand = NaiveDate::from_num_days_from_ce(1) ;
+    m.date_mand = NaiveDate::from_num_days_from_ce(1);
     m.string_mand = "hello".to_string();
     m.u32_mand = 32;
     m.u64_mand = 64;
     m.usize_mand = 1;
-    m.update(& mut db);
-    assert!(format!("{:?}", m) ==
-        "MultiPk { id: Some(1), id2: 42, bool_mand: true, \
+    m.update(&mut db).unwrap();
+    assert!(
+        format!("{:?}", m)
+            == "MultiPk { id: Some(1), id2: 42, bool_mand: true, \
             bool_mand_nul: Some(false), f32_mand: 32.0, f32_opt: Some(32.0), \
             f64_mand: 64.0, f64_opt_nul: Some(None), i32_mand: -32, \
             i32_opt_nul: Some(Some(-32)), i64_mand: 64, \
@@ -323,7 +330,8 @@ pub fn main() {
     println!("query() with default order ..");
     let found = SinglePk::query(&mut db, &query);
     assert!(
-        format!("{:?}", found.unwrap()) == "[\
+        format!("{:?}", found.unwrap())
+            == "[\
             SinglePk { \
                 id: Some(42), \
                 name: Some(\"nytt namn\"), \
@@ -359,7 +367,8 @@ pub fn main() {
         .unwrap();
     let found = SinglePk::query(&mut db, &query);
     assert!(
-        format!("{:?}", found.unwrap()) == "[\
+        format!("{:?}", found.unwrap())
+            == "[\
             SinglePk { \
                 id: Some(42), \
                 name: Some(\"nytt namn\"), \
@@ -388,7 +397,8 @@ pub fn main() {
     query = MdlQueryBld::new().order("un1, name DESC").query().unwrap();
     let found = SinglePk::query(&mut db, &query);
     assert!(
-        format!("{:?}", found.unwrap()) == "[\
+        format!("{:?}", found.unwrap())
+            == "[\
             SinglePk { \
                 id: Some(42), \
                 name: Some(\"nytt namn\"), \
@@ -424,7 +434,8 @@ pub fn main() {
     query.set_limit(Some(2));
     let found = SinglePk::query(&mut db, &query);
     assert!(
-        format!("{:?}", found.unwrap()) == "[\
+        format!("{:?}", found.unwrap())
+            == "[\
             SinglePk { \
                 id: Some(42), \
                 name: Some(\"nytt namn\"), \
@@ -447,7 +458,8 @@ pub fn main() {
     query.set_offset(Some(1));
     let found = SinglePk::query(&mut db, &query);
     assert!(
-        format!("{:?}", found.unwrap()) == "[\
+        format!("{:?}", found.unwrap())
+            == "[\
             SinglePk { \
                 id: Some(3), \
                 name: Some(\"hopp\"), \
@@ -477,7 +489,8 @@ pub fn main() {
     query.set_offset(Some(1));
     let found = SinglePk::query(&mut db, &query);
     assert!(
-        format!("{:?}", found.unwrap()) == "[\
+        format!("{:?}", found.unwrap())
+            == "[\
             SinglePk { \
                 id: Some(3), \
                 name: Some(\"hopp\"), \
@@ -530,29 +543,35 @@ pub fn main() {
     // --- The End -----------------------------------------------------------
 
     db.connection()
-        .batch_execute( "
+        .batch_execute(
+            "
             DROP TABLE multi_pks;
             DROP TABLE single_pks;
-        ").unwrap();
+        ",
+        )
+        .unwrap();
 }
 
 fn show_multi<'a>(db: &mut impl DbConn<'a>) {
     match SHOW {
         Show::Nothing => (),
-        Show::OneLine =>
-            println!("--- multi_pks: {:?}", MultiPk::load(db).unwrap()),
-        Show::PrettyUgly =>
-            println!("--- multi_pks: {:#?}", MultiPk::load(db).unwrap()),
+        Show::OneLine => {
+            println!("--- multi_pks: {:?}", MultiPk::load(db).unwrap())
+        }
+        Show::PrettyUgly => {
+            println!("--- multi_pks: {:#?}", MultiPk::load(db).unwrap())
+        }
     }
 }
 
 fn show_single<'a>(db: &mut impl DbConn<'a>) {
     match SHOW {
         Show::Nothing => (),
-        Show::OneLine =>
-            println!("--- single_pks: {:?}", SinglePk::load(db).unwrap()),
-        Show::PrettyUgly =>
-            println!("--- single_pks: {:#?}", SinglePk::load(db).unwrap()),
+        Show::OneLine => {
+            println!("--- single_pks: {:?}", SinglePk::load(db).unwrap())
+        }
+        Show::PrettyUgly => {
+            println!("--- single_pks: {:#?}", SinglePk::load(db).unwrap())
+        }
     }
 }
-
