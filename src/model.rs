@@ -19,7 +19,10 @@ pub trait MdlDelete<'a, PkType> {
 }
 
 #[allow(unused_variables)]
-pub trait MdlFind<'a>: Sized {
+pub trait MdlFind<'a, PkType>: Sized {
+    fn find(db: &mut impl DbConn<'a>, pk: &PkType) -> Option<Self>;
+    fn find_equal(&self, db: &mut impl DbConn<'a>) -> Option<Self>;
+
     // Return a vector with all records in the table in the default order.
     //
     fn load(db: &mut impl DbConn<'a>) -> Result<Vec<Self>, Error>;

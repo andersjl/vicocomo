@@ -5,33 +5,15 @@ use syn::{export::Span, Ident};
 #[allow(unused_variables)]
 pub fn find_model_impl(model: &Model) -> TokenStream {
     use quote::quote;
-    use syn::parse_quote;
-    let Model {
-        struct_id,
-        table_name,
-        fields,
-        all_cols,
-        all_db_types,
-        all_fields,
-        all_mand_cols,
-        all_mand_fields,
-        all_pk_cols,
-        all_pk_fields,
-        all_opt_cols,
-        all_opt_fields,
-        all_upd_cols,
-        all_upd_db_types,
-        pk_mand_fields,
-        pk_mand_cols,
-        pk_opt_fields,
-        pk_opt_field_names,
-        pk_opt_cols,
-        pk_type,
-        upd_mand_fields,
-        upd_mand_cols,
-        upd_opt_fields,
-        upd_opt_cols,
-    } = model;
+    use syn::{Expr, punctuated::Punctuated, parse_quote, token::Comma};
+    let struct_id = &model.struct_id;
+    let table_name = &model.table_name;
+    let all_cols = &model.all_cols;
+    let all_db_types = &model.all_db_types;
+    let all_mand_fields = &model.all_mand_fields;
+    let all_pk_fields = &model.all_pk_fields;
+    let all_opt_fields = &model.all_opt_fields;
+    let pk_type = &model.pk_type;
 
     // == general functions ==================================================
     // -- load(db) -----------------------------------------------------------
@@ -77,13 +59,56 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         all_mand_fields.as_slice(),
         all_opt_fields.as_slice(),
     );
+    let pk_self_to_tuple = model.pk_self_to_tuple();
+    let find_pk_sql = model.find_sql(&model.all_pk_cols);
+    let pk_len = model.all_pk_fields.len();
+    let pk_iter = (0..pk_len).map(|ix| syn::Index::from(ix));
+    let mut pk_values: Punctuated<Expr, Comma> = Punctuated::new();
+    if pk_len == 1 {
+        pk_values.push(parse_quote!((*pk).into()));
+    } else {
+        for ix in (0..pk_len).map(|ix| syn::Index::from(ix)) {
+            pk_values.push(parse_quote!(pk.#ix.into()));
+        }
+    }
+    let find_model = Model::rows_to_models_expr(
+        parse_quote!(outp),
+        all_mand_fields.as_slice(),
+        all_opt_fields.as_slice(),
+    );
     let mut gen = quote! {
-        impl<'a> vicocomo::MdlFind<'a> for #struct_id {
+        impl<'a> vicocomo::MdlFind<'a, #pk_type> for #struct_id {
+            fn find(db: &mut impl DbConn<'a>, pk: &#pk_type) -> Option<Self> {
+                match db.query(
+                    #find_pk_sql,
+                    &[ #pk_values ],
+                    &[ #( #all_db_types ),* ]
+                ) {
+                    Ok(mut outp) if 1 == outp.len() => {
+                        match #find_model {
+                            Ok(mut models) => {
+                                Some(models.drain(..1).next().unwrap())
+                            },
+                            Err(_) => None,
+                        }
+                    },
+                    _ => None,
+                }
+                /*
+                None
+                */
+            }
+
+            fn find_equal(&self, db: &mut impl DbConn<'a>) -> Option<Self> {
+                Self::find(db, &#pk_self_to_tuple)
+            }
+
             fn load(
                 db: &mut impl vicocomo::DbConn<'a>,
             ) -> Result<Vec<Self>, vicocomo::Error> {
                 #load_models
             }
+
             fn query(
                 db: &mut impl vicocomo::DbConn<'a>,
                 query: &vicocomo::MdlQuery
@@ -125,8 +150,11 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
 
     // == unique field functions =============================================
     for uni_flds in model.unique_fields() {
-        use syn::{punctuated::Punctuated, token::Comma, Expr, FnArg};
-        let mut uni_cols = vec![];
+        if uni_flds[0].pri {
+            continue;
+        }
+        use syn::FnArg;
+        let mut uni_cols = Vec::new();
         let uni_str = &uni_flds
             .iter()
             .map(|f| f.id.to_string())
@@ -147,52 +175,22 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
             find_args.push(parse_quote!(#par_id));
             par_vals.push(parse_quote!(#par_id.into()));
             self_args.push(parse_quote!(self.#fld_id));
-            uni_cols.push(&field.col);
+            uni_cols.push(field.col.value());
         }
 
         // -- finding --------------------------------------------------------
-        // SELECT col1, col2, col3 FROM table WHERE col1 = x AND col3 = y
-        let find_sql = format!(
-            "SELECT {} FROM {} WHERE {}",
-            &all_cols.join(", "),
-            &table_name,
-            &uni_cols
-                .iter()
-                .enumerate()
-                .map(|(ix, col)| format!("{} = ${}", col.value(), ix + 1))
-                .collect::<Vec<_>>()
-                .join(" AND "),
-        );
+        let find_uni_sql = model.find_sql(&uni_cols);
         let find_by_str = format!("find_by_{}", uni_str);
-        let find_by_id = Ident::new(
-            if uni_flds[0].pri {
-                "find"
-            } else {
-                find_by_str.as_str()
-            },
-            Span::call_site(),
-        );
+        let find_by_id = Ident::new(find_by_str.as_str(), Span::call_site());
         let find_eq_str = format!("find_by_equal_{}", uni_str);
-        let find_eq_id = Ident::new(
-            if uni_flds[0].pri {
-                "find_equal"
-            } else {
-                find_eq_str.as_str()
-            },
-            Span::call_site(),
-        );
-        let find_model = Model::rows_to_models_expr(
-            parse_quote!(outp),
-            all_mand_fields.as_slice(),
-            all_opt_fields.as_slice(),
-        );
+        let find_eq_id = Ident::new(find_eq_str.as_str(), Span::call_site());
         gen.extend(quote! {
             impl<'a> #struct_id {
 
                 // -- find_by_field1_and_field3(db, v1, v3) ------------------
                 pub fn #find_by_id(#find_pars) -> Option<Self> {
                     match db.query(
-                        #find_sql,
+                        #find_uni_sql,
                         &[#par_vals],
                         &[ #( #all_db_types ),* ]
                     ) {

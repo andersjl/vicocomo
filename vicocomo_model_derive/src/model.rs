@@ -151,7 +151,7 @@ impl Model {
             "expected #[vicocomo_primary]";
         const EXPECT_UNIQUE_ERROR: &'static str =
             "expected #[vicocomo_unique = \"label\"]";
-        let mut fields = vec![];
+        let mut fields = Vec::new();
         for field in named_fields {
             let id = field.ident.expect("expected field identifier").clone();
             let ty = field.ty.clone();
@@ -313,20 +313,20 @@ impl Model {
                 opt,
             });
         }
-        let mut pk_mand_cols: Vec<LitStr> = vec![];
-        let mut pk_mand_db_types: Vec<Expr> = vec![];
-        let mut pk_mand_fields: Vec<Ident> = vec![];
-        let mut pk_opt_cols: Vec<LitStr> = vec![];
-        let mut pk_opt_db_types: Vec<Expr> = vec![];
-        let mut pk_opt_field_names: Vec<LitStr> = vec![];
-        let mut pk_opt_fields: Vec<Ident> = vec![];
-        let mut pk_types: Vec<&Type> = vec![];
-        let mut upd_mand_cols: Vec<LitStr> = vec![];
-        let mut upd_mand_db_types: Vec<Expr> = vec![];
-        let mut upd_mand_fields: Vec<Ident> = vec![];
-        let mut upd_opt_cols: Vec<LitStr> = vec![];
-        let mut upd_opt_db_types: Vec<Expr> = vec![];
-        let mut upd_opt_fields: Vec<Ident> = vec![];
+        let mut pk_mand_cols: Vec<LitStr> = Vec::new();
+        let mut pk_mand_db_types: Vec<Expr> = Vec::new();
+        let mut pk_mand_fields: Vec<Ident> = Vec::new();
+        let mut pk_opt_cols: Vec<LitStr> = Vec::new();
+        let mut pk_opt_db_types: Vec<Expr> = Vec::new();
+        let mut pk_opt_field_names: Vec<LitStr> = Vec::new();
+        let mut pk_opt_fields: Vec<Ident> = Vec::new();
+        let mut pk_types: Vec<&Type> = Vec::new();
+        let mut upd_mand_cols: Vec<LitStr> = Vec::new();
+        let mut upd_mand_db_types: Vec<Expr> = Vec::new();
+        let mut upd_mand_fields: Vec<Ident> = Vec::new();
+        let mut upd_opt_cols: Vec<LitStr> = Vec::new();
+        let mut upd_opt_db_types: Vec<Expr> = Vec::new();
+        let mut upd_opt_fields: Vec<Ident> = Vec::new();
         for field in &fields {
             let col = &field.col;
             let dbt = &field.dbt;
@@ -403,7 +403,7 @@ impl Model {
         let all_upd_cols =
             all_upd_cols.iter().map(|c| c.value()).collect::<Vec<_>>();
         concat! { all_upd_db_types, upd_mand_db_types, upd_opt_db_types }
-        let pk_type = Self::type_vec_to_type(&mut pk_types);
+        let pk_type = Self::type_vec_to_tuple(pk_types.as_slice());
         Self {
             struct_id,
             table_name,
@@ -455,9 +455,9 @@ impl Model {
         panic!("expected Option<_>, got {:?}", ty);
     }
 
-    fn type_vec_to_type(pk_types: &mut Vec<&Type>) -> Type {
-        if 1 == pk_types.len() {
-            return pk_types[0].clone();
+    fn type_vec_to_tuple(types: &[&Type]) -> Type {
+        if 1 == types.len() {
+            return types[0].clone();
         }
         let mut result: syn::TypeTuple = syn::TypeTuple {
             paren_token: syn::token::Paren {
@@ -465,44 +465,90 @@ impl Model {
             },
             elems: syn::punctuated::Punctuated::new(),
         };
-        for ty in pk_types.drain(..) {
-            result.elems.push(ty.clone());
+        for ty in types {
+            result.elems.push((*ty).clone());
         }
         result.into()
     }
 
-    pub fn pk_cols_params_expr(&self) -> Expr {
-        let pk_mand_cols = &self.pk_mand_cols;
-        let pk_mand_fields = &self.pk_mand_fields;
-        let pk_opt_cols = &self.pk_opt_cols;
-        let pk_opt_field_names = &self.pk_opt_field_names;
-        let pk_opt_fields = &self.pk_opt_fields;
+    // SELECT col1, col2, col3 FROM table WHERE col1 = $1 AND col3 = $2
+    pub fn find_sql(&self, uni_cols: &[String]) -> String {
+        format!(
+            "SELECT {} FROM {} WHERE {}",
+            &self.all_cols.join(", "),
+            &self.table_name,
+            &uni_cols
+                .iter()
+                .enumerate()
+                .map(|(ix, col)| format!("{} = ${}", col, ix + 1))
+                .collect::<Vec<_>>()
+                .join(" AND "),
+        )
+    }
+
+    pub fn pk_batch_expr(&self, batch_name: &str) -> Expr {
+        let pk_len = self.all_pk_fields.len();
+        let batch: Ident = Ident::new(batch_name, Span::call_site());
+        match pk_len {
+            0 => panic!("missing primary key field"),
+            1 => parse_quote!(
+                &#batch.iter().map(|v| (*v).into()).collect::<Vec<_>>()[..]
+            ),
+            _ => {
+                let ixs = (0..pk_len).map(|i| {
+                    syn::LitInt::new(i.to_string().as_str(), Span::call_site())
+                });
+                parse_quote!(
+                    &#batch
+                        .iter()
+                        .fold(
+                            Vec::new(),
+                            |mut all_vals, pk| {
+                                #( all_vals.push((*pk).#ixs.into()); )*
+                                all_vals
+                            }
+                        )[..]
+                )
+            }
+        }
+    }
+
+    pub fn pk_select(&self) -> LitStr {
+        let mut pk_cols: Vec<_> = self.pk_mand_cols
+            .iter()
+            .enumerate()
+            .map(|(ix, col)| format!("{} = ${}", col.value(), ix + 1))
+            .collect();
+        let mand_len = pk_cols.len();
+        for (ix, col) in self.pk_opt_cols.iter().enumerate() {
+            pk_cols.push(format!("{} = ${}", col.value(), ix + mand_len + 1));
+        }
+        LitStr::new(&pk_cols.join(" AND "), Span::call_site())
+    }
+
+    pub fn pk_self_to_tuple(&self) -> Expr {
+        use syn::{punctuated::Punctuated, token::Comma};
+        let mut exprs: Punctuated<Expr, Comma> = Punctuated::new();
+        for mand in &self.pk_mand_fields {
+            exprs.push(parse_quote!(self.#mand));
+        }
+        for opt in &self.pk_opt_fields {
+            exprs.push(parse_quote!(self.#opt.unwrap()));
+        }
+        match self.all_pk_fields.len() {
+            0 => panic!("missing primary key"),
+            1 => exprs[0].clone(),
+            _ => parse_quote!((#exprs)),
+        }
+    }
+
+    pub fn pk_values(&self) -> Expr {
+        let all_pk_fields = &self.all_pk_fields;
         parse_quote!(
             {
-                let mut pk_cols: Vec<String> = vec![];
-                let mut values: Vec<vicocomo::DbValue> = vec![];
-                let mut par_ix = 0;
-                #(
-                    par_ix += 1;
-                    pk_cols.push(format!("{} = ${}", #pk_mand_cols, par_ix));
-                    values.push(self.#pk_mand_fields.clone().into());
-                )*
-                #(
-                    match &self.#pk_opt_fields {
-                        Some(val) => {
-                            par_ix += 1;
-                            pk_cols.push(
-                                format!("{} = ${}", #pk_opt_cols, par_ix)
-                            );
-                            values.push(val.clone().into());
-                        }
-                        None => return Err(vicocomo::Error::Database(format!(
-                            "missing primary key {}",
-                            #pk_opt_field_names,
-                        ))),
-                    }
-                )*
-                (pk_cols, values, par_ix)
+                let mut values: Vec<vicocomo::DbValue> = Vec::new();
+                #( values.push(self.#all_pk_fields.clone().into()); )*
+                values
             }
         )
     }

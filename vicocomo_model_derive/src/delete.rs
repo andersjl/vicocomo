@@ -4,7 +4,7 @@ use proc_macro::TokenStream;
 #[allow(unused_variables)]
 pub fn delete_model_impl(model: &Model) -> TokenStream {
     use quote::quote;
-    use syn::{export::Span, parse_quote, Expr, LitStr};
+    use syn::{export::Span, parse_quote, Expr, Ident, LitStr};
     //println!("Delete");
     let struct_id = &model.struct_id;
     let all_pk_fields = &model.all_pk_fields;
@@ -15,37 +15,7 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
     let pk_opt_cols = &model.pk_opt_cols;
     let pk_len = all_pk_fields.len();
     let pk_type = &model.pk_type;
-    let (self_expr, batch_expr): (Expr, Expr) = match pk_len {
-        0 => panic!("missing primary key field"),
-        1 => {
-            let pk_field = &all_pk_fields[0];
-            (
-                parse_quote!(std::slice::from_ref(&self.#pk_field.into())),
-                parse_quote!(
-                    &batch.iter().map(|v| (*v).into()).collect::<Vec<_>>()[..]
-                ),
-            )
-        }
-        _ => {
-            let ixs = (0..pk_len).map(|i| {
-                syn::LitInt::new(i.to_string().as_str(), Span::call_site())
-            });
-            (
-                parse_quote!( &[ #( self.#all_pk_fields.into()),* ] ),
-                parse_quote!(
-                    &batch
-                        .iter()
-                        .fold(
-                            vec![],
-                            |mut all_vals, pk| {
-                                #( all_vals.push((*pk).#ixs.into()); )*
-                                all_vals
-                            }
-                        )[..]
-                ),
-            )
-        }
-    };
+    let batch_expr = model.pk_batch_expr("batch");
     let self_sql = LitStr::new(
         format!(
             // "DELETE FROM table WHERE pk1 = $1 AND pk2 = $2",
@@ -77,13 +47,15 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
         parse_quote!(batch.len()),
         parse_quote!(#pk_len),
     );
-    let pk_cols_params = model.pk_cols_params_expr();
     let gen = quote! {
         impl<'a> vicocomo::MdlDelete<'a, #pk_type> for #struct_id {
             fn delete(self, db: &mut impl vicocomo::DbConn<'a>)
                 -> Result<usize, vicocomo::Error>
             {
-                let deleted = db.exec(#self_sql, #self_expr)?;
+                let deleted = db.exec(
+                    #self_sql,
+                    &[ #( self.#all_pk_fields.into() ),* ],
+                )?;
                 if 1 != deleted {
                     return Err(vicocomo::Error::Database(format!(
                         #delete_err,
