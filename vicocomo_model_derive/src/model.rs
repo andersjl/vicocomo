@@ -496,7 +496,10 @@ impl Model {
             ),
             _ => {
                 let ixs = (0..pk_len).map(|i| {
-                    syn::LitInt::new(i.to_string().as_str(), Span::call_site())
+                    syn::LitInt::new(
+                        i.to_string().as_str(),
+                        Span::call_site(),
+                    )
                 });
                 parse_quote!(
                     &#batch
@@ -514,7 +517,8 @@ impl Model {
     }
 
     pub fn pk_select(&self) -> LitStr {
-        let mut pk_cols: Vec<_> = self.pk_mand_cols
+        let mut pk_cols: Vec<_> = self
+            .pk_mand_cols
             .iter()
             .enumerate()
             .map(|(ix, col)| format!("{} = ${}", col.value(), ix + 1))

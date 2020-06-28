@@ -4,8 +4,7 @@ use proc_macro::TokenStream;
 #[allow(unused_variables)]
 pub fn delete_model_impl(model: &Model) -> TokenStream {
     use quote::quote;
-    use syn::{export::Span, parse_quote, Expr, Ident, LitStr};
-    //println!("Delete");
+    use syn::{export::Span, parse_quote, LitStr};
     let struct_id = &model.struct_id;
     let all_pk_fields = &model.all_pk_fields;
     let pk_mand_fields = &model.pk_mand_fields;

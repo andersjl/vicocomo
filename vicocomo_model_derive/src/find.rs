@@ -5,7 +5,7 @@ use syn::{export::Span, Ident};
 #[allow(unused_variables)]
 pub fn find_model_impl(model: &Model) -> TokenStream {
     use quote::quote;
-    use syn::{Expr, punctuated::Punctuated, parse_quote, token::Comma};
+    use syn::{parse_quote, punctuated::Punctuated, token::Comma, Expr};
     let struct_id = &model.struct_id;
     let table_name = &model.table_name;
     let all_cols = &model.all_cols;
@@ -182,7 +182,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         let find_uni_sql = model.find_sql(&uni_cols);
         let find_by_str = format!("find_by_{}", uni_str);
         let find_by_id = Ident::new(find_by_str.as_str(), Span::call_site());
-        let find_eq_str = format!("find_by_equal_{}", uni_str);
+        let find_eq_str = format!("find_equal_{}", uni_str);
         let find_eq_id = Ident::new(find_eq_str.as_str(), Span::call_site());
         gen.extend(quote! {
             impl<'a> #struct_id {
@@ -216,23 +216,9 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
 
         // -- validating -----------------------------------------------------
         let val_uni_str = format!("validate_unique_{}", uni_str);
-        let uni_id = Ident::new(
-            if uni_flds[0].pri {
-                "validate_unique"
-            } else {
-                val_uni_str.as_str()
-            },
-            Span::call_site(),
-        );
+        let uni_id = Ident::new(val_uni_str.as_str(), Span::call_site());
         let val_exi_str = format!("validate_exists_{}", uni_str);
-        let exi_id = Ident::new(
-            if uni_flds[0].pri {
-                "validate_exists"
-            } else {
-                val_exi_str.as_str()
-            },
-            Span::call_site(),
-        );
+        let exi_id = Ident::new(val_exi_str.as_str(), Span::call_site());
         let mut exi_pars = find_pars.clone();
         exi_pars.push(parse_quote!(msg: &str));
         let validate_error_format = format!(

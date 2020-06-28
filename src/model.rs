@@ -1,5 +1,4 @@
-use crate::Error;
-use crate::{DbConn, DbValue};
+use crate::{DbConn, DbValue, Error};
 
 #[allow(unused_variables)]
 pub trait MdlDelete<'a, PkType> {
@@ -36,6 +35,28 @@ pub trait MdlFind<'a, PkType>: Sized {
         db: &mut impl DbConn<'a>,
         q: &MdlQuery,
     ) -> Result<Vec<Self>, Error>;
+
+    fn validate_exists(
+        db: &mut impl DbConn<'a>,
+        pk: &PkType,
+        msg: &str,
+    ) -> Result<(), Error> {
+        match Self::find(db, pk) {
+            Some(_) => Ok(()),
+            None => Err(Error::database(msg)),
+        }
+    }
+
+    fn validate_unique(
+        &self,
+        db: &mut impl DbConn<'a>,
+        msg: &str,
+    ) -> Result<(), Error> {
+        match self.find_equal(db) {
+            Some(_) => Err(Error::database(msg)),
+            None => Ok(()),
+        }
+    }
 }
 
 #[allow(unused_variables)]

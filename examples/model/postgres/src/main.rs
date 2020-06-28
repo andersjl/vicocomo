@@ -144,8 +144,16 @@ pub fn main() {
     show_multi(&mut db);
     m.id2 = 42;
     println!("not finding non-existing {:?} ..", m);
-    let res = m.find_equal(&mut db);
-    assert!(res.is_none());
+    assert!(MultiPk::find(&mut db, &(42, 17)).is_none());
+    assert!(m.find_equal(&mut db).is_none());
+    assert!(
+        MultiPk::validate_exists(&mut db, &(m.id2, m.id.unwrap()), "message")
+            .err()
+            .unwrap()
+            .to_string()
+            == "Databasfel\nmessage"
+    );
+    assert!(m.validate_unique(&mut db, "message").is_ok());
     println!("    OK");
     println!("error updating non-existing ..");
     let res = m.update(&mut db);
@@ -154,6 +162,23 @@ pub fn main() {
     println!("inserting non-existing ..");
     let res = m.insert(&mut db);
     assert!(res.is_ok());
+    println!("    OK");
+    println!("finding existing ..");
+    assert!(m == MultiPk::find(&mut db, &(m.id2, m.id.unwrap())).unwrap());
+    assert!(m == m.find_equal(&mut db).unwrap());
+    assert!(MultiPk::validate_exists(
+        &mut db,
+        &(m.id2, m.id.unwrap()),
+        "message"
+    )
+    .is_ok());
+    assert!(
+        m.validate_unique(&mut db, "message")
+            .err()
+            .unwrap()
+            .to_string()
+            == "Databasfel\nmessage"
+    );
     println!("    OK");
     println!("error inserting existing ..");
     let res = m.insert(&mut db);
@@ -256,8 +281,18 @@ pub fn main() {
     assert!(res.is_none());
     println!("    OK");
     println!("not finding non-existing by unique fields ..");
-    let res = SinglePk::find_by_un1_and_un2(&mut db, s.un1, s.un2);
-    assert!(res.is_none());
+    assert!(SinglePk::find_by_un1_and_un2(&mut db, s.un1, s.un2).is_none());
+    assert!(s.find_equal_un1_and_un2(&mut db).is_none());
+    assert!(
+        SinglePk::validate_exists_un1_and_un2(
+            &mut db, s.un1, s.un2, "message"
+        )
+        .err()
+        .unwrap()
+        .to_string()
+            == "Databasfel\nmessage: 1, 42"
+    );
+    assert!(s.validate_unique_un1_and_un2(&mut db, "message").is_ok());
     println!("    OK");
     println!("error updating non-existing ..");
     let res = s.update(&mut db);
@@ -315,9 +350,25 @@ pub fn main() {
     println!("finding existing by unique fields ..");
     let res = SinglePk::find_by_un1_and_un2(&mut db, s.un1, s.un2);
     assert!(res.is_some());
-    assert!(format!("{:?}", res.unwrap()) ==
+    let res = res.unwrap();
+    assert!(format!("{:?}", &res) ==
         "SinglePk { id: Some(42), name: Some(\"nytt namn\"), data: None, \
             un1: 1, un2: 42 }"
+    );
+    assert!(
+        format!("{:?}", &res)
+            == format!("{:?}", &s.find_equal_un1_and_un2(&mut db).unwrap())
+    );
+    assert!(SinglePk::validate_exists_un1_and_un2(
+        &mut db, s.un1, s.un2, "message"
+    )
+    .is_ok());
+    assert!(
+        s.validate_unique_un1_and_un2(&mut db, "message")
+            .err()
+            .unwrap()
+            .to_string()
+            == "Databasfel\nmessage: 1, 42"
     );
     println!("    OK");
     let query = MdlQueryBld::new()
