@@ -1,7 +1,7 @@
-mod database;
-mod error;
-mod html;
-mod model;
+pub mod database;
+pub mod error;
+pub mod html;
+pub mod model;
 
 pub use database::{DbConn, DbType, DbValue};
 pub use error::Error;

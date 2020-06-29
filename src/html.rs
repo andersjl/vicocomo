@@ -1,15 +1,12 @@
+//! Helper functions for producing HTML code.
+//!
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-// HtmlAttr ------------------------------------------------------------------
-// To conveniently add several values to an HTML attribute and get a String.
-
-// If values is None, to_string() yields name
-// If values is empty, to_string() yields name=""
-// If values is not empty, to_string() yields name="val1 val2 ..."
-// it is ensured that values are unique and have len() > 0
+/// Represents an HTML attribute.
+///
 #[derive(Clone, Debug)]
 pub struct HtmlAttr {
     name: String,
@@ -17,9 +14,34 @@ pub struct HtmlAttr {
 }
 
 impl HtmlAttr {
-    // Create an HtmlAttr.
-    // name is the attribute name, values are whitespace-separated values.
-    // See above.
+    /// Create an HtmlAttr.
+    ///
+    /// `name` is the attribute name, `values` are whitespace-separated
+    /// values.
+    ///
+    /// ```
+    /// # use vicocomo::html::HtmlAttr;
+    ///
+    /// assert!(
+    ///     HtmlAttr::new("some-name", None).to_string() == "some-name"
+    /// );
+    ///
+    /// assert!(
+    ///     HtmlAttr::new("some-name", Some("")).to_string()
+    ///     == "some-name=\"\""
+    /// );
+    ///
+    /// assert!(
+    ///     HtmlAttr::new("some-name", Some("val1  \n\t  val2")).to_string()
+    ///     == "some-name=\"val1 val2\""
+    /// );
+    ///
+    /// assert!(
+    ///     HtmlAttr::new("some-name", Some("val1 val2 val1")).to_string()
+    ///     == "some-name=\"val1 val2\""
+    /// );
+    /// ```
+    ///
     pub fn new(name: &str, values: Option<&str>) -> Self {
         let mut result = Self {
             name: name.to_string(),
@@ -32,10 +54,16 @@ impl HtmlAttr {
         result
     }
 
-    // Add one or more value to the attribute, separated by whitespace.
-    // After add, the attribute will display as name="val1 val2".
-    // If this is the first add and values is empty, the attribute will
-    // display as name="".
+    /// Add one or more value to the attribute.
+    ///
+    /// `values` contains the values, separated by whitespace.
+    ///
+    /// If `name` is `"some-name"` After `add()`, the attribute will display as
+    /// `<`value of name`>="val1 val2"`.
+    ///
+    /// If this is the first add and `values` is empty, the attribute will
+    /// display as `<`value of name`>=""`.
+    ///
     pub fn add(&mut self, values: &str) {
         use itertools::Itertools;
         let mut vals = match &self.values {
@@ -51,18 +79,21 @@ impl HtmlAttr {
         self.values = Some(vals.into_iter().unique().collect::<Vec<_>>());
     }
 
-    // Clear all values.  After Clear, the attribute will display as only a
-    // name with no value.
+    /// Clear all values.  After Clear, the attribute will display as only a
+    /// name with no value.
+    ///
     pub fn clear(&mut self) {
         self.values = None;
     }
 
-    // The attribute name.
+    /// The attribute name.
+    ///
     pub fn name(&self) -> String {
         self.name.clone()
     }
 
-    // Get all values as Some(space-separated string) or None.
+    /// Get all values as `Some(`space-separated string`)` or `None`.
+    ///
     pub fn values(&self) -> Option<String> {
         match &self.values {
             Some(vals) => Some(vals.join(" ")),
@@ -85,8 +116,8 @@ impl fmt::Display for HtmlAttr {
     }
 }
 
-// InnerHtml enum ------------------------------------------------------------
-
+/// Represents a part of the content of an HTML tag.
+///
 #[derive(Clone, Debug)]
 pub enum InnerHtml {
     Text(String),
@@ -106,14 +137,13 @@ impl fmt::Display for InnerHtml {
     }
 }
 
-// HtmlTag struct ------------------------------------------------------------
-// A general tag
-
 const VOID_ELEMENTS: [&str; 14] = [
     "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
     "meta", "param", "source", "track", "wbr",
 ];
 
+/// Represents a general tag
+///
 #[derive(Clone, Debug)]
 pub struct HtmlTag {
     tag: String,
@@ -123,17 +153,20 @@ pub struct HtmlTag {
 }
 
 impl HtmlTag {
-    // Create an empty tag with no inner HTML.
-    pub fn new(a_tag: &str) -> Self {
+    /// Create an empty tag with no inner HTML.
+    ///
+    pub fn new(tag: &str) -> Self {
         Self {
-            tag: a_tag.to_string(),
+            tag: tag.to_string(),
             attrs: vec![],
             inner: vec![],
-            void: (&VOID_ELEMENTS).iter().find(|&&e| e == a_tag).is_some(),
+            void: (&VOID_ELEMENTS).iter().find(|&&e| e == tag).is_some(),
         }
     }
 
-    // Add values to the attribute attr, or create it if not present.
+    /// Add `values` (whitespace separated) to the attribute `attr`, or create
+    /// it if not present.
+    ///
     fn add_attr_vals(&mut self, attr: &str, values: &str) {
         match self.get_attr_mut(attr) {
             Some(html_attr) => html_attr.add(values),
@@ -141,13 +174,15 @@ impl HtmlTag {
         };
     }
 
-    // Remove all attributes and inner HTML.
+    /// Remove all attributes and inner HTML.
+    ///
     pub fn clear(&mut self) {
         self.attrs = vec![];
         self.inner = vec![];
     }
 
-    // Set the named attribute, removing previous values if any.
+    /// Set the named attribute, removing previous values if any.
+    ///
     pub fn set_attr(&mut self, attr: &str, values: Option<&str>) {
         match self.get_attr_mut(attr) {
             Some(html_attr) => {
@@ -161,7 +196,8 @@ impl HtmlTag {
         };
     }
 
-    // A clone of the tag name.
+    /// A clone of the tag name.
+    ///
     pub fn tag_name(&self) -> String {
         self.tag.clone()
     }
@@ -213,14 +249,14 @@ impl fmt::Display for HtmlTag {
     }
 }
 
-// PathTag trait -------------------------------------------------------------
-// A tag with a URL-valued attribute but no content.  See PathTag derive.
-
+/// A tag with a URL-valued attribute but no content.  See the
+/// [`PathTag`](derive.PathTag.html) derive.
+///
 pub trait PathTag {
-    // Set (replace) the path attribute value of the tag.
-    fn set_path(&mut self, a_path: &str);
+    /// Set (replace) the path attribute value of the tag.
+    fn set_path(&mut self, path: &str);
 
-    // Set (replace) an attribute (not the path attribute) to the tag.
+    /// Set (replace) an attribute (not the path attribute) to the tag.
     fn set_attr(&mut self, attr: &str, values: Option<&str>);
 }
 
@@ -291,13 +327,14 @@ impl fmt::Display for PathTagData {
 }
 */
 
-// ScriptTag -----------------------------------------------------------------
-// A script tag with a src attribute -----------------------------------------
+/// A script tag with a `src` attribute
+///
 #[derive(Clone, Debug, crate::PathTag)]
 #[vicocomo_path_tag_data("script", "src")]
 pub struct ScriptTag(HtmlTag);
 
-// An encapsuled vector of ScriptTag-turned-strings accessed by to_json().
+/// An encapsuled vector of ScriptTag-turned-strings.
+///
 #[derive(Deserialize, Serialize)]
 pub struct Scripts(Vec<String>);
 impl Scripts {
@@ -310,14 +347,15 @@ impl Scripts {
     }
 }
 
-// StyleTag ------------------------------------------------------------------
-// A link tag with an href attribute and rel="stylesheet".
+/// A link tag with an href attribute and rel="stylesheet".
+///
 #[derive(Clone, Debug, crate::PathTag)]
 #[vicocomo_path_tag_data("link", "href")]
 #[vicocomo_path_tag_attr("rel", "stylesheet")]
 pub struct StyleTag(HtmlTag);
 
-// An encapsuled vector of StyleTag-turned-strings accessed by to_json().
+/// An encapsuled vector of StyleTag-turned-strings.
+///
 #[derive(Deserialize, Serialize)]
 pub struct Styles(Vec<String>);
 impl Styles {

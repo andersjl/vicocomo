@@ -1,3 +1,5 @@
+//! Utilities for use by the `vicocomo` derive macros.
+//!
 use quote::ToTokens;
 use syn::{export::Span, Attribute, Ident};
 

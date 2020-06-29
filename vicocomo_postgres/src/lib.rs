@@ -1,7 +1,10 @@
+//! Implement `vicocomo::DbConn` by way of the `postgres` crate.
+
 use postgres;
 use postgres_types;
 use vicocomo::{DbConn, DbType, DbValue, Error};
 
+/// A wrapping of `postgres::Client` that implements `vicocomo::DbConn`.
 pub struct PgConn(postgres::Client);
 
 macro_rules! from_values {
@@ -81,6 +84,7 @@ impl<'a> DbConn<'a> for PgConn {
     }
 }
 
+/// A wrapping of `postgres::Transaction` that implements `vicocomo::DbConn`.
 pub struct PgTrans<'a>(postgres::Transaction<'a>);
 
 impl<'a> DbConn<'a> for PgTrans<'a> {

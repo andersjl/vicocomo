@@ -1,41 +1,47 @@
+//! Trait and helper types to abstract an SQL database.
+//!
 use crate::{db_value_convert, Error};
 use chrono::{Datelike, NaiveDate};
 use std::{convert::TryInto, fmt};
 
+/// A trait for use by other `vicocomo` modules as well as by users.
+///
 pub trait DbConn<'a> {
-    // The type of the transaction() return value.
+    /// The type of the transaction() return value.
+    ///
     type Transaction: DbConn<'a>;
 
-    // Commit the present transaction.  The default method returns an error.
+    /// Commit the present transaction.  The default method returns an error.
+    ///
     fn commit(self: Box<Self>) -> Result<(), Error> {
         Err(Error::database("not in a transaction"))
     }
 
-    // Execute an SQL statement.
-    //
-    // sql is the statement, which may be parameterized using "$1", "$2", ...
-    // to indicate the position of the parameter in values.
-    //
-    // values are the values for the parameters in sql.
-    //
-    // Returns the number of affected rows.
-    //
+    /// Execute an SQL statement.
+    ///
+    /// `sql` is the statement, which may be parameterized using `$1`, `$2`,
+    /// ... to indicate the position of the parameter in `values`.
+    ///
+    /// `values` are the values for the parameters in `sql`.
+    ///
+    /// Returns the number of affected rows.
+    ///
     fn exec(&mut self, sql: &str, values: &[DbValue])
         -> Result<usize, Error>;
 
-    // Execute an SQL query and return the result.
-    //
-    // sql is the query, which may be parameterized using "$1", "$2", ...
-    // to indicate the position of the parameter in values.
-    //
-    // values are the values for the parameters in sql.
-    //
-    // types indicates how the implementation should convert the result to
-    // DbValue vectors.  types.len() must equal the length of each of the
-    // returned DbValue vectors.
-    //
-    // Returns the result as a vector of vectors ov DbValue.
-    //
+    /// Execute an SQL query and return the result.
+    ///
+    /// `sql` is the query, which may be parameterized using `$1`, `$2`, ...
+    /// to indicate the position of the parameter in `values`.
+    ///
+    /// `values` are the values for the parameters in `sql`.
+    ///
+    /// `types` indicates how the implementation should convert the result to
+    /// `DbValue` vectors.  `types``.len()` must equal the length of each of the
+    /// returned `DbValue` vectors.
+    ///
+    /// Returns the result as a vector of vectors of `DbValue`.
+    ///
     fn query(
         &mut self,
         sql: &str,
@@ -43,25 +49,38 @@ pub trait DbConn<'a> {
         types: &[DbType],
     ) -> Result<Vec<Vec<DbValue>>, Error>;
 
-    // Rollback the present transaction.  The default method returns an error.
+    /// Rollback the present transaction.  The default method returns an
+    /// error.
+    ///
     fn rollback(self: Box<Self>) -> Result<(), Error> {
         Err(Error::database("not in a transaction"))
     }
 
-    // Return a transaction object.
+    /// Return a `Transaction` object.
     fn transaction(&'a mut self) -> Result<Self::Transaction, Error>;
 }
 
+/// The possible types as seen by the database.
+///
+/// See [`DbConn::query()`](trait.DbConn.html#tymethod.query)
 #[derive(Clone, Debug)]
 pub enum DbType {
-    Float,    // f64
-    Int,      // i64
-    Text,     // String
-    NulFloat, // Option<f64>
-    NulInt,   // Option<i64>
-    NulText,  // Option<String>
+    /// `f64`
+    Float,
+    /// `i64`
+    Int,
+    /// `String`
+    Text,
+    /// `Option<f64>`
+    NulFloat,
+    /// `Option<i64>`
+    NulInt,
+    /// `Option<String>`
+    NulText,
 }
 
+/// The obvious conversion.
+///
 impl From<DbValue> for DbType {
     fn from(v: DbValue) -> Self {
         match v {
@@ -75,6 +94,13 @@ impl From<DbValue> for DbType {
     }
 }
 
+/// The values sent to and from the database by a
+/// [`DbConn`](trait.DbConn.html) implementation.
+///
+/// Implements conversions to and from many Rust types.  The macro
+/// [`db_value_convert`](macro.db_value_convert.html) can be used to implement
+/// more conversions.
+///
 #[derive(Clone, Debug)]
 pub enum DbValue {
     Float(f64),

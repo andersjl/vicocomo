@@ -1,3 +1,5 @@
+//! The vicocomo error type.
+//!
 #[derive(Clone, Debug)]
 pub enum Error {
     Database(String),
@@ -6,15 +8,19 @@ pub enum Error {
 }
 
 impl Error {
+    /// Create an `Error::Database`.
     pub fn database(txt: &str) -> Self {
         Self::Database(txt.to_string())
     }
+    /// Create an `Error::InvalidInput`.
     pub fn invalid_input(txt: &str) -> Self {
         Self::InvalidInput(txt.to_string())
     }
+    #[doc(hidden)]
     pub fn nyi() -> Self {
         Self::other("NYI")
     }
+    /// Create an `Error::Other`.
     pub fn other(txt: &str) -> Self {
         Self::Other(txt.to_string())
     }
@@ -33,6 +39,7 @@ impl std::fmt::Display for Error {
     }
 }
 
+/// Create an `Error::Other`.
 impl From<&str> for Error {
     fn from(err: &str) -> Self {
         Self::Other(err.to_string())

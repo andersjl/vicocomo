@@ -1,14 +1,15 @@
+//! Html-related derive macros for `vicocomo` presenters.
+
 extern crate proc_macro;
 extern crate syn;
 
 use proc_macro::TokenStream;
 
 mod path_tag;
-//mod utils;
 
-// Implement the PathTag and Display traits and a new(path: Option<&str>)
-// function for a struct MyPathTag(vicocomo::html::HtmlTag).
-//
+/// Implement the `PathTag` and `Display` traits and a constructor for a
+/// struct.
+///
 #[proc_macro_derive(
     PathTag,
     attributes(vicocomo_path_tag_data, vicocomo_path_tag_attr)
