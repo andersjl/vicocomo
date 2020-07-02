@@ -275,6 +275,29 @@ impl Model {
         )
     }
 
+    pub fn strip_option<'a>(ty: &'a Type) -> &'a Type {
+        use syn::{GenericArgument, PathArguments::AngleBracketed};
+        match ty {
+            Type::Path(p) => match p.path.segments.first() {
+                Some(segm) if segm.ident == "Option" => {
+                    match &segm.arguments {
+                        AngleBracketed(args) => match args.args.first() {
+                            Some(arg) => match arg {
+                                GenericArgument::Type(t) => return t,
+                                _ => (),
+                            },
+                            _ => (),
+                        },
+                        _ => (),
+                    }
+                }
+                _ => (),
+            },
+            _ => (),
+        }
+        panic!("expected Option<_>, got {:?}", ty);
+    }
+
     // public methods with receiver  - - - - - - - - - - - - - - - - - - - - -
 
     pub fn cols(&self) -> Vec<String> {
@@ -540,29 +563,6 @@ impl Model {
     }
 
     // private methods without receiver  - - - - - - - - - - - - - - - - - - -
-
-    fn strip_option<'a>(ty: &'a Type) -> &'a Type {
-        use syn::{GenericArgument, PathArguments::AngleBracketed};
-        match ty {
-            Type::Path(p) => match p.path.segments.first() {
-                Some(segm) if segm.ident == "Option" => {
-                    match &segm.arguments {
-                        AngleBracketed(args) => match args.args.first() {
-                            Some(arg) => match arg {
-                                GenericArgument::Type(t) => return t,
-                                _ => (),
-                            },
-                            _ => (),
-                        },
-                        _ => (),
-                    }
-                }
-                _ => (),
-            },
-            _ => (),
-        }
-        panic!("expected Option<_>, got {:?}", ty);
-    }
 
     fn types_to_tuple(types: &[&Type]) -> Type {
         if 1 == types.len() {

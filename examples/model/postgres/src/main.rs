@@ -1,3 +1,5 @@
+// TODO: test optional unique field without value
+
 #![allow(dead_code)]
 
 use chrono::NaiveDate;
@@ -60,8 +62,9 @@ struct SinglePk {
     #[vicocomo_optional]
     name: Option<String>,
     data: Option<f32>,
+    #[vicocomo_optional]
     #[vicocomo_unique = "uni-lbl"]
-    un1: i32,
+    un1: Option<i32>,
     #[vicocomo_unique = "uni-lbl"]
     #[vicocomo_order_by(1, "desc")]
     un2: i32,
@@ -102,7 +105,7 @@ pub fn main() {
         ,   name  TEXT NOT NULL DEFAULT 'default'
         ,   data  FLOAT(53)
         ,   un1  BIGINT
-        ,   un2  BIGINT
+        ,   un2  BIGINT NOT NULL
         );
     ",
     ) {
@@ -231,14 +234,14 @@ pub fn main() {
         id: None,
         name: None,
         data: Some(17f32),
-        un1: 2,
+        un1: Some(2),
         un2: 1,
     };
     println!("inserting {:?} ..", s);
     assert!(s.insert(&mut db).is_ok());
     assert!(format!("{:?}", s) ==
         "SinglePk { id: Some(1), name: Some(\"default\"), data: Some(17.0), \
-            un1: 2, un2: 1 }",
+            un1: Some(2), un2: 1 }",
     );
     println!("    OK");
     show_single(&mut db);
@@ -247,14 +250,14 @@ pub fn main() {
             id: None,
             name: Some(String::from("hej")),
             data: None,
-            un1: 1,
+            un1: Some(1),
             un2: 1,
         },
         SinglePk {
             id: None,
             name: Some(String::from("hopp")),
             data: None,
-            un1: 1,
+            un1: Some(1),
             un2: 2,
         },
     ];
@@ -263,9 +266,9 @@ pub fn main() {
     assert!(res.is_ok());
     assert!(format!("{:?}", res) ==
         "Ok([SinglePk { id: Some(2), name: Some(\"hej\"), data: None, \
-            un1: 1, un2: 1 }, \
+            un1: Some(1), un2: 1 }, \
             SinglePk { id: Some(3), name: Some(\"hopp\"), data: None, \
-            un1: 1, un2: 2 }])"
+            un1: Some(1), un2: 2 }])"
     );
     println!("    OK");
     show_single(&mut db);
@@ -273,7 +276,7 @@ pub fn main() {
         id: Some(42),
         name: Some(String::from("hej")),
         data: None,
-        un1: 1,
+        un1: Some(1),
         un2: 42,
     };
     println!("not finding non-existing {:?} ..", s);
@@ -281,11 +284,16 @@ pub fn main() {
     assert!(res.is_none());
     println!("    OK");
     println!("not finding non-existing by unique fields ..");
-    assert!(SinglePk::find_by_un1_and_un2(&mut db, s.un1, s.un2).is_none());
+    assert!(SinglePk::find_by_un1_and_un2(
+            &mut db,
+            s.un1.unwrap(),
+            s.un2
+        ).is_none()
+    );
     assert!(s.find_equal_un1_and_un2(&mut db).is_none());
     assert!(
         SinglePk::validate_exists_un1_and_un2(
-            &mut db, s.un1, s.un2, "message"
+            &mut db, s.un1.unwrap(), s.un2, "message"
         )
         .err()
         .unwrap()
@@ -306,7 +314,7 @@ pub fn main() {
         assert!(res.is_ok());
         assert!(format!("{:?}", s) ==
             "SinglePk { id: Some(42), name: Some(\"hej\"), data: None, \
-                un1: 1, un2: 42 }"
+                un1: Some(1), un2: 42 }"
         );
         let mut un2 = 1000;
         let mut name = "aaa".to_string();
@@ -326,7 +334,7 @@ pub fn main() {
         assert!(res.is_ok());
         assert!(format!("{:?}", s) ==
             "SinglePk { id: Some(42), name: Some(\"nytt namn\"), data: None, \
-                un1: 1, un2: 42 }"
+                un1: Some(1), un2: 42 }"
         );
         println!("|   OK");
         Box::new(trans).commit().unwrap();
@@ -344,23 +352,23 @@ pub fn main() {
     assert!(res.is_some());
     assert!(format!("{:?}", res.unwrap()) ==
         "SinglePk { id: Some(42), name: Some(\"nytt namn\"), data: None, \
-            un1: 1, un2: 42 }"
+            un1: Some(1), un2: 42 }"
     );
     println!("    OK");
     println!("finding existing by unique fields ..");
-    let res = SinglePk::find_by_un1_and_un2(&mut db, s.un1, s.un2);
+    let res = SinglePk::find_by_un1_and_un2(&mut db, s.un1.unwrap(), s.un2);
     assert!(res.is_some());
     let res = res.unwrap();
     assert!(format!("{:?}", &res) ==
         "SinglePk { id: Some(42), name: Some(\"nytt namn\"), data: None, \
-            un1: 1, un2: 42 }"
+            un1: Some(1), un2: 42 }"
     );
     assert!(
         format!("{:?}", &res)
             == format!("{:?}", &s.find_equal_un1_and_un2(&mut db).unwrap())
     );
     assert!(SinglePk::validate_exists_un1_and_un2(
-        &mut db, s.un1, s.un2, "message"
+        &mut db, s.un1.unwrap(), s.un2, "message"
     )
     .is_ok());
     assert!(
@@ -368,7 +376,7 @@ pub fn main() {
             .err()
             .unwrap()
             .to_string()
-            == "Databasfel\nmessage: 1, 42"
+            == "Databasfel\nmessage: Some(1), 42"
     );
     println!("    OK");
     let query = MdlQueryBld::new()
@@ -387,21 +395,21 @@ pub fn main() {
                 id: Some(42), \
                 name: Some(\"nytt namn\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 42 \
             }, \
             SinglePk { \
                 id: Some(1), \
                 name: Some(\"default\"), \
                 data: Some(17.0), \
-                un1: 2, \
+                un1: Some(2), \
                 un2: 1 \
             }, \
             SinglePk { \
                 id: Some(2), \
                 name: Some(\"hej\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 1 \
             }\
         ]"
@@ -424,21 +432,21 @@ pub fn main() {
                 id: Some(42), \
                 name: Some(\"nytt namn\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 42 \
             }, \
             SinglePk { \
                 id: Some(2), \
                 name: Some(\"hej\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 1 \
             }, \
             SinglePk { \
                 id: Some(1), \
                 name: Some(\"default\"), \
                 data: Some(17.0), \
-                un1: 2, \
+                un1: Some(2), \
                 un2: 1 \
             }\
         ]"
@@ -454,28 +462,28 @@ pub fn main() {
                 id: Some(42), \
                 name: Some(\"nytt namn\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 42 \
             }, \
             SinglePk { \
                 id: Some(3), \
                 name: Some(\"hopp\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 2 \
             }, \
             SinglePk { \
                 id: Some(2), \
                 name: Some(\"hej\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 1 \
             }, \
             SinglePk { \
                 id: Some(1), \
                 name: Some(\"default\"), \
                 data: Some(17.0), \
-                un1: 2, \
+                un1: Some(2), \
                 un2: 1 \
             }\
         ]"
@@ -491,14 +499,14 @@ pub fn main() {
                 id: Some(42), \
                 name: Some(\"nytt namn\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 42 \
             }, \
             SinglePk { \
                 id: Some(3), \
                 name: Some(\"hopp\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 2 \
             }\
         ]"
@@ -515,21 +523,21 @@ pub fn main() {
                 id: Some(3), \
                 name: Some(\"hopp\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 2 \
             }, \
             SinglePk { \
                 id: Some(2), \
                 name: Some(\"hej\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 1 \
             }, \
             SinglePk { \
                 id: Some(1), \
                 name: Some(\"default\"), \
                 data: Some(17.0), \
-                un1: 2, \
+                un1: Some(2), \
                 un2: 1 \
             }\
         ]"
@@ -546,14 +554,14 @@ pub fn main() {
                 id: Some(3), \
                 name: Some(\"hopp\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 2 \
             }, \
             SinglePk { \
                 id: Some(2), \
                 name: Some(\"hej\"), \
                 data: None, \
-                un1: 1, \
+                un1: Some(1), \
                 un2: 1 \
             }\
         ]"

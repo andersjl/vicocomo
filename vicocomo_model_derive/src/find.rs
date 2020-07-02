@@ -143,11 +143,20 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         for field in &uni_flds {
             let fld_id = &field.id;
             let par_id = id_to_par(fld_id);
-            let par_ty = &field.ty;
+            let par_ty = if field.opt {
+                &Model::strip_option(&field.ty)
+            } else {
+                &field.ty
+            };
             find_pars.push(parse_quote!(#par_id: #par_ty));
             find_args.push(parse_quote!(#par_id));
             par_vals.push(parse_quote!(#par_id.into()));
-            self_args.push(parse_quote!(self.#fld_id));
+            self_args.push(if field.opt {
+                    parse_quote!(self.#fld_id.unwrap())
+                } else {
+                    parse_quote!(self.#fld_id)
+                }
+            );
             uni_cols.push(field.col.value());
         }
 
