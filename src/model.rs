@@ -13,8 +13,9 @@ pub trait MdlDelete<'a, PkType> {
 
     /// Return the number of successfully deleted database rows.
     ///
-    /// `batch` should be a slice of primary key values (or tuples of them if
-    /// there is more than one primary key field).
+    /// `batch` should be a slice of primary key values.  If there are more
+    /// than one primary key column, `PkType` is a tuple in the order they are
+    /// declared in the struct.
     ///
     fn delete_batch(
         db: &mut impl DbConn<'a>,
@@ -31,7 +32,8 @@ pub trait MdlFind<'a, PkType>: Sized {
     /// `db` is the database connection object.
     ///
     /// `pk` is the primary key.  If there are more than one primary key
-    /// column, `PkType` should be a tuple.
+    /// column, `PkType` should be a tuple in the order they are declared in
+    /// the struct.
     ///
     fn find(db: &mut impl DbConn<'a>, pk: &PkType) -> Option<Self>;
 

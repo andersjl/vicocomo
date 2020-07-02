@@ -164,11 +164,11 @@ pub fn main() {
     assert!(res.is_ok());
     println!("    OK");
     println!("finding existing ..");
-    assert!(m == MultiPk::find(&mut db, &(m.id2, m.id.unwrap())).unwrap());
+    assert!(m == MultiPk::find(&mut db, &(m.id.unwrap(), m.id2)).unwrap());
     assert!(m == m.find_equal(&mut db).unwrap());
     assert!(MultiPk::validate_exists(
         &mut db,
-        &(m.id2, m.id.unwrap()),
+        &(m.id.unwrap(), m.id2),
         "message"
     )
     .is_ok());

@@ -162,7 +162,7 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 /// ```text
 /// pub fn validate_exists_un1_and_un2(
 ///     db: &mut impl vicocomo::DbConn<'a>,
-///     un1: Option<i32>,
+///     un1: i32,
 ///     un2: i32,
 ///     msg: &str,
 /// ) -> Result<(), vicocomo::Error> {

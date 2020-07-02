@@ -39,82 +39,11 @@ pub struct Model {
     pub struct_id: Ident,
     pub table_name: String,
     pub fields: Vec<Field>,
-    pub all_cols: Vec<String>,
-    pub all_db_types: Vec<Expr>,
-    pub all_fields: Vec<Ident>,
-    pub all_mand_cols: Vec<LitStr>,
-    pub all_mand_fields: Vec<Ident>,
-    pub all_opt_cols: Vec<LitStr>,
-    pub all_opt_fields: Vec<Ident>,
-    pub all_pk_cols: Vec<String>,
-    pub all_pk_fields: Vec<Ident>,
-    pub all_upd_cols: Vec<String>,
-    pub all_upd_db_types: Vec<Expr>,
-    pub pk_mand_cols: Vec<LitStr>,
-    pub pk_mand_fields: Vec<Ident>,
-    pub pk_opt_cols: Vec<LitStr>,
-    pub pk_opt_field_names: Vec<LitStr>,
-    pub pk_opt_fields: Vec<Ident>,
-    pub pk_type: Type,
-    pub upd_mand_cols: Vec<LitStr>,
-    pub upd_mand_fields: Vec<Ident>,
-    pub upd_opt_cols: Vec<LitStr>,
-    pub upd_opt_fields: Vec<Ident>,
-}
-
-macro_rules! concat {
-    ($result:ident, $v1:ident, $v2:ident, $v3:ident, $v4:ident $( , )?) => {
-        let mut $result = $v1.clone();
-        $result.extend_from_slice(&$v2[..]);
-        $result.extend_from_slice(&$v3[..]);
-        $result.extend_from_slice(&$v4[..]);
-    };
-    ($result:ident, $v1:ident, $v2:ident $( , )?) => {
-        let mut $result = $v1.clone();
-        $result.extend_from_slice(&$v2[..]);
-    };
 }
 
 impl Model {
-    pub fn order_fields(&self) -> Vec<&Field> {
-        let mut to_sort = self
-            .fields
-            .iter()
-            .filter(|f| f.ord.is_some())
-            .collect::<Vec<_>>();
-        to_sort.sort_by_key(|f| f.ord.as_ref().unwrap().prio());
-        to_sort
-    }
 
-    pub fn unique_fields(&self) -> Vec<Vec<&Field>> {
-        use std::collections::HashMap;
-        let mut unis: HashMap<&str, Vec<&Field>> = HashMap::new();
-        for field in &self.fields {
-            let uni_lbl = match &field.uni {
-                Some(s) => Some(s.as_str()),
-                None => {
-                    if field.pri {
-                        Some("__vicocomo_primary__")
-                    } else {
-                        None
-                    }
-                }
-            };
-            match &uni_lbl {
-                Some(s) => {
-                    let key = s;
-                    match unis.get_mut(key) {
-                        Some(v) => v.push(&field),
-                        None => {
-                            unis.insert(key, vec![&field]);
-                        }
-                    }
-                }
-                None => (),
-            }
-        }
-        unis.drain().map(|(_k, v)| v).collect()
-    }
+    // public methods without receiver - - - - - - - - - - - - - - - - - - - -
 
     pub fn new(input: TokenStream, compute: Vec<ExtraInfo>) -> Self {
         use case::CaseExt;
@@ -313,169 +242,84 @@ impl Model {
                 opt,
             });
         }
-        let mut pk_mand_cols: Vec<LitStr> = Vec::new();
-        let mut pk_mand_db_types: Vec<Expr> = Vec::new();
-        let mut pk_mand_fields: Vec<Ident> = Vec::new();
-        let mut pk_opt_cols: Vec<LitStr> = Vec::new();
-        let mut pk_opt_db_types: Vec<Expr> = Vec::new();
-        let mut pk_opt_field_names: Vec<LitStr> = Vec::new();
-        let mut pk_opt_fields: Vec<Ident> = Vec::new();
-        let mut pk_types: Vec<&Type> = Vec::new();
-        let mut upd_mand_cols: Vec<LitStr> = Vec::new();
-        let mut upd_mand_db_types: Vec<Expr> = Vec::new();
-        let mut upd_mand_fields: Vec<Ident> = Vec::new();
-        let mut upd_opt_cols: Vec<LitStr> = Vec::new();
-        let mut upd_opt_db_types: Vec<Expr> = Vec::new();
-        let mut upd_opt_fields: Vec<Ident> = Vec::new();
-        for field in &fields {
-            let col = &field.col;
-            let dbt = &field.dbt;
-            let id = &field.id;
-            if field.opt {
-                if field.pri {
-                    pk_opt_cols.push(col.clone());
-                    if dbt.is_some() {
-                        pk_opt_db_types.push(dbt.as_ref().unwrap().clone());
-                    }
-                    pk_opt_field_names.push(LitStr::new(
-                        id.to_string().as_str(),
-                        Span::call_site(),
-                    ));
-                    pk_opt_fields.push(id.clone());
-                    pk_types.push(&Self::strip_option(&field.ty));
-                } else {
-                    upd_opt_cols.push(col.clone());
-                    if dbt.is_some() {
-                        upd_opt_db_types.push(dbt.as_ref().unwrap().clone());
-                    }
-                    upd_opt_fields.push(id.clone());
-                }
-            } else {
-                if field.pri {
-                    pk_mand_cols.push(col.clone());
-                    if dbt.is_some() {
-                        pk_mand_db_types.push(dbt.as_ref().unwrap().clone());
-                    }
-                    pk_mand_fields.push(id.clone());
-                    pk_types.push(&field.ty);
-                } else {
-                    upd_mand_cols.push(col.clone());
-                    if dbt.is_some() {
-                        upd_mand_db_types.push(dbt.as_ref().unwrap().clone());
-                    }
-                    upd_mand_fields.push(id.clone());
-                }
-            };
-        }
-        // The derive macro implementations are much simplified by always
-        // having mandatory fields before optional
-        concat! {
-            all_cols,
-            pk_mand_cols,
-            upd_mand_cols,
-            pk_opt_cols,
-            upd_opt_cols,
-        }
-        let all_cols = all_cols.iter().map(|c| c.value()).collect::<Vec<_>>();
-        concat! {
-            all_db_types,
-            pk_mand_db_types,
-            upd_mand_db_types,
-            pk_opt_db_types,
-            upd_opt_db_types,
-        }
-        concat! {
-            all_fields,
-            pk_mand_fields,
-            upd_mand_fields,
-            pk_opt_fields,
-            upd_opt_fields,
-        }
-        concat! { all_mand_cols, pk_mand_cols, upd_mand_cols }
-        concat! { all_mand_fields, pk_mand_fields, upd_mand_fields }
-        concat! { all_pk_cols, pk_mand_cols, pk_opt_cols }
-        let all_pk_cols =
-            all_pk_cols.iter().map(|c| c.value()).collect::<Vec<_>>();
-        concat! { all_pk_fields, pk_mand_fields, pk_opt_fields }
-        concat! { all_opt_cols, pk_opt_cols, upd_opt_cols }
-        concat! { all_opt_fields, pk_opt_fields, upd_opt_fields }
-        concat! { all_upd_cols, upd_mand_cols, upd_opt_cols }
-        let all_upd_cols =
-            all_upd_cols.iter().map(|c| c.value()).collect::<Vec<_>>();
-        concat! { all_upd_db_types, upd_mand_db_types, upd_opt_db_types }
-        let pk_type = Self::type_vec_to_tuple(pk_types.as_slice());
+
         Self {
             struct_id,
             table_name,
             fields,
-            all_cols,
-            all_db_types,
-            all_fields,
-            all_mand_cols,
-            all_mand_fields,
-            all_opt_cols,
-            all_opt_fields,
-            all_pk_cols,
-            all_pk_fields,
-            all_upd_cols,
-            all_upd_db_types,
-            pk_mand_cols,
-            pk_mand_fields,
-            pk_opt_cols,
-            pk_opt_field_names,
-            pk_opt_fields,
-            pk_type,
-            upd_mand_cols,
-            upd_mand_fields,
-            upd_opt_cols,
-            upd_opt_fields,
         }
     }
 
-    fn strip_option<'a>(ty: &'a Type) -> &'a Type {
-        use syn::{GenericArgument, PathArguments::AngleBracketed};
-        match ty {
-            Type::Path(p) => match p.path.segments.first() {
-                Some(segm) if segm.ident == "Option" => {
-                    match &segm.arguments {
-                        AngleBracketed(args) => match args.args.first() {
-                            Some(arg) => match arg {
-                                GenericArgument::Type(t) => return t,
-                                _ => (),
+    pub fn placeholders_expr(row_cnt: Expr, col_cnt: Expr) -> Expr {
+        parse_quote!(
+            (0..#row_cnt)
+                .map(|row_ix| {
+                    format!(
+                        "({})",
+                        (0..#col_cnt)
+                            .map(|col_ix| {
+                                format!( "${}", 1 + #col_cnt * row_ix + col_ix,)
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    )
+                }).collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+
+    pub fn query_err(query: &str) -> LitStr {
+        LitStr::new(
+            format!("{} {{}} records, expected {{}}", query).as_str(),
+            Span::call_site(),
+        )
+    }
+
+    // public methods with receiver  - - - - - - - - - - - - - - - - - - - - -
+
+    pub fn cols(&self) -> Vec<String> {
+        self.fields.iter().map(|f| f.col.value()).collect()
+    }
+
+    pub fn db_types(&self) -> Vec<&Expr> {
+        self.fields.iter().map(|f| f.dbt.as_ref().unwrap()).collect()
+    }
+
+    pub fn default_order(&self) -> String {
+        if self.order_fields().is_empty() {
+            String::new()
+        } else {
+            format!(
+                "ORDER BY {}",
+                self
+                    .order_fields()
+                    .iter()
+                    .map(|f| {
+                        format!(
+                            "{} {}",
+                            f.col.value(),
+                            match f.ord.as_ref().unwrap() {
+                                Order::Asc(_) => "ASC",
+                                Order::Desc(_) => "DESC",
                             },
-                            _ => (),
-                        },
-                        _ => (),
-                    }
-                }
-                _ => (),
-            },
-            _ => (),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )
         }
-        panic!("expected Option<_>, got {:?}", ty);
-    }
-
-    fn type_vec_to_tuple(types: &[&Type]) -> Type {
-        if 1 == types.len() {
-            return types[0].clone();
-        }
-        let mut result: syn::TypeTuple = syn::TypeTuple {
-            paren_token: syn::token::Paren {
-                span: proc_macro2::Span::call_site(),
-            },
-            elems: syn::punctuated::Punctuated::new(),
-        };
-        for ty in types {
-            result.elems.push((*ty).clone());
-        }
-        result.into()
     }
 
     // SELECT col1, col2, col3 FROM table WHERE col1 = $1 AND col3 = $2
     pub fn find_sql(&self, uni_cols: &[String]) -> String {
         format!(
             "SELECT {} FROM {} WHERE {}",
-            &self.all_cols.join(", "),
+            &self
+                .fields
+                .iter()
+                .map(|f| f.col.value())
+                .collect::<Vec<_>>()
+                .join(", "),
             &self.table_name,
             &uni_cols
                 .iter()
@@ -486,8 +330,18 @@ impl Model {
         )
     }
 
+    pub fn order_fields(&self) -> Vec<&Field> {
+        let mut result = self
+            .fields
+            .iter()
+            .filter(|f| f.ord.is_some())
+            .collect::<Vec<_>>();
+        result.sort_by_key(|f| f.ord.as_ref().unwrap().prio());
+        result
+    }
+
     pub fn pk_batch_expr(&self, batch_name: &str) -> Expr {
-        let pk_len = self.all_pk_fields.len();
+        let pk_len = self.fields.iter().filter(|f| f.pri).count();
         let batch: Ident = Ident::new(batch_name, Span::call_site());
         match pk_len {
             0 => panic!("missing primary key field"),
@@ -516,106 +370,120 @@ impl Model {
         }
     }
 
-    pub fn pk_select(&self) -> LitStr {
-        let mut pk_cols: Vec<_> = self
-            .pk_mand_cols
+    pub fn pk_fields(&self) -> Vec<&Field> {
+        self
+            .fields
             .iter()
-            .enumerate()
-            .map(|(ix, col)| format!("{} = ${}", col.value(), ix + 1))
-            .collect();
-        let mand_len = pk_cols.len();
-        for (ix, col) in self.pk_opt_cols.iter().enumerate() {
-            pk_cols.push(format!("{} = ${}", col.value(), ix + mand_len + 1));
-        }
-        LitStr::new(&pk_cols.join(" AND "), Span::call_site())
+            .filter(|f| f.pri)
+            .collect()
     }
 
+    pub fn pk_select(&self) -> LitStr {
+        LitStr::new(&self
+            .pk_fields()
+            .iter()
+            .enumerate()
+            .fold(
+                Vec::new(),
+                |mut cols, (ix, pk)| {
+                    cols.push(format!("{} = ${}", pk.col.value(), ix + 1));
+                    cols
+                }
+            ).join(" AND "),
+            Span::call_site()
+        )
+    }
+
+    // the type of the returned expression is Option<PkType>
     pub fn pk_self_to_tuple(&self) -> Expr {
-        use syn::{punctuated::Punctuated, token::Comma};
-        let mut exprs: Punctuated<Expr, Comma> = Punctuated::new();
-        for mand in &self.pk_mand_fields {
-            exprs.push(parse_quote!(self.#mand));
+        let pk_fields = &self.pk_fields();
+        let mut exprs: Vec<Expr> = Vec::new();
+        let mut pk_opts: Vec<Ident> = Vec::new();
+        for pk in pk_fields {
+            let id = &pk.id;
+            if pk.opt {
+                pk_opts.push(id.clone());
+                exprs.push(parse_quote!(self.#id.unwrap()));
+            } else {
+                exprs.push(parse_quote!(self.#id));
+            }
         }
-        for opt in &self.pk_opt_fields {
-            exprs.push(parse_quote!(self.#opt.unwrap()));
-        }
-        match self.all_pk_fields.len() {
+        let check: Expr = parse_quote!( #( self.#pk_opts.is_some() )&&* );
+        let tuple = match pk_fields.len() {
             0 => panic!("missing primary key"),
-            1 => exprs[0].clone(),
-            _ => parse_quote!((#exprs)),
-        }
+            1 => exprs.drain(..1).next().unwrap(),
+            _ => parse_quote!( ( #( #exprs ),* ) ),
+        };
+        parse_quote!(
+            if #check {
+                Some(#tuple)
+            } else {
+                None
+            }
+        )
+    }
+
+    pub fn pk_type(&self) -> Type {
+        Self::types_to_tuple(
+            self
+                .pk_fields()
+                .iter()
+                .map(|pk| {
+                     if pk.opt {
+                        &Self::strip_option(&pk.ty)
+                     } else {
+                        &pk.ty
+                     }
+                })
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
     }
 
     pub fn pk_values(&self) -> Expr {
-        let all_pk_fields = &self.all_pk_fields;
+        let pk_ids: Vec<&Ident> =
+            self.pk_fields().iter().map(|f| &f.id).collect();
         parse_quote!(
             {
                 let mut values: Vec<vicocomo::DbValue> = Vec::new();
-                #( values.push(self.#all_pk_fields.clone().into()); )*
+                #( values.push(self.#pk_ids.clone().into()); )*
                 values
             }
         )
     }
 
-    pub fn placeholders_expr(row_cnt: Expr, col_cnt: Expr) -> Expr {
-        parse_quote!(
-            (0..#row_cnt)
-                .map(|row_ix| {
-                    format!(
-                        "({})",
-                        (0..#col_cnt)
-                            .map(|col_ix| {
-                                format!( "${}", 1 + #col_cnt * row_ix + col_ix,)
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    )
-                }).collect::<Vec<_>>()
-                .join(", ")
-        )
-    }
-
-    pub fn query_err(query: &str) -> LitStr {
-        LitStr::new(
-            format!("{} {{}} records, expected {{}}", query).as_str(),
-            Span::call_site(),
-        )
-    }
-
-    pub fn rows_to_models_expr(
-        rows: Expr,
-        man: &[Ident],
-        opt: &[Ident],
-    ) -> Expr {
+    pub fn rows_to_models_expr(&self, rows: Expr) -> Expr {
+        let retrieved = &self.fields;
+        let ids: Vec<&Ident> = retrieved.iter().map(|f| &f.id).collect();
+        let vals: Vec<Expr> = retrieved.iter().map(|f| {
+            if f.opt {
+                parse_quote!(Some(val))
+            } else {
+                parse_quote!(val)
+            }
+        }).collect();
         parse_quote!(
             {
                 let mut error: Option<vicocomo::Error> = None;
                 let mut models = Vec::new();
-                for mut row in #rows.drain(..) {
+                let mut rows: Vec<Vec<DbValue>> = #rows;
+                for mut row in rows.drain(..) {
                     #(
-                        let #man;
-                        match row.drain(..1).next().unwrap().try_into() {
-                            Ok(val) => #man = val,
+                        let #ids;
+                        match row
+                            .drain(..1)
+                            .next()
+                            .unwrap()
+                            .try_into()
+                        {
+                            Ok(val) => #ids = #vals,
                             Err(err) => {
                                 error = Some(err);
                                 break;
                             },
                         }
                     )*
-                    #(
-                        let #opt;
-                        match row.drain(..1).next().unwrap().try_into() {
-                            Ok(val) => #opt = Some(val),
-                            Err(err) => {
-                                error = Some(err);
-                                break;
-                            },
-                        }
-                    )*
-                    models.push(Self {
-                        #( #man , )*
-                        #( #opt , )*
-                    });
+                    models.push(Self { #( #ids ),* });
                 }
                 match error {
                     Some(err) => Err(err),
@@ -623,5 +491,92 @@ impl Model {
                 }
             }
         )
+    }
+
+    pub fn unique_fields(&self) -> Vec<Vec<&Field>> {
+        use std::collections::HashMap;
+        let mut unis: HashMap<&str, Vec<&Field>> = HashMap::new();
+        for field in &self.fields {
+            let uni_lbl = match &field.uni {
+                Some(s) => Some(s.as_str()),
+                None => {
+                    if field.pri {
+                        Some("__vicocomo_primary__")
+                    } else {
+                        None
+                    }
+                }
+            };
+            match &uni_lbl {
+                Some(s) => {
+                    let key = s;
+                    match unis.get_mut(key) {
+                        Some(v) => v.push(&field),
+                        None => {
+                            unis.insert(key, vec![&field]);
+                        }
+                    }
+                }
+                None => (),
+            }
+        }
+        unis.drain().map(|(_k, v)| v).collect()
+    }
+
+    pub fn upd_db_types(&self) -> Vec<Expr> {
+        self
+            .fields
+            .iter()
+            .filter(|f| !f.pri)
+            .map(|f| f.dbt.as_ref().unwrap().clone()).collect()
+    }
+
+    pub fn upd_fields(&self) -> Vec<&Field> {
+        self
+            .fields
+            .iter()
+            .filter(|f| !f.pri)
+            .collect()
+    }
+
+    // private methods without receiver  - - - - - - - - - - - - - - - - - - -
+
+    fn strip_option<'a>(ty: &'a Type) -> &'a Type {
+        use syn::{GenericArgument, PathArguments::AngleBracketed};
+        match ty {
+            Type::Path(p) => match p.path.segments.first() {
+                Some(segm) if segm.ident == "Option" => {
+                    match &segm.arguments {
+                        AngleBracketed(args) => match args.args.first() {
+                            Some(arg) => match arg {
+                                GenericArgument::Type(t) => return t,
+                                _ => (),
+                            },
+                            _ => (),
+                        },
+                        _ => (),
+                    }
+                }
+                _ => (),
+            },
+            _ => (),
+        }
+        panic!("expected Option<_>, got {:?}", ty);
+    }
+
+    fn types_to_tuple(types: &[&Type]) -> Type {
+        if 1 == types.len() {
+            return types[0].clone();
+        }
+        let mut result: syn::TypeTuple = syn::TypeTuple {
+            paren_token: syn::token::Paren {
+                span: proc_macro2::Span::call_site(),
+            },
+            elems: syn::punctuated::Punctuated::new(),
+        };
+        for ty in types {
+            result.elems.push((*ty).clone());
+        }
+        result.into()
     }
 }

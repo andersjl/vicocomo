@@ -1,4 +1,4 @@
-use crate::model::{Model, Order};
+use crate::model::Model;
 use proc_macro::TokenStream;
 use syn::{export::Span, Ident};
 
@@ -8,60 +8,40 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
     use syn::{parse_quote, punctuated::Punctuated, token::Comma, Expr};
     let struct_id = &model.struct_id;
     let table_name = &model.table_name;
-    let all_cols = &model.all_cols;
-    let all_db_types = &model.all_db_types;
-    let all_mand_fields = &model.all_mand_fields;
-    let all_pk_fields = &model.all_pk_fields;
-    let all_opt_fields = &model.all_opt_fields;
-    let pk_type = &model.pk_type;
+    let all_cols =
+        model.fields.iter().map(|f| f.col.value()).collect::<Vec<_>>();
+    let db_types = model.db_types();
+    let pk_fields = &model.pk_fields();
+    let pk_type = &model.pk_type();
 
     // == general functions ==================================================
     // -- load(db) -----------------------------------------------------------
-    let default_order = if model.order_fields().is_empty() {
-        String::new()
-    } else {
-        format!(
-            "ORDER BY {}",
-            model
-                .order_fields()
-                .iter()
-                .map(|f| {
-                    format!(
-                        "{} {}",
-                        f.col.value(),
-                        match f.ord.as_ref().unwrap() {
-                            Order::Asc(_) => "ASC",
-                            Order::Desc(_) => "DESC",
-                        },
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", "),
-        )
-    };
+    let default_order = model.default_order();
     let all_cols_join = all_cols.join(", ");
     // SELECT col1, col2, col3 FROM table ORDER BY col3, col1
     let load_sql = format!(
         "SELECT {} FROM {} {}",
         &all_cols_join, table_name, default_order,
     );
-    let load_models = Model::rows_to_models_expr(
-        parse_quote!(db.query(#load_sql, &[], &[ #( #all_db_types ),* ])?),
-        all_mand_fields.as_slice(),
-        all_opt_fields.as_slice(),
+    let load_models = model.rows_to_models_expr(
+        parse_quote!(db.query(#load_sql, &[], &[ #( #db_types ),* ])?),
     );
     let query_sql = format!(
         "SELECT {} FROM {} {{}} {{}} {{}} {{}}",
         &all_cols_join, &table_name,
     );
-    let found_models = Model::rows_to_models_expr(
-        parse_quote!(found_rows),
-        all_mand_fields.as_slice(),
-        all_opt_fields.as_slice(),
-    );
+    let found_models =
+        model.rows_to_models_expr(parse_quote!(found_rows)/*, None*/);
     let pk_self_to_tuple = model.pk_self_to_tuple();
-    let find_pk_sql = model.find_sql(&model.all_pk_cols);
-    let pk_len = model.all_pk_fields.len();
+    let find_pk_sql = model.find_sql(
+        model
+            .pk_fields()
+            .iter()
+            .map(|f| f.col.value())
+            .collect::<Vec<_>>()
+            .as_slice(),
+    );
+    let pk_len = pk_fields.len();
     let pk_iter = (0..pk_len).map(|ix| syn::Index::from(ix));
     let mut pk_values: Punctuated<Expr, Comma> = Punctuated::new();
     if pk_len == 1 {
@@ -71,18 +51,14 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
             pk_values.push(parse_quote!(pk.#ix.into()));
         }
     }
-    let find_model = Model::rows_to_models_expr(
-        parse_quote!(outp),
-        all_mand_fields.as_slice(),
-        all_opt_fields.as_slice(),
-    );
+    let find_model = model.rows_to_models_expr(parse_quote!(outp)/*, None*/);
     let mut gen = quote! {
         impl<'a> vicocomo::MdlFind<'a, #pk_type> for #struct_id {
             fn find(db: &mut impl DbConn<'a>, pk: &#pk_type) -> Option<Self> {
                 match db.query(
                     #find_pk_sql,
                     &[ #pk_values ],
-                    &[ #( #all_db_types ),* ]
+                    &[ #( #db_types ),* ]
                 ) {
                     Ok(mut outp) if 1 == outp.len() => {
                         match #find_model {
@@ -94,13 +70,10 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
                     },
                     _ => None,
                 }
-                /*
-                None
-                */
             }
 
             fn find_equal(&self, db: &mut impl DbConn<'a>) -> Option<Self> {
-                Self::find(db, &#pk_self_to_tuple)
+                #pk_self_to_tuple.and_then(|tup| Self::find(db, &tup))
             }
 
             fn load(
@@ -142,7 +115,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
                 }
                 let sql = format!(#query_sql, filter, order, limit, offset);
                 let mut found_rows =
-                    db.query(&sql, &values, &[ #( #all_db_types ),* ])?;
+                    db.query(&sql, &values, &[ #( #db_types ),* ])?;
                 #found_models
             }
         }
@@ -192,7 +165,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
                     match db.query(
                         #find_uni_sql,
                         &[#par_vals],
-                        &[ #( #all_db_types ),* ]
+                        &[ #( #db_types ),* ]
                     ) {
                         Ok(mut outp) if 1 == outp.len() => {
                             match #find_model {

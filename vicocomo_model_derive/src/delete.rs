@@ -6,29 +6,24 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
     use quote::quote;
     use syn::{export::Span, parse_quote, LitStr};
     let struct_id = &model.struct_id;
-    let all_pk_fields = &model.all_pk_fields;
-    let pk_mand_fields = &model.pk_mand_fields;
-    let pk_mand_cols = &model.pk_mand_cols;
-    let pk_opt_fields = &model.pk_opt_fields;
-    let pk_opt_field_names = &model.pk_opt_field_names;
-    let pk_opt_cols = &model.pk_opt_cols;
-    let pk_len = all_pk_fields.len();
-    let pk_type = &model.pk_type;
+    let pk_fields = model.pk_fields();
+    let pk_field_names: Vec<String> =
+        pk_fields.iter().map(|f| f.id.to_string()).collect();
+    let pk_len = pk_fields.len();
+    let pk_type = &model.pk_type();
     let batch_expr = model.pk_batch_expr("batch");
     let self_sql = LitStr::new(
-        format!(
+        &format!(
             // "DELETE FROM table WHERE pk1 = $1 AND pk2 = $2",
             "DELETE FROM {} WHERE {}",
             &model.table_name,
-            &model
-                .all_pk_cols
+            &pk_fields
                 .iter()
                 .enumerate()
-                .map(|(ix, col)| format!("{} = ${}", col, ix + 1))
+                .map(|(ix, pk)| format!("{} = ${}", pk.col.value(), ix + 1))
                 .collect::<Vec<_>>()
                 .join(" AND ")
-        )
-        .as_str(),
+        ),
         Span::call_site(),
     );
     let batch_sql_format = LitStr::new(
@@ -36,7 +31,11 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
             // "DELETE FROM table WHERE (pk1, pk2) IN (($1, $2), ($3, $4))"
             "DELETE FROM {} WHERE ({}) IN ({{}})",
             &model.table_name,
-            &model.all_pk_cols.join(", "),
+            &pk_fields
+                .iter()
+                .map(|pk| pk.col.value())
+                .collect::<Vec<_>>()
+                .join(", "),
         )
         .as_str(),
         Span::call_site(),
@@ -46,6 +45,7 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
         parse_quote!(batch.len()),
         parse_quote!(#pk_len),
     );
+    let pk_ids = pk_fields.iter().map(|f| &f.id).collect::<Vec<_>>();
     let gen = quote! {
         impl<'a> vicocomo::MdlDelete<'a, #pk_type> for #struct_id {
             fn delete(self, db: &mut impl vicocomo::DbConn<'a>)
@@ -53,7 +53,7 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
             {
                 let deleted = db.exec(
                     #self_sql,
-                    &[ #( self.#all_pk_fields.into() ),* ],
+                    &[ #( self.#pk_ids.into() ),* ],
                 )?;
                 if 1 != deleted {
                     return Err(vicocomo::Error::Database(format!(
