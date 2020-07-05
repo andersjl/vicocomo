@@ -8,8 +8,11 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
     use syn::{parse_quote, punctuated::Punctuated, token::Comma, Expr};
     let struct_id = &model.struct_id;
     let table_name = &model.table_name;
-    let all_cols =
-        model.fields.iter().map(|f| f.col.value()).collect::<Vec<_>>();
+    let all_cols = model
+        .fields
+        .iter()
+        .map(|f| f.col.value())
+        .collect::<Vec<_>>();
     let db_types = model.db_types();
     let pk_fields = &model.pk_fields();
     let pk_type = &model.pk_type();
@@ -30,8 +33,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         "SELECT {} FROM {} {{}} {{}} {{}} {{}}",
         &all_cols_join, &table_name,
     );
-    let found_models =
-        model.rows_to_models_expr(parse_quote!(found_rows)/*, None*/);
+    let found_models = model.rows_to_models_expr(parse_quote!(found_rows));
     let pk_self_to_tuple = model.pk_self_to_tuple();
     let find_pk_sql = model.find_sql(
         model
@@ -45,16 +47,18 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
     let pk_iter = (0..pk_len).map(|ix| syn::Index::from(ix));
     let mut pk_values: Punctuated<Expr, Comma> = Punctuated::new();
     if pk_len == 1 {
-        pk_values.push(parse_quote!((*pk).into()));
+        pk_values.push(parse_quote!(pk.clone().into()));
     } else {
         for ix in (0..pk_len).map(|ix| syn::Index::from(ix)) {
-            pk_values.push(parse_quote!(pk.#ix.into()));
+            pk_values.push(parse_quote!(pk.#ix.clone().into()));
         }
     }
-    let find_model = model.rows_to_models_expr(parse_quote!(outp)/*, None*/);
+    let find_model = model.rows_to_models_expr(parse_quote!(outp));
     let mut gen = quote! {
         impl<'a> vicocomo::MdlFind<'a, #pk_type> for #struct_id {
-            fn find(db: &mut impl DbConn<'a>, pk: &#pk_type) -> Option<Self> {
+            fn find(db: &mut impl vicocomo::DbConn<'a>, pk: &#pk_type)
+                -> Option<Self>
+            {
                 match db.query(
                     #find_pk_sql,
                     &[ #pk_values ],
@@ -72,7 +76,9 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
                 }
             }
 
-            fn find_equal(&self, db: &mut impl DbConn<'a>) -> Option<Self> {
+            fn find_equal(&self, db: &mut impl vicocomo::DbConn<'a>)
+                -> Option<Self>
+            {
                 #pk_self_to_tuple.and_then(|tup| Self::find(db, &tup))
             }
 
@@ -152,11 +158,10 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
             find_args.push(parse_quote!(#par_id));
             par_vals.push(parse_quote!(#par_id.into()));
             self_args.push(if field.opt {
-                    parse_quote!(self.#fld_id.unwrap())
-                } else {
-                    parse_quote!(self.#fld_id)
-                }
-            );
+                parse_quote!(self.#fld_id.unwrap())
+            } else {
+                parse_quote!(self.#fld_id)
+            });
             uni_cols.push(field.col.value());
         }
 

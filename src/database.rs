@@ -37,8 +37,8 @@ pub trait DbConn<'a> {
     /// `values` are the values for the parameters in `sql`.
     ///
     /// `types` indicates how the implementation should convert the result to
-    /// `DbValue` vectors.  `types``.len()` must equal the length of each of the
-    /// returned `DbValue` vectors.
+    /// `DbValue` vectors.  `types``.len()` must equal the length of each of
+    /// the returned `DbValue` vectors.
     ///
     /// Returns the result as a vector of vectors of `DbValue`.
     ///

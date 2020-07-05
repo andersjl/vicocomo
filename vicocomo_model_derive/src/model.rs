@@ -1,8 +1,8 @@
 use proc_macro::TokenStream;
-use syn::{export::Span, parse_quote, Expr, Ident, LitStr, Type};
+use syn::{export::Span, parse_quote, Expr, Ident, LitStr, Path, Type};
 use vicocomo_derive_utils::*;
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ExtraInfo {
     DatabaseTypes,
     OrderFields,
@@ -24,6 +24,14 @@ impl Order {
 }
 
 #[derive(Clone, Debug)]
+pub struct ForKey {
+    pub name: String,
+    pub parent_pk: Ident,
+    pub parent_pk_mand: bool,
+    pub path: Path,
+}
+
+#[derive(Clone, Debug)]
 pub struct Field {
     pub id: Ident,
     pub ty: Type,
@@ -33,8 +41,10 @@ pub struct Field {
     pub uni: Option<String>,
     pub ord: Option<Order>,
     pub opt: bool,
+    pub fk: Option<ForKey>,
 }
 
+#[derive(Clone, Debug)]
 pub struct Model {
     pub struct_id: Ident,
     pub table_name: String,
@@ -42,11 +52,11 @@ pub struct Model {
 }
 
 impl Model {
-
     // public methods without receiver - - - - - - - - - - - - - - - - - - - -
 
     pub fn new(input: TokenStream, compute: Vec<ExtraInfo>) -> Self {
         use case::CaseExt;
+        use regex::Regex;
         use syn::{
             parse, AttrStyle, Data::Struct, DeriveInput, Fields::Named,
             FieldsNamed, Lit, Meta, NestedMeta,
@@ -70,6 +80,8 @@ impl Model {
             get_string_from_attr(&attrs, "table_name", &struct_id, |id| {
                 format!("{}s", id).to_snake()
             });
+        const EXPECT_BELONGS_TO_ERROR: &'static str =
+            "expected #[vicocomo_belongs_to( ... )]";
         const EXPECT_COLUMN_ERROR: &'static str =
             "expected #[vicocomo_column = \"column_name\"]";
         const EXPECT_OPTIONAL_ERROR: &'static str =
@@ -91,6 +103,7 @@ impl Model {
             let mut uni = None;
             let mut ord = None;
             let mut opt = false;
+            let mut fk = None;
             for attr in field.attrs {
                 match attr.style {
                     AttrStyle::Inner(_) => continue,
@@ -99,6 +112,87 @@ impl Model {
                 let attr_id =
                     attr.path.segments.first().unwrap().ident.clone();
                 match attr_id.to_string().as_str() {
+                    "vicocomo_belongs_to" => {
+                        let field_name = id.to_string();
+                        let mut name = Regex::new(r"_id$")
+                            .unwrap()
+                            .find(&field_name)
+                            .and_then(|mat| {
+                                Some(field_name[..mat.start()].to_string())
+                            });
+                        let mut parent_pk =
+                            Ident::new("id", Span::call_site());
+                        let mut parent_pk_mand = false;
+                        let mut path: Option<String> = None;
+                        match attr
+                            .parse_meta()
+                            .expect(EXPECT_BELONGS_TO_ERROR)
+                        {
+                            Meta::List(list) => {
+                                for entry in list.nested.iter() {
+                                    match entry {
+                                        NestedMeta::Meta(nested) => {
+                                            match nested {
+Meta::NameValue(n_v) => {
+    match n_v.path.get_ident().unwrap().to_string().as_str() {
+        "name" => match &n_v.lit {
+            Lit::Str(s) => name = Some(s.value()),
+            _ => panic!(EXPECT_BELONGS_TO_ERROR),
+        }
+        "parent_pk" => match &n_v.lit {
+            Lit::Str(lit_str) => {
+                let given = lit_str.value();
+                let pk_string;
+                match Regex::new(r"\s+mandatory$").unwrap().find(&given) {
+                    Some(mat) => {
+                        pk_string = given[..mat.start()].to_string();
+                        parent_pk_mand = true;
+                    }
+                    None => pk_string = given,
+                }
+                parent_pk = Ident::new(&pk_string, Span::call_site());
+            }
+            _ => panic!(EXPECT_BELONGS_TO_ERROR),
+        }
+        "path" => match &n_v.lit {
+            Lit::Str(s) => {
+                path = Some(s.value())
+            }
+            _ => panic!(EXPECT_BELONGS_TO_ERROR),
+        }
+        _ => panic!(EXPECT_BELONGS_TO_ERROR),
+    }
+}
+_ => panic!(EXPECT_BELONGS_TO_ERROR),
+                                            }
+                                        }
+                                        _ => panic!(EXPECT_BELONGS_TO_ERROR),
+                                    }
+                                }
+                            }
+                            _ => panic!(EXPECT_BELONGS_TO_ERROR),
+                        }
+                        let name = match name {
+                            Some(s) => s,
+                            _ => panic!(EXPECT_BELONGS_TO_ERROR),
+                        };
+                        let mut path: String =
+                            path.unwrap_or(name.to_camel());
+                        if path.find("::").is_none() {
+                            path =
+                                format!("crate::models::{}::{}", name, path);
+                        }
+                        let path: Path = syn::parse_macro_input::parse(
+                            path.parse::<TokenStream>().unwrap(),
+                        )
+                        .unwrap();
+                        fk = Some(ForKey {
+                            name,
+                            parent_pk,
+                            parent_pk_mand,
+                            path,
+                        });
+                    }
                     "vicocomo_column" => {
                         col = match attr
                             .parse_meta()
@@ -240,6 +334,7 @@ impl Model {
                 uni,
                 ord,
                 opt,
+                fk,
             });
         }
 
@@ -258,7 +353,10 @@ impl Model {
                         "({})",
                         (0..#col_cnt)
                             .map(|col_ix| {
-                                format!( "${}", 1 + #col_cnt * row_ix + col_ix,)
+                                format!(
+                                    "${}",
+                                    1 + #col_cnt * row_ix + col_ix,
+                                )
                             })
                             .collect::<Vec<_>>()
                             .join(", "),
@@ -300,12 +398,19 @@ impl Model {
 
     // public methods with receiver  - - - - - - - - - - - - - - - - - - - - -
 
+    pub fn belongs_to_fields(&self) -> Vec<&Field> {
+        self.fields.iter().filter(|f| f.fk.is_some()).collect()
+    }
+
     pub fn cols(&self) -> Vec<String> {
         self.fields.iter().map(|f| f.col.value()).collect()
     }
 
     pub fn db_types(&self) -> Vec<&Expr> {
-        self.fields.iter().map(|f| f.dbt.as_ref().unwrap()).collect()
+        self.fields
+            .iter()
+            .map(|f| f.dbt.as_ref().unwrap())
+            .collect()
     }
 
     pub fn default_order(&self) -> String {
@@ -314,8 +419,7 @@ impl Model {
         } else {
             format!(
                 "ORDER BY {}",
-                self
-                    .order_fields()
+                self.order_fields()
                     .iter()
                     .map(|f| {
                         format!(
@@ -394,26 +498,21 @@ impl Model {
     }
 
     pub fn pk_fields(&self) -> Vec<&Field> {
-        self
-            .fields
-            .iter()
-            .filter(|f| f.pri)
-            .collect()
+        self.fields.iter().filter(|f| f.pri).collect()
     }
 
     pub fn pk_select(&self) -> LitStr {
-        LitStr::new(&self
-            .pk_fields()
-            .iter()
-            .enumerate()
-            .fold(
-                Vec::new(),
-                |mut cols, (ix, pk)| {
+        LitStr::new(
+            &self
+                .pk_fields()
+                .iter()
+                .enumerate()
+                .fold(Vec::new(), |mut cols, (ix, pk)| {
                     cols.push(format!("{} = ${}", pk.col.value(), ix + 1));
                     cols
-                }
-            ).join(" AND "),
-            Span::call_site()
+                })
+                .join(" AND "),
+            Span::call_site(),
         )
     }
 
@@ -426,9 +525,9 @@ impl Model {
             let id = &pk.id;
             if pk.opt {
                 pk_opts.push(id.clone());
-                exprs.push(parse_quote!(self.#id.unwrap()));
+                exprs.push(parse_quote!(self.#id.clone().unwrap()));
             } else {
-                exprs.push(parse_quote!(self.#id));
+                exprs.push(parse_quote!(self.#id.clone()));
             }
         }
         let check: Expr = parse_quote!( #( self.#pk_opts.is_some() )&&* );
@@ -448,15 +547,14 @@ impl Model {
 
     pub fn pk_type(&self) -> Type {
         Self::types_to_tuple(
-            self
-                .pk_fields()
+            self.pk_fields()
                 .iter()
                 .map(|pk| {
-                     if pk.opt {
+                    if pk.opt {
                         &Self::strip_option(&pk.ty)
-                     } else {
+                    } else {
                         &pk.ty
-                     }
+                    }
                 })
                 .collect::<Vec<_>>()
                 .as_slice(),
@@ -478,18 +576,21 @@ impl Model {
     pub fn rows_to_models_expr(&self, rows: Expr) -> Expr {
         let retrieved = &self.fields;
         let ids: Vec<&Ident> = retrieved.iter().map(|f| &f.id).collect();
-        let vals: Vec<Expr> = retrieved.iter().map(|f| {
-            if f.opt {
-                parse_quote!(Some(val))
-            } else {
-                parse_quote!(val)
-            }
-        }).collect();
+        let vals: Vec<Expr> = retrieved
+            .iter()
+            .map(|f| {
+                if f.opt {
+                    parse_quote!(Some(val))
+                } else {
+                    parse_quote!(val)
+                }
+            })
+            .collect();
         parse_quote!(
             {
                 let mut error: Option<vicocomo::Error> = None;
                 let mut models = Vec::new();
-                let mut rows: Vec<Vec<DbValue>> = #rows;
+                let mut rows: Vec<Vec<vicocomo::DbValue>> = #rows;
                 for mut row in rows.drain(..) {
                     #(
                         let #ids;
@@ -547,19 +648,15 @@ impl Model {
     }
 
     pub fn upd_db_types(&self) -> Vec<Expr> {
-        self
-            .fields
+        self.fields
             .iter()
             .filter(|f| !f.pri)
-            .map(|f| f.dbt.as_ref().unwrap().clone()).collect()
+            .map(|f| f.dbt.as_ref().unwrap().clone())
+            .collect()
     }
 
     pub fn upd_fields(&self) -> Vec<&Field> {
-        self
-            .fields
-            .iter()
-            .filter(|f| !f.pri)
-            .collect()
+        self.fields.iter().filter(|f| !f.pri).collect()
     }
 
     // private methods without receiver  - - - - - - - - - - - - - - - - - - -

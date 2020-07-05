@@ -1,24 +1,34 @@
 //! # Model helper macros
 //!
 //! ```text
-//! #[derive(<any combination of the below>)]
+//! #[derive(
+//!     <one or more of AssocModel, DeleteModel, FindModel, and SaveModel>
+//! )]
 //! #[vicoomo_table_name = "example_table"]  // default "examples"
 //! struct Example {
-//!     #[vicocomo_optional]       // not sent to DBMS if None
-//!     #[vicocomo_primary]        // To find a row to update() or delete()
-//!     primary: Option<u32>,      // primary key should be ensured by DBMS
-//!     #[vicocomo_column = "db_col"]  // different name of DB column
-//!     #[vicocomo_unique = "un1"] // "un1" labels fields w unique comb.
-//!     not_null: String,          // VARCHAR NOT NULL
-//!     #[vicocomo_order_by(2)]    // precedence 2, see opt_null below
-//!     nullable: Option<String>,  // VARCHAR, None -> NULL
-//!     #[vicocomo_optional]       // not sent to DBMS if None
-//!     #[vicocomo_unique = "un1"] // UNIQUE(db_col, opt_not_null)
-//!     opt_not_null: Option<i32>  // INTEGER NOT NULL DEFAULT 42
+//!     #[vicocomo_optional]          // not sent to DBMS if None
+//!     #[vicocomo_primary]           // To find a row to update() or delete()
+//!     primary: Option<u32>,         // primary key should be ensured by DBMS
+//!     #[vicocomo_column = "db_col"] // different name of DB column
+//!     #[vicocomo_unique = "un1"]    // "un1" labels fields w unique comb.
+//!     not_null: String,             // VARCHAR NOT NULL
+//!     #[vicocomo_order_by(2)]       // precedence 2, see opt_null below
+//!     nullable: Option<String>,     // VARCHAR, None -> NULL
+//!     #[vicocomo_optional]          // not sent to DBMS if None
+//!     #[vicocomo_unique = "un1"]    // UNIQUE(db_col, opt_not_null)
+//!     opt_not_null: Option<i32>,    // INTEGER NOT NULL DEFAULT 42
 //!     #[vicocomo_order_by(1, "desc")] // ORDER BY opt_null DESC, nullable
-//!     #[vicocomo_optional]       // not sent to DBMS if None
-//!     opt_null: Option<Option<i32>>  // INTEGER DEFAULT 43
-//!                                // None -> 43, Some(None) -> NULL
+//!     #[vicocomo_optional]          // not sent to DBMS if None
+//!     opt_null:                     // INTEGER DEFAULT 43
+//!         Option<Option<i32>>,      // None -> 43, Some(None) -> NULL
+//!     #[vicocomo_belongs_to(        // child referencing parent
+//!         name = "father",          // base for generated function names,
+//!                                   // default strip "_id" from field name
+//!         path = "crate::x::OlMan", // parent struct path, default
+//!                                   // crate::models::<name.to_camel()>
+//!         parent_pk = "pk",         // parent PK field, default "id", must
+//!     )]                            // be a single primary key field
+//!     parent_id: u32,               // May be nullable, in this case not
 //! }
 //! ```
 extern crate proc_macro;
@@ -26,13 +36,73 @@ extern crate syn;
 
 use proc_macro::TokenStream;
 
+mod belongs_to;
 mod delete;
 mod find;
 mod model;
 mod save;
 
-/// Derive the [`MdlDelete`](../vicocomo/trait.MdlDelete.html) trait for a
-/// `struct` with named fields.
+/// Derive the [`MdlBelongsTo`](../vicocomo/model/trait.MdlBelongsTo.html)
+/// trait for a `struct` with named fields.
+///
+/// Note that the `Parent` struct must have exactly one `vicocomo_primary`
+/// field.
+///
+/// ## Field attributes
+///
+/// See this [example](../vicocomo_model_derive/index.html).
+///
+/// `vicocomo_column = "`*column name*`"` - The database column storing the
+/// field.  Default the snake cased field name.
+///
+/// `vicocomo_belongs_to(` ... `)` - The field is a foreign key to another
+/// model object.  The following name-value pairs are optional:
+///
+/// - `name = "`*a name*`"`:  A name for the association, that changes the
+///   default values of the other attributes and the names of some generated
+///   functions, see below.
+///
+///   If the field name ends in `_id`, the default `name` is the field name
+///   with `_id` stripped.  If not, `name` is mandatory.
+///
+/// - `parent_pk = "`*a field id*`"`: The name of the parent's primary key
+///   *field* - not the column!  Belongs-to associations to models with
+///   composite primary keys is not possible.  The primary key field is taken
+///   to be `vicocomo_optional`.  If it is mandatory, this must be indicated
+///   by `parent_pk ="`*a field id*` mandatory`"`.
+///
+///   The default is `id`.
+///
+/// - `path = "`*a path*`"`:  The parent `struct` path.  If given as a simple
+///   identifier, `crate::models::name::` is prepended.
+///
+///   The default is `crate::models::`<`to_camel(name)`>.
+///
+/// ## Generated code
+///
+/// Implements [`MdlBelongsTo`](../vicocomo/model/trait.MdlBelongsTo.html).
+///
+/// ### For each `vicocomo_belongs_to` attributed field
+///
+/// TODO
+///
+#[proc_macro_derive(
+    BelongsToModel,
+    attributes(vicocomo_column, vicocomo_belongs_to,)
+)]
+pub fn belongs_to_model_derive(input: TokenStream) -> TokenStream {
+    belongs_to::belongs_to_model_impl(&model::Model::new(
+        input,
+        vec![
+            model::ExtraInfo::OrderFields,
+            model::ExtraInfo::UniqueFields,
+            model::ExtraInfo::DatabaseTypes,
+        ],
+    ))
+}
+
+/// Derive the [`MdlDelete`](../vicocomo/model/trait.MdlDelete.html) trait for
+/// a `struct` with named fields.
 ///
 /// ## Struct attributes
 ///
@@ -60,7 +130,7 @@ mod save;
 ///
 /// ## Generated code
 ///
-/// Implements [`MdlDelete`](../vicocomo/trait.MdlDelete.html).
+/// Implements [`MdlDelete`](../vicocomo/model/trait.MdlDelete.html).
 ///
 #[proc_macro_derive(
     DeleteModel,
@@ -79,7 +149,7 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
     ))
 }
 
-/// Derive the [`MdlFind`](../vicocomo/trait.MdlFind.html) trait for a
+/// Derive the [`MdlFind`](../vicocomo/model/trait.MdlFind.html) trait for a
 /// `struct` with named fields.
 ///
 /// ## Struct attributes
@@ -112,7 +182,7 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// ## Generated code
 ///
-/// Implements [`MdlFind`](../vicocomo/derive.MdlFind.html).
+/// Implements [`MdlFind`](../vicocomo/model/trait.MdlFind.html).
 ///
 /// ### For each `vicocomo_unique` label
 ///
@@ -189,7 +259,7 @@ pub fn find_model_derive(input: TokenStream) -> TokenStream {
     ))
 }
 
-/// Derive the [`MdlSave`](../vicocomo/trait.MdlSave.html) trait for a
+/// Derive the [`MdlSave`](../vicocomo/model/trait.MdlSave.html) trait for a
 /// `struct` with named fields.
 ///
 /// ## Struct attributes
@@ -214,6 +284,8 @@ pub fn find_model_derive(input: TokenStream) -> TokenStream {
 /// database.
 ///
 /// ## Generated code
+///
+/// Implements [`MdlSave`](../vicocomo/model/trait.MdlSave.html).
 ///
 #[proc_macro_derive(
     SaveModel,

@@ -58,8 +58,8 @@ impl HtmlAttr {
     ///
     /// `values` contains the values, separated by whitespace.
     ///
-    /// If `name` is `"some-name"` After `add()`, the attribute will display as
-    /// `<`value of name`>="val1 val2"`.
+    /// If `name` is `"some-name"` After `add()`, the attribute will display
+    /// as `<`value of name`>="val1 val2"`.
     ///
     /// If this is the first add and `values` is empty, the attribute will
     /// display as `<`value of name`>=""`.

@@ -1,11 +1,7 @@
 // TODO: test optional unique field without value
+// TODO: test non-standard parent
 
 #![allow(dead_code)]
-
-use chrono::NaiveDate;
-use std::convert::TryInto;
-use vicocomo::{DbConn, DbValue, MdlDelete, MdlFind, MdlQueryBld, MdlSave};
-use vicocomo_postgres::PgConn;
 
 enum Show {
     Nothing,
@@ -14,61 +10,109 @@ enum Show {
 }
 const SHOW: Show = Show::Nothing;
 
-#[derive(
-    Clone,
-    Debug,
-    PartialEq,
-    vicocomo::DeleteModel,
-    vicocomo::FindModel,
-    vicocomo::SaveModel,
-)]
-struct MultiPk {
-    #[vicocomo_optional]
-    #[vicocomo_primary]
-    id: Option<u32>,
-    #[vicocomo_primary]
-    id2: u32,
-    bool_mand: bool,
-    bool_mand_nul: Option<bool>,
-    f32_mand: f32,
-    #[vicocomo_optional]
-    f32_opt: Option<f32>,
-    f64_mand: f64,
-    #[vicocomo_optional]
-    f64_opt_nul: Option<Option<f64>>,
-    i32_mand: i32,
-    #[vicocomo_optional]
-    i32_opt_nul: Option<Option<i32>>,
-    i64_mand: i64,
-    date_mand: NaiveDate,
-    string_mand: String,
-    u32_mand: u32,
-    u64_mand: u64,
-    usize_mand: usize,
+mod models {
+
+    pub mod multi_pk {
+        use chrono::NaiveDate;
+        use std::convert::TryInto;
+        use vicocomo::{Error, MdlBelongsTo, MdlFind};
+
+        #[derive(
+            Clone,
+            Debug,
+            PartialEq,
+            vicocomo::BelongsToModel,
+            vicocomo::DeleteModel,
+            vicocomo::FindModel,
+            vicocomo::SaveModel,
+        )]
+        pub struct MultiPk {
+            #[vicocomo_optional]
+            #[vicocomo_primary]
+            pub id: Option<u32>,
+            #[vicocomo_primary]
+            pub id2: u32,
+            pub bool_mand: bool,
+            pub bool_mand_nul: Option<bool>,
+            pub f32_mand: f32,
+            #[vicocomo_optional]
+            pub f32_opt: Option<f32>,
+            pub f64_mand: f64,
+            #[vicocomo_optional]
+            pub f64_opt_nul: Option<Option<f64>>,
+            pub i32_mand: i32,
+            #[vicocomo_optional]
+            pub i32_opt_nul: Option<Option<i32>>,
+            #[vicocomo_belongs_to()]
+            pub default_parent_id: i64,
+            pub date_mand: NaiveDate,
+            pub string_mand: String,
+            pub u32_mand: u32,
+            pub u64_mand: u64,
+            pub usize_mand: usize,
+        }
+    }
+
+    pub mod single_pk {
+        use std::convert::TryInto;
+
+        #[derive(
+            Clone,
+            Debug,
+            vicocomo::DeleteModel,
+            vicocomo::FindModel,
+            vicocomo::SaveModel,
+        )]
+        pub struct SinglePk {
+            #[vicocomo_optional]
+            #[vicocomo_primary]
+            pub id: Option<u32>,
+            #[vicocomo_order_by(2, "asc")]
+            #[vicocomo_optional]
+            pub name: Option<String>,
+            pub data: Option<f32>,
+            #[vicocomo_optional]
+            #[vicocomo_unique = "uni-lbl"]
+            pub un1: Option<i32>,
+            #[vicocomo_unique = "uni-lbl"]
+            #[vicocomo_order_by(1, "desc")]
+            pub un2: i32,
+        }
+    }
+
+    pub mod default_parent {
+        use std::convert::TryInto;
+
+        #[derive(Clone, Debug, vicocomo::FindModel)]
+        pub struct DefaultParent {
+            #[vicocomo_optional]
+            #[vicocomo_primary]
+            pub id: Option<i64>,
+            pub name: String,
+        }
+    }
+
+    pub mod nonstandard_parent {
+        use std::convert::TryInto;
+
+        #[derive(Clone, Debug, vicocomo::FindModel)]
+        pub struct NonstandardParent {
+            #[vicocomo_optional]
+            #[vicocomo_primary]
+            pub pk: Option<String>,
+        }
+    }
 }
 
-#[derive(
-    Clone,
-    Debug,
-    vicocomo::DeleteModel,
-    vicocomo::FindModel,
-    vicocomo::SaveModel,
-)]
-struct SinglePk {
-    #[vicocomo_optional]
-    #[vicocomo_primary]
-    id: Option<u32>,
-    #[vicocomo_order_by(2, "asc")]
-    #[vicocomo_optional]
-    name: Option<String>,
-    data: Option<f32>,
-    #[vicocomo_optional]
-    #[vicocomo_unique = "uni-lbl"]
-    un1: Option<i32>,
-    #[vicocomo_unique = "uni-lbl"]
-    #[vicocomo_order_by(1, "desc")]
-    un2: i32,
-}
+use chrono::NaiveDate;
+use models::{
+    default_parent::DefaultParent, multi_pk::MultiPk,
+    nonstandard_parent::NonstandardParent, single_pk::SinglePk,
+};
+use vicocomo::{
+    DbConn, DbValue, MdlBelongsTo, MdlDelete, MdlFind, MdlQueryBld, MdlSave,
+};
+use vicocomo_postgres::PgConn;
 
 pub fn main() {
     dotenv::dotenv().ok();
@@ -81,32 +125,45 @@ pub fn main() {
         "
         DROP TABLE IF EXISTS multi_pks;
         DROP TABLE IF EXISTS single_pks;
+        DROP TABLE IF EXISTS default_parents;
+        DROP TABLE IF EXISTS nonstandard_parents;
         CREATE TABLE multi_pks
-        (   id               BIGINT NOT NULL DEFAULT 1
-        ,   id2              BIGINT
-        ,   bool_mand        BIGINT NOT NULL
-        ,   bool_mand_nul    BIGINT
-        ,   f32_mand         FLOAT(53) NOT NULL
-        ,   f32_opt          FLOAT(53) NOT NULL DEFAULT 1.0
-        ,   f64_mand         FLOAT(53) NOT NULL
-        ,   f64_opt_nul      FLOAT(53) DEFAULT 1.0
-        ,   i32_mand         BIGINT NOT NULL
-        ,   i32_opt_nul      BIGINT DEFAULT 1
-        ,   i64_mand         BIGINT NOT NULL
-        ,   date_mand        BIGINT NOT NULL
-        ,   string_mand      TEXT NOT NULL
-        ,   u32_mand         BIGINT NOT NULL
-        ,   u64_mand         BIGINT NOT NULL
-        ,   usize_mand       BIGINT NOT NULL
+        (   id             BIGINT NOT NULL DEFAULT 1
+        ,   id2            BIGINT
+        ,   bool_mand      BIGINT NOT NULL
+        ,   bool_mand_nul  BIGINT
+        ,   f32_mand       FLOAT(53) NOT NULL
+        ,   f32_opt        FLOAT(53) NOT NULL DEFAULT 1.0
+        ,   f64_mand       FLOAT(53) NOT NULL
+        ,   f64_opt_nul    FLOAT(53) DEFAULT 1.0
+        ,   i32_mand       BIGINT NOT NULL
+        ,   i32_opt_nul    BIGINT DEFAULT 1
+        ,   default_parent_id  BIGINT NOT NULL
+        ,   date_mand      BIGINT NOT NULL
+        ,   string_mand    TEXT NOT NULL
+        ,   u32_mand       BIGINT NOT NULL
+        ,   u64_mand       BIGINT NOT NULL
+        ,   usize_mand     BIGINT NOT NULL
         ,   PRIMARY KEY(id, id2)
         );
         CREATE TABLE single_pks
         (   id    BIGSERIAL PRIMARY KEY
         ,   name  TEXT NOT NULL DEFAULT 'default'
         ,   data  FLOAT(53)
-        ,   un1  BIGINT
-        ,   un2  BIGINT NOT NULL
+        ,   un1   BIGINT
+        ,   un2   BIGINT NOT NULL
         );
+        CREATE TABLE default_parents
+        (   id    BIGSERIAL PRIMARY KEY
+        ,   name  TEXT NOT NULL
+        );
+        CREATE TABLE nonstandard_parents
+        (   pk  TEXT PRIMARY KEY
+        );
+        INSERT INTO default_parents (name)
+            VALUES ('default filler'), ('used default');
+        INSERT INTO nonstandard_parents (pk)
+            VALUES ('used nonstandard'), ('nonstandard filler');
     ",
     ) {
         Ok(_) => println!("created tables\n"),
@@ -126,13 +183,16 @@ pub fn main() {
         f64_opt_nul: None,
         i32_mand: 0,
         i32_opt_nul: None,
-        i64_mand: 0,
+        default_parent_id: 2,
         date_mand: NaiveDate::from_num_days_from_ce(0),
         string_mand: String::new(),
         u32_mand: 0,
         u64_mand: 0,
         usize_mand: 0,
     };
+
+    // - - inserting, finding, and updating  - - - - - - - - - - - - - - - - -
+
     println!("inserting {:?} .. ", m);
     assert!(m.insert(&mut db).is_ok());
     assert!(
@@ -140,8 +200,9 @@ pub fn main() {
             == "MultiPk { id: Some(1), id2: 1, bool_mand: false, \
             bool_mand_nul: None, f32_mand: 0.0, f32_opt: Some(1.0), \
             f64_mand: 0.0, f64_opt_nul: Some(Some(1.0)), i32_mand: 0, \
-            i32_opt_nul: Some(Some(1)), i64_mand: 0, date_mand: 0000-12-31, \
-            string_mand: \"\", u32_mand: 0, u64_mand: 0, usize_mand: 0 }",
+            i32_opt_nul: Some(Some(1)), default_parent_id: 2, \
+            date_mand: 0000-12-31, string_mand: \"\", u32_mand: 0, \
+            u64_mand: 0, usize_mand: 0 }",
     );
     println!("    OK");
     show_multi(&mut db);
@@ -196,7 +257,7 @@ pub fn main() {
     m.f64_opt_nul = Some(None);
     m.i32_mand = -32;
     m.i32_opt_nul = Some(Some(-32));
-    m.i64_mand = 64;
+    m.default_parent_id = 1;
     m.date_mand = NaiveDate::from_num_days_from_ce(1);
     m.string_mand = "hello".to_string();
     m.u32_mand = 32;
@@ -208,16 +269,65 @@ pub fn main() {
             == "MultiPk { id: Some(1), id2: 42, bool_mand: true, \
             bool_mand_nul: Some(false), f32_mand: 32.0, f32_opt: Some(32.0), \
             f64_mand: 64.0, f64_opt_nul: Some(None), i32_mand: -32, \
-            i32_opt_nul: Some(Some(-32)), i64_mand: 64, \
+            i32_opt_nul: Some(Some(-32)), default_parent_id: 1, \
             date_mand: 0001-01-01, string_mand: \"hello\", u32_mand: 32, \
             u64_mand: 64, usize_mand: 1 }",
     );
+    println!("    OK");
+    println!("save() existing after change ..");
+    m.usize_mand = 17;
+    assert!(m.save(&mut db).is_ok());
     println!("    OK");
     println!("finding existing ..");
     let res = m.find_equal(&mut db);
     assert!(res.is_some());
     assert!(res.unwrap() == m);
     println!("    OK");
+    println!("save() non-existing ..");
+    let mut m2 = m.clone();
+    m2.id2 = 17;
+    m2.default_parent_id = 1;
+    assert!(m2.save(&mut db).is_ok());
+    assert!(m2.find_equal(&mut db).unwrap() == m2);
+    println!("    OK");
+
+    // - - belongs-to association  - - - - - - - - - - - - - - - - - - - - - -
+
+    println!("setting saved parent ..");
+    assert!(m
+        .set_parent(&DefaultParent::find(&mut db, &2).unwrap())
+        .is_ok());
+    assert!(m.default_parent_id == 2);
+    assert!(m.save(&mut db).is_ok());
+    println!("    OK");
+    println!("error setting unsaved parent ..");
+    assert!(m
+        .set_parent(&DefaultParent {
+            id: None,
+            name: "unsaved".to_string()
+        })
+        .is_err());
+    assert!(m.default_parent_id == 2);
+    println!("    OK");
+    println!("getting saved parent ..");
+    let p = m.get_parent(&mut db);
+    assert!(p.is_some());
+    let p = p.unwrap();
+    assert!(
+        format!("{:?}", p)
+            == "DefaultParent { id: Some(2), name: \"used default\" }"
+    );
+    println!("    OK");
+    println!("finding siblings ..");
+    let sibs = MultiPk::belonging_to(&mut db, p);
+    assert!(sibs.is_ok());
+    let sibs = sibs.unwrap();
+    assert!(sibs.len() == 2);
+    assert!(sibs.iter().filter(|m| m.default_parent_id == 2).count() == 2);
+    println!("    OK");
+
+    // - - deleting  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
     println!("deleting existing {:?} ..", m);
     let res = m.clone().delete(&mut db);
     assert!(res.is_ok());
@@ -229,6 +339,8 @@ pub fn main() {
     println!("    OK");
 
     // --- SinglePk ----------------------------------------------------------
+
+    // - - inserting - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     let mut s = SinglePk {
         id: None,
@@ -279,21 +391,25 @@ pub fn main() {
         un1: Some(1),
         un2: 42,
     };
+
+    // - - not finding or updating non-existing  - - - - - - - - - - - - - - -
+
     println!("not finding non-existing {:?} ..", s);
     let res = s.find_equal(&mut db);
     assert!(res.is_none());
     println!("    OK");
     println!("not finding non-existing by unique fields ..");
-    assert!(SinglePk::find_by_un1_and_un2(
-            &mut db,
-            s.un1.unwrap(),
-            s.un2
-        ).is_none()
+    assert!(
+        SinglePk::find_by_un1_and_un2(&mut db, s.un1.unwrap(), s.un2)
+            .is_none()
     );
     assert!(s.find_equal_un1_and_un2(&mut db).is_none());
     assert!(
         SinglePk::validate_exists_un1_and_un2(
-            &mut db, s.un1.unwrap(), s.un2, "message"
+            &mut db,
+            s.un1.unwrap(),
+            s.un2,
+            "message"
         )
         .err()
         .unwrap()
@@ -306,6 +422,9 @@ pub fn main() {
     let res = s.update(&mut db);
     assert!(res.is_err());
     println!("    OK");
+
+    // - - commit transaction  - - - - - - - - - - - - - - - - - - - - - - - -
+
     {
         println!(",- transaction begin ------------------------------------");
         let mut trans = db.transaction().unwrap();
@@ -347,6 +466,9 @@ pub fn main() {
     let res = s.insert(&mut db);
     assert!(res.is_err());
     println!("    OK");
+
+    // - - finding existing  - - - - - - - - - - - - - - - - - - - - - - - - -
+
     println!("finding existing ..");
     let res = s.find_equal(&mut db);
     assert!(res.is_some());
@@ -368,7 +490,10 @@ pub fn main() {
             == format!("{:?}", &s.find_equal_un1_and_un2(&mut db).unwrap())
     );
     assert!(SinglePk::validate_exists_un1_and_un2(
-        &mut db, s.un1.unwrap(), s.un2, "message"
+        &mut db,
+        s.un1.unwrap(),
+        s.un2,
+        "message"
     )
     .is_ok());
     assert!(
@@ -379,6 +504,9 @@ pub fn main() {
             == "Databasfel\nmessage: Some(1), 42"
     );
     println!("    OK");
+
+    // - - query() - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
     let query = MdlQueryBld::new()
         .col("un2")
         .eq(Some(&DbValue::Int(1)))
@@ -567,6 +695,9 @@ pub fn main() {
         ]"
     );
     println!("    OK");
+
+    // - - roll back transaction - - - - - - - - - - - - - - - - - - - - - - -
+
     {
         println!(",- transaction begin ------------------------------------");
         let mut trans = db.transaction().unwrap();
@@ -585,6 +716,9 @@ pub fn main() {
         println!("'- transaction rollback ---------------------------------");
         println!("    OK");
     }
+
+    // - - deleting  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
     println!("deleting existing {:?} ..", s);
     let res = s.clone().delete(&mut db);
     assert!(res.is_ok());
@@ -598,17 +732,6 @@ pub fn main() {
         println!("    OK");
         show_single(&mut db);
     }
-
-    // --- The End -----------------------------------------------------------
-
-    db.connection()
-        .batch_execute(
-            "
-            DROP TABLE multi_pks;
-            DROP TABLE single_pks;
-        ",
-        )
-        .unwrap();
 }
 
 fn show_multi<'a>(db: &mut impl DbConn<'a>) {

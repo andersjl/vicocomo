@@ -3,6 +3,43 @@
 use crate::Error;
 use crate::{DbConn, DbValue};
 
+/// Functions for belongs-to associations.
+///
+/// `Parent` is the type of the parent struct.
+///
+#[allow(unused_variables)]
+pub trait MdlBelongsTo<'a, Parent>: Sized {
+    /// Retrive all child objects in the database belonging to a parent.
+    ///
+    /// `db` is the database connection object.
+    ///
+    /// `parent` is the parent object.
+    ///
+    fn belonging_to(
+        db: &mut impl DbConn<'a>,
+        parent: Parent,
+    ) -> Result<Vec<Self>, Error>;
+
+    /// Retrive the parent object from the database.
+    ///
+    /// `db` is the database connection object.
+    ///
+    /// A return value of `None` may be
+    /// - because the corresponding field in `self` is `None` (if the field is
+    ///   an `Option`),
+    /// - because there is no row in the parent table with a primary key
+    ///   matching the field value, or
+    /// - because of a database error of any kind.
+    ///
+    fn get_parent(&self, db: &mut impl DbConn<'a>) -> Option<Parent>;
+
+    /// Set the parent reference.
+    ///
+    /// `parent` is the parent object.
+    ///
+    fn set_parent(&mut self, parent: &Parent) -> Result<(), Error>;
+}
+
 /// Functions for deleting models from the database.
 ///
 #[allow(unused_variables)]
@@ -155,7 +192,7 @@ pub trait MdlSave<'a>: Sized {
 ///
 /// ```text
 /// let query =
-/// MdlQueryBld.new()            // create the query
+/// MdlQueryBld::new()           // create the query
 /// .col("c1")                   // begin building the first WHERE condition
 /// .gt(None)                    // the condition is ">", no value (yet)
 /// .and("c2")                   // another WHERE clause condition ...
@@ -166,7 +203,7 @@ pub trait MdlSave<'a>: Sized {
 /// .query().unwrap()            // create the query, cannot be used ...
 /// .value(1, &DbValue::Int(17)  // ... w/o setting all values (1-based ix)
 ///                              // Reuse the query with new values:
-/// query.set_values(&[DbValue::Int(42), DbValue::Text("bar")]);  // No Some()!
+/// query.set_values(&[DbValue::Int(42), DbValue::Text("bar")]); // No Some()!
 /// query.set_limit(Some(4));    // The limit may be changed ...
 /// query.set_limit(None);       // ... or removed (the offset, too)
 /// ```
@@ -281,18 +318,16 @@ impl MdlQueryBld {
 
     /// Build a complete WHERE condition
     ///
-    /// `filter` is the meat of the WHERE clause - no "WHERE"! - or `None` if
-    /// no WHERE clause.  It may be parameterized using the notation `$`n for
-    /// the n:th parameter, 1 based.
+    /// `fltr` is the meat of the WHERE clause - no `WHERE`! - or `None` if no
+    /// WHERE clause.  It may be parameterized using the notation `$`n for the
+    /// n:th parameter, 1 based.
     ///
     /// `values` are the parameter values.
     ///
     pub fn filter(mut self, fltr: Option<&str>, values: &[DbValue]) -> Self {
         match self.1 {
             QbState::Valid if self.0.filter.is_none() => {
-                if fltr.is_some() {
-                    self.0.filter = Some(format!("WHERE {}", fltr.unwrap()));
-                }
+                self.0.filter = fltr.map(|s| s.to_string());
                 self.0.values.extend(values.iter().map(|v| Some(v.clone())));
                 self
             }
@@ -480,8 +515,8 @@ pub enum MdlOrder {
     Custom(String),
 
     /// Use the models default order as defined by the
-    /// [`vicocomo_order_by`](../vicocomo_model_derive/index.html) attribute on
-    /// one or more model struct fields.
+    /// [`vicocomo_order_by`](../vicocomo_model_derive/index.html) attribute
+    /// on one or more model struct fields.
     Dflt,
 
     /// No `ORDER BY` sent to the database.
