@@ -17,7 +17,7 @@ pub trait MdlBelongsTo<'a, Parent>: Sized {
     ///
     fn belonging_to(
         db: &mut impl DbConn<'a>,
-        parent: Parent,
+        parent: &Parent,
     ) -> Result<Vec<Self>, Error>;
 
     /// Retrive the parent object from the database.
@@ -60,7 +60,9 @@ pub trait MdlDelete<'a, PkType> {
     ) -> Result<usize, Error>;
 }
 
-/// Functions for retrieving models from the database.
+/// Functions for retrieving models from the database.  Some functions are
+/// useful also for tables that have no primary key, e.g. views.  In that
+/// case `PkType` should be `()`.
 ///
 #[allow(unused_variables)]
 pub trait MdlFind<'a, PkType>: Sized {
@@ -72,17 +74,27 @@ pub trait MdlFind<'a, PkType>: Sized {
     /// column, `PkType` should be a tuple in the order they are declared in
     /// the struct.
     ///
-    fn find(db: &mut impl DbConn<'a>, pk: &PkType) -> Option<Self>;
+    /// The default implementaion returns `None`.
+    ///
+    fn find(db: &mut impl DbConn<'a>, pk: &PkType) -> Option<Self> {
+        None
+    }
 
     /// Find this object in the database by primary key.
     ///
     /// `db` is the database connection object.
     ///
-    fn find_equal(&self, db: &mut impl DbConn<'a>) -> Option<Self>;
+    /// The default implementaion returns `None`.
+    ///
+    fn find_equal(&self, db: &mut impl DbConn<'a>) -> Option<Self> {
+        None
+    }
 
     /// Return a vector with all records in the table in the default order.
     ///
     /// `db` is the database connection object.
+    ///
+    /// Must be implemented.
     ///
     fn load(db: &mut impl DbConn<'a>) -> Result<Vec<Self>, Error>;
 
@@ -92,6 +104,8 @@ pub trait MdlFind<'a, PkType>: Sized {
     /// `query` is a [`MdlQuery`](struct.MdlQuery.html), see that and
     /// [`MdlQueryBld`](struct.MdlQueryBld.html).
     ///
+    /// Must be implemented.
+    ///
     fn query(
         db: &mut impl DbConn<'a>,
         query: &MdlQuery,
@@ -99,6 +113,8 @@ pub trait MdlFind<'a, PkType>: Sized {
 
     /// Return an error if there is no object in the database whith the given
     /// primary key(s).  See [`find()`](trait.MdlFind.html#tymethod.find).
+    ///
+    /// The default implementaion uses `find()` in the obvious way.
     ///
     fn validate_exists(
         db: &mut impl DbConn<'a>,
@@ -113,6 +129,10 @@ pub trait MdlFind<'a, PkType>: Sized {
 
     /// Return an error if this object is already stored in the database.  See
     /// [`find_equal()`](trait.MdlFind.html#tymethod.find_equal).
+    ///
+    /// The default implementaion uses `find_equal()` in the obvious way.
+    /// Note that the default `find_equal()` will make the default
+    /// `validate_unique()` return `Ok(())`.
     ///
     fn validate_unique(
         &self,

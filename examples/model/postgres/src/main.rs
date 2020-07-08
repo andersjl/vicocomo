@@ -14,8 +14,7 @@ mod models {
 
     pub mod multi_pk {
         use chrono::NaiveDate;
-        use std::convert::TryInto;
-        use vicocomo::{Error, MdlBelongsTo, MdlFind};
+        use vicocomo::MdlBelongsTo;
 
         #[derive(
             Clone,
@@ -54,8 +53,6 @@ mod models {
     }
 
     pub mod single_pk {
-        use std::convert::TryInto;
-
         #[derive(
             Clone,
             Debug,
@@ -81,8 +78,6 @@ mod models {
     }
 
     pub mod default_parent {
-        use std::convert::TryInto;
-
         #[derive(Clone, Debug, vicocomo::FindModel)]
         pub struct DefaultParent {
             #[vicocomo_optional]
@@ -93,8 +88,6 @@ mod models {
     }
 
     pub mod nonstandard_parent {
-        use std::convert::TryInto;
-
         #[derive(Clone, Debug, vicocomo::FindModel)]
         pub struct NonstandardParent {
             #[vicocomo_optional]
@@ -319,7 +312,7 @@ pub fn main() {
     );
     println!("    OK");
     println!("finding siblings ..");
-    let sibs = MultiPk::belonging_to(&mut db, p);
+    let sibs = MultiPk::belonging_to(&mut db, &p);
     assert!(sibs.is_ok());
     let sibs = sibs.unwrap();
     assert!(sibs.len() == 2);

@@ -56,7 +56,7 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
     );
     let nul_variant = format_ident!("Nul{}", variant);
     TokenStream::from(quote! {
-        impl TryInto<#other> for DbValue {
+        impl std::convert::TryInto<#other> for DbValue {
             type Error = crate::Error;
             fn try_into(self) -> Result<#other, Self::Error> {
                 match self {
@@ -72,7 +72,7 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
                 Self::#variant(#other_to_value)
             }
         }
-        impl TryInto<Option<#other>> for DbValue {
+        impl std::convert::TryInto<Option<#other>> for DbValue {
             type Error = crate::Error;
             fn try_into(self) -> Result<Option<#other>, Self::Error> {
                 match self {

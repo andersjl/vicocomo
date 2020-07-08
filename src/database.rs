@@ -2,7 +2,7 @@
 //!
 use crate::{db_value_convert, Error};
 use chrono::{Datelike, NaiveDate};
-use std::{convert::TryInto, fmt};
+use std::fmt;
 
 /// A trait for use by other `vicocomo` modules as well as by users.
 ///

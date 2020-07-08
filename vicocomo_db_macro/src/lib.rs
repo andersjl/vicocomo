@@ -7,7 +7,6 @@ use proc_macro::TokenStream;
 
 mod db_value_convert;
 
-
 /// Convert types to and from vicocomo::DbValue.
 ///
 /// # Usage

@@ -55,19 +55,17 @@ pub fn save_model_impl(model: &Model) -> TokenStream {
             }
         })
         .collect();
-    let insert_do_it = model.rows_to_models_expr(
-        parse_quote!(
-            db.query(
-                &format!(
-                    #insert_fmt,
-                    &insert_cols.join(", "),
-                    #ins_placeholders,
-                ),
-                &params,
-                &[ #( #db_types ),* ],
-            )?
-        ),
-    );
+    let insert_do_it = model.rows_to_models_expr(parse_quote!(
+        db.query(
+            &format!(
+                #insert_fmt,
+                &insert_cols.join(", "),
+                #ins_placeholders,
+            ),
+            &params,
+            &[ #( #db_types ),* ],
+        )?
+    ));
     let update_input_expr: Vec<Expr> = upd_fields
         .iter()
         .map(|f| {
@@ -151,6 +149,7 @@ pub fn save_model_impl(model: &Model) -> TokenStream {
             fn update(&mut self, db: &mut impl vicocomo::DbConn<'a>)
                 -> Result<(), vicocomo::Error>
             {
+                use std::convert::TryInto;
                 let mut params = #pk_values;
                 let mut par_ix = params.len();
                 let mut update_cols: Vec<String> = Vec::new();

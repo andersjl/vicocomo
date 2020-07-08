@@ -588,6 +588,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             .collect();
         parse_quote!(
             {
+                use std::convert::TryInto;
                 let mut error: Option<vicocomo::Error> = None;
                 let mut models = Vec::new();
                 let mut rows: Vec<Vec<vicocomo::DbValue>> = #rows;
@@ -622,14 +623,8 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         let mut unis: HashMap<&str, Vec<&Field>> = HashMap::new();
         for field in &self.fields {
             let uni_lbl = match &field.uni {
-                Some(s) => Some(s.as_str()),
-                None => {
-                    if field.pri {
-                        Some("__vicocomo_primary__")
-                    } else {
-                        None
-                    }
-                }
+                Some(s) if !field.pri => Some(s.as_str()),
+                _ => None,
             };
             match &uni_lbl {
                 Some(s) => {
