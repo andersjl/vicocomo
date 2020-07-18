@@ -41,14 +41,14 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
     let find_model = model.rows_to_models_expr(parse_quote!(outp));
     let load_fn: ItemFn = parse_quote!(
         fn load(
-            db: &mut impl vicocomo::DbConn<'a>,
+            db: &impl vicocomo::DbConn,
         ) -> Result<Vec<Self>, vicocomo::Error> {
             #load_models
         }
     );
     let query_fn: ItemFn = parse_quote!(
         fn query(
-            db: &mut impl vicocomo::DbConn<'a>,
+            db: &impl vicocomo::DbConn,
             query: &vicocomo::MdlQuery
         ) -> Result<Vec<Self>, vicocomo::Error> {
             let filter = match query.filter.as_ref() {
@@ -108,7 +108,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         }
         gen.extend(quote! {
             impl<'a> vicocomo::MdlFind<'a, #pk_type> for #struct_id {
-                fn find(db: &mut impl vicocomo::DbConn<'a>, pk: &#pk_type)
+                fn find(db: &impl vicocomo::DbConn, pk: &#pk_type)
                     -> Option<Self>
                 {
                     match db.query(
@@ -128,7 +128,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
                     }
                 }
 
-                fn find_equal(&self, db: &mut impl vicocomo::DbConn<'a>)
+                fn find_equal(&self, db: &impl vicocomo::DbConn)
                     -> Option<Self>
                 {
                     #pk_self_to_tuple.and_then(|tup| Self::find(db, &tup))
@@ -162,7 +162,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         let mut find_args: Punctuated<Expr, Comma> = Punctuated::new();
         let mut par_vals: Punctuated<Expr, Comma> = Punctuated::new();
         let mut self_args: Punctuated<Expr, Comma> = Punctuated::new();
-        find_pars.push(parse_quote!(db: &mut impl vicocomo::DbConn<'a>));
+        find_pars.push(parse_quote!(db: &impl vicocomo::DbConn));
         find_args.push(parse_quote!(db));
         self_args.push(parse_quote!(db));
         for field in &uni_flds {
@@ -213,7 +213,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
                 }
 
                 // -- find_equal_field1_and_field3(db) -----------------------
-                pub fn #find_eq_id(&self, db: &mut impl vicocomo::DbConn<'a>)
+                pub fn #find_eq_id(&self, db: &impl vicocomo::DbConn)
                 -> Option<Self> {
                     Self::#find_by_id(#self_args)
                 }
@@ -260,7 +260,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
                 // -- validate_unique_field1_and_field3(db, msg) -------------
                 pub fn #uni_id(
                     &self,
-                    db: &mut impl vicocomo::DbConn<'a>,
+                    db: &impl vicocomo::DbConn,
                     msg: &str
                 ) -> Result<(), vicocomo::Error> {
                     match self.#find_eq_id(db) {

@@ -6,15 +6,19 @@ use std::fmt;
 
 /// A trait for use by other `vicocomo` modules as well as by users.
 ///
-pub trait DbConn<'a> {
-    /// The type of the transaction() return value.
+pub trait DbConn {
+    /// Begin a transaction.  The default method simply uses `exec()` to send
+    /// `BEGIN` to the database.
     ///
-    type Transaction: DbConn<'a>;
+    fn begin(&self) -> Result<(), Error> {
+        self.exec("BEGIN", &[]).map(|_| ())
+    }
 
-    /// Commit the present transaction.  The default method returns an error.
+    /// Commit the present transaction.  The default method simply uses
+    /// `exec()` to send `COMMIT` to the database.
     ///
-    fn commit(self: Box<Self>) -> Result<(), Error> {
-        Err(Error::database("not in a transaction"))
+    fn commit(&self) -> Result<(), Error> {
+        self.exec("COMMIT", &[]).map(|_| ())
     }
 
     /// Execute an SQL statement.
@@ -26,8 +30,7 @@ pub trait DbConn<'a> {
     ///
     /// Returns the number of affected rows.
     ///
-    fn exec(&mut self, sql: &str, values: &[DbValue])
-        -> Result<usize, Error>;
+    fn exec(&self, sql: &str, values: &[DbValue]) -> Result<usize, Error>;
 
     /// Execute an SQL query and return the result.
     ///
@@ -43,21 +46,18 @@ pub trait DbConn<'a> {
     /// Returns the result as a vector of vectors of `DbValue`.
     ///
     fn query(
-        &mut self,
+        &self,
         sql: &str,
         values: &[DbValue],
         types: &[DbType],
     ) -> Result<Vec<Vec<DbValue>>, Error>;
 
-    /// Rollback the present transaction.  The default method returns an
-    /// error.
+    /// Rollback the present transaction.  The default method simply uses
+    /// `exec()` to send `ROLLBACK` to the database.
     ///
-    fn rollback(self: Box<Self>) -> Result<(), Error> {
-        Err(Error::database("not in a transaction"))
+    fn rollback(&self) -> Result<(), Error> {
+        self.exec("ROLLBACK", &[]).map(|_| ())
     }
-
-    /// Return a `Transaction` object.
-    fn transaction(&'a mut self) -> Result<Self::Transaction, Error>;
 }
 
 /// The possible types as seen by the database.

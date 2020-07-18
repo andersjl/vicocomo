@@ -1,11 +1,18 @@
-//! Implement `vicocomo::DbConn` by way of the `postgres` crate.
+//! Implement `vicocomo::DbConn` by way of the `tokio-postgres` crate.
 
-use postgres;
+use futures::executor::block_on;
 use postgres_types;
+use tokio_postgres;
 use vicocomo::{DbConn, DbType, DbValue, Error};
 
-/// A wrapping of `postgres::Client` that implements `vicocomo::DbConn`.
-pub struct PgConn(postgres::Client);
+/// A wrapping of `tokio_postgres::Client` that implements `vicocomo::DbConn`.
+pub struct PgConn(tokio_postgres::Client);
+
+impl PgConn {
+    pub fn new(client: tokio_postgres::Client) -> Self {
+        Self(client)
+    }
+}
 
 macro_rules! from_values {
     ($values:expr) => {
@@ -29,29 +36,16 @@ macro_rules! from_values {
     };
 }
 
-impl PgConn {
-    pub fn connect(conn_str: &str) -> Result<Self, Error> {
-        Ok(Self(
-            postgres::Client::connect(conn_str, postgres::NoTls)
-                .map_err(|e| Error::Database(e.to_string()))?,
-        ))
-    }
-
-    pub fn connection(&mut self) -> &mut postgres::Client {
-        &mut self.0
-    }
-}
-
-impl<'a> DbConn<'a> for PgConn {
-    type Transaction = PgTrans<'a>;
-
-    fn exec(&mut self, sql: &str, vals: &[DbValue]) -> Result<usize, Error> {
+impl DbConn for PgConn {
+    fn exec(&self, sql: &str, vals: &[DbValue]) -> Result<usize, Error> {
         /*
-        print!("PgConn.0.exec(\n    {:?},\n    {:?},\n)", sql, from_values!(vals));
+        print!(
+            "PgConn.0.exec(\n    {:?},\n    {:?},\n)",
+            sql,
+            from_values!(vals));
         let result =
         */
-        self.0
-            .execute(sql, from_values!(vals))
+        block_on(self.0.execute(sql, from_values!(vals)))
             .map(|i| i as usize)
             .map_err(|e| Error::Database(e.to_string()))
         /*
@@ -59,74 +53,26 @@ impl<'a> DbConn<'a> for PgConn {
         */
     }
 
-    fn query(
-        &mut self,
-        sql: &str,
-        values: &[DbValue],
-        types: &[DbType],
-    ) -> Result<Vec<Vec<DbValue>>, Error> {
+    fn query(&self, sql: &str, values: &[DbValue], types: &[DbType])
+        -> Result<Vec<Vec<DbValue>>, Error>
+    {
         /*
-        print!("PgConn.0.query(\n    {:?},\n    {:?},\n)", sql, from_values!(values));
+        print!(
+            "PgConn.0.query(\n    {:?},\n    {:?},\n)",
+            sql,
+            from_values!(values)
+        );
         let result =
         */
-        Ok(do_query(self.0.query(sql, from_values!(values)), types)?)
+        do_query(block_on(self.0.query(sql, from_values!(values))), types)
         /*
         ; println!(" -> {:?}", result); result
         */
-    }
-
-    fn transaction(&'a mut self) -> Result<Self::Transaction, Error> {
-        Ok(PgTrans(
-            self.0
-                .transaction()
-                .map_err(|e| Error::Database(e.to_string()))?,
-        ))
-    }
-}
-
-/// A wrapping of `postgres::Transaction` that implements `vicocomo::DbConn`.
-pub struct PgTrans<'a>(postgres::Transaction<'a>);
-
-impl<'a> DbConn<'a> for PgTrans<'a> {
-    type Transaction = PgTrans<'a>;
-
-    fn commit(self: Box<Self>) -> Result<(), Error> {
-        self.0.commit().map_err(|e| Error::Database(e.to_string()))
-    }
-
-    fn exec(&mut self, sql: &str, vals: &[DbValue]) -> Result<usize, Error> {
-        self.0
-            .execute(sql, from_values!(vals))
-            .map(|i| i as usize)
-            .map_err(|e| Error::Database(e.to_string()))
-    }
-
-    fn query(
-        &mut self,
-        sql: &str,
-        values: &[DbValue],
-        types: &[DbType],
-    ) -> Result<Vec<Vec<DbValue>>, Error> {
-        Ok(do_query(self.0.query(sql, from_values!(values)), types)?)
-    }
-
-    fn rollback(self: Box<Self>) -> Result<(), Error> {
-        self.0
-            .rollback()
-            .map_err(|e| Error::Database(e.to_string()))
-    }
-
-    fn transaction(&'a mut self) -> Result<Self::Transaction, Error> {
-        Ok(PgTrans(
-            self.0
-                .transaction()
-                .map_err(|e| Error::Database(e.to_string()))?,
-        ))
     }
 }
 
 fn do_query(
-    pg_rows: Result<Vec<postgres::Row>, postgres::Error>,
+    pg_rows: Result<Vec<tokio_postgres::Row>, tokio_postgres::Error>,
     types: &[DbType],
 ) -> Result<Vec<Vec<DbValue>>, Error> {
     //print!("vicocomo_postgres::do_query(\n    {:?},\n    {:?},\n)", pg_rows, types);

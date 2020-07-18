@@ -53,7 +53,7 @@ pub fn belongs_to_model_impl(model: &Model) -> TokenStream {
         gen.extend(quote! {
             impl<'a> MdlBelongsTo<'a, #parent> for #struct_id {
                 fn belonging_to(
-                    db: &mut impl vicocomo::DbConn<'a>,
+                    db: &impl vicocomo::DbConn,
                     parent: &#parent
                 ) -> Result<Vec<Self>, vicocomo::Error> {
                     use vicocomo::MdlFind;
@@ -65,7 +65,7 @@ pub fn belongs_to_model_impl(model: &Model) -> TokenStream {
                             .unwrap(),
                     )
                 }
-                fn get_parent(&self, db: &mut impl vicocomo::DbConn<'a>)
+                fn get_parent(&self, db: &impl vicocomo::DbConn)
                     -> Option<#parent>
                 {
                     use vicocomo::MdlFind;

@@ -107,14 +107,22 @@ use vicocomo::{
 };
 use vicocomo_postgres::PgConn;
 
-pub fn main() {
+#[tokio::main]
+async fn main() {
+    use futures::executor::block_on;
+
     dotenv::dotenv().ok();
-
-    let database_url =
-        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-
-    let mut db = PgConn::connect(&database_url).expect("cannot connect");
-    match db.connection().batch_execute(
+    let (pg_client, pg_conn) =
+        block_on(tokio_postgres::connect(
+            &std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
+            tokio_postgres::NoTls,
+        )).expect("cannot connect");
+    tokio::spawn(async move {
+        if let Err(e) = pg_conn.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+    match block_on(pg_client.batch_execute(
         "
         DROP TABLE IF EXISTS multi_pks;
         DROP TABLE IF EXISTS single_pks;
@@ -158,10 +166,11 @@ pub fn main() {
         INSERT INTO nonstandard_parents (pk)
             VALUES ('used nonstandard'), ('nonstandard filler');
     ",
-    ) {
+    )) {
         Ok(_) => println!("created tables\n"),
         Err(e) => panic!("{}", e),
     }
+    let db = PgConn::new(pg_client);
 
     // --- MultiPk -----------------------------------------------------------
 
@@ -187,7 +196,7 @@ pub fn main() {
     // - - inserting, finding, and updating  - - - - - - - - - - - - - - - - -
 
     println!("inserting {:?} .. ", m);
-    assert!(m.insert(&mut db).is_ok());
+    assert!(m.insert(&db).is_ok());
     assert!(
         format!("{:?}", m)
             == "MultiPk { id: Some(1), id2: 1, bool_mand: false, \
@@ -198,39 +207,39 @@ pub fn main() {
             u64_mand: 0, usize_mand: 0 }",
     );
     println!("    OK");
-    show_multi(&mut db);
+    show_multi(&db);
     m.id2 = 42;
     println!("not finding non-existing {:?} ..", m);
-    assert!(MultiPk::find(&mut db, &(42, 17)).is_none());
-    assert!(m.find_equal(&mut db).is_none());
+    assert!(MultiPk::find(&db, &(42, 17)).is_none());
+    assert!(m.find_equal(&db).is_none());
     assert!(
-        MultiPk::validate_exists(&mut db, &(m.id2, m.id.unwrap()), "message")
+        MultiPk::validate_exists(&db, &(m.id2, m.id.unwrap()), "message")
             .err()
             .unwrap()
             .to_string()
             == "Databasfel\nmessage"
     );
-    assert!(m.validate_unique(&mut db, "message").is_ok());
+    assert!(m.validate_unique(&db, "message").is_ok());
     println!("    OK");
     println!("error updating non-existing ..");
-    let res = m.update(&mut db);
+    let res = m.update(&db);
     assert!(res.is_err());
     println!("    OK");
     println!("inserting non-existing ..");
-    let res = m.insert(&mut db);
+    let res = m.insert(&db);
     assert!(res.is_ok());
     println!("    OK");
     println!("finding existing ..");
-    assert!(m == MultiPk::find(&mut db, &(m.id.unwrap(), m.id2)).unwrap());
-    assert!(m == m.find_equal(&mut db).unwrap());
+    assert!(m == MultiPk::find(&db, &(m.id.unwrap(), m.id2)).unwrap());
+    assert!(m == m.find_equal(&db).unwrap());
     assert!(MultiPk::validate_exists(
-        &mut db,
+        &db,
         &(m.id.unwrap(), m.id2),
         "message"
     )
     .is_ok());
     assert!(
-        m.validate_unique(&mut db, "message")
+        m.validate_unique(&db, "message")
             .err()
             .unwrap()
             .to_string()
@@ -238,7 +247,7 @@ pub fn main() {
     );
     println!("    OK");
     println!("error inserting existing ..");
-    let res = m.insert(&mut db);
+    let res = m.insert(&db);
     assert!(res.is_err());
     println!("    OK");
     println!("updating existing ..");
@@ -256,7 +265,7 @@ pub fn main() {
     m.u32_mand = 32;
     m.u64_mand = 64;
     m.usize_mand = 1;
-    m.update(&mut db).unwrap();
+    m.update(&db).unwrap();
     assert!(
         format!("{:?}", m)
             == "MultiPk { id: Some(1), id2: 42, bool_mand: true, \
@@ -269,10 +278,10 @@ pub fn main() {
     println!("    OK");
     println!("save() existing after change ..");
     m.usize_mand = 17;
-    assert!(m.save(&mut db).is_ok());
+    assert!(m.save(&db).is_ok());
     println!("    OK");
     println!("finding existing ..");
-    let res = m.find_equal(&mut db);
+    let res = m.find_equal(&db);
     assert!(res.is_some());
     assert!(res.unwrap() == m);
     println!("    OK");
@@ -280,18 +289,18 @@ pub fn main() {
     let mut m2 = m.clone();
     m2.id2 = 17;
     m2.default_parent_id = 1;
-    assert!(m2.save(&mut db).is_ok());
-    assert!(m2.find_equal(&mut db).unwrap() == m2);
+    assert!(m2.save(&db).is_ok());
+    assert!(m2.find_equal(&db).unwrap() == m2);
     println!("    OK");
 
     // - - belongs-to association  - - - - - - - - - - - - - - - - - - - - - -
 
     println!("setting saved parent ..");
     assert!(m
-        .set_parent(&DefaultParent::find(&mut db, &2).unwrap())
+        .set_parent(&DefaultParent::find(&db, &2).unwrap())
         .is_ok());
     assert!(m.default_parent_id == 2);
-    assert!(m.save(&mut db).is_ok());
+    assert!(m.save(&db).is_ok());
     println!("    OK");
     println!("error setting unsaved parent ..");
     assert!(m
@@ -303,7 +312,7 @@ pub fn main() {
     assert!(m.default_parent_id == 2);
     println!("    OK");
     println!("getting saved parent ..");
-    let p = m.get_parent(&mut db);
+    let p = m.get_parent(&db);
     assert!(p.is_some());
     let p = p.unwrap();
     assert!(
@@ -312,7 +321,7 @@ pub fn main() {
     );
     println!("    OK");
     println!("finding siblings ..");
-    let sibs = MultiPk::belonging_to(&mut db, &p);
+    let sibs = MultiPk::belonging_to(&db, &p);
     assert!(sibs.is_ok());
     let sibs = sibs.unwrap();
     assert!(sibs.len() == 2);
@@ -322,12 +331,12 @@ pub fn main() {
     // - - deleting  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     println!("deleting existing {:?} ..", m);
-    let res = m.clone().delete(&mut db);
+    let res = m.clone().delete(&db);
     assert!(res.is_ok());
     assert!(res.unwrap() == 1);
     println!("    OK");
     println!("error deleting non-existing {:?}", m);
-    let res = m.delete(&mut db);
+    let res = m.delete(&db);
     assert!(res.is_err());
     println!("    OK");
 
@@ -343,13 +352,13 @@ pub fn main() {
         un2: 1,
     };
     println!("inserting {:?} ..", s);
-    assert!(s.insert(&mut db).is_ok());
+    assert!(s.insert(&db).is_ok());
     assert!(format!("{:?}", s) ==
         "SinglePk { id: Some(1), name: Some(\"default\"), data: Some(17.0), \
             un1: Some(2), un2: 1 }",
     );
     println!("    OK");
-    show_single(&mut db);
+    show_single(&db);
     let ss = vec![
         SinglePk {
             id: None,
@@ -367,7 +376,7 @@ pub fn main() {
         },
     ];
     println!("inserting batch {:?} ..", ss);
-    let res = SinglePk::insert_batch(&mut db, &ss[..]);
+    let res = SinglePk::insert_batch(&db, &ss[..]);
     assert!(res.is_ok());
     assert!(format!("{:?}", res) ==
         "Ok([SinglePk { id: Some(2), name: Some(\"hej\"), data: None, \
@@ -376,7 +385,7 @@ pub fn main() {
             un1: Some(1), un2: 2 }])"
     );
     println!("    OK");
-    show_single(&mut db);
+    show_single(&db);
     s = SinglePk {
         id: Some(42),
         name: Some(String::from("hej")),
@@ -388,18 +397,18 @@ pub fn main() {
     // - - not finding or updating non-existing  - - - - - - - - - - - - - - -
 
     println!("not finding non-existing {:?} ..", s);
-    let res = s.find_equal(&mut db);
+    let res = s.find_equal(&db);
     assert!(res.is_none());
     println!("    OK");
     println!("not finding non-existing by unique fields ..");
     assert!(
-        SinglePk::find_by_un1_and_un2(&mut db, s.un1.unwrap(), s.un2)
+        SinglePk::find_by_un1_and_un2(&db, s.un1.unwrap(), s.un2)
             .is_none()
     );
-    assert!(s.find_equal_un1_and_un2(&mut db).is_none());
+    assert!(s.find_equal_un1_and_un2(&db).is_none());
     assert!(
         SinglePk::validate_exists_un1_and_un2(
-            &mut db,
+            &db,
             s.un1.unwrap(),
             s.un2,
             "message"
@@ -409,61 +418,59 @@ pub fn main() {
         .to_string()
             == "Databasfel\nmessage: 1, 42"
     );
-    assert!(s.validate_unique_un1_and_un2(&mut db, "message").is_ok());
+    assert!(s.validate_unique_un1_and_un2(&db, "message").is_ok());
     println!("    OK");
     println!("error updating non-existing ..");
-    let res = s.update(&mut db);
+    let res = s.update(&db);
     assert!(res.is_err());
     println!("    OK");
 
     // - - commit transaction  - - - - - - - - - - - - - - - - - - - - - - - -
 
-    {
-        println!(",- transaction begin ------------------------------------");
-        let mut trans = db.transaction().unwrap();
-        println!("| inserting non-existing ..");
-        let res = s.insert(&mut trans);
-        assert!(res.is_ok());
-        assert!(format!("{:?}", s) ==
-            "SinglePk { id: Some(42), name: Some(\"hej\"), data: None, \
-                un1: Some(1), un2: 42 }"
-        );
-        let mut un2 = 1000;
-        let mut name = "aaa".to_string();
-        for s in SinglePk::load(&mut trans).unwrap() {
-            assert!(s.un2 <= un2);
-            if s.un2 == un2 {
-                assert!(s.name.clone().unwrap() >= name);
-            }
-            un2 = s.un2;
-            name = s.name.unwrap().clone();
+    println!(",- transaction begin ------------------------------------");
+    db.begin().unwrap();
+    println!("| inserting non-existing ..");
+    let res = s.insert(&db);
+    assert!(res.is_ok());
+    assert!(format!("{:?}", s) ==
+        "SinglePk { id: Some(42), name: Some(\"hej\"), data: None, \
+            un1: Some(1), un2: 42 }"
+    );
+    let mut un2 = 1000;
+    let mut name = "aaa".to_string();
+    for s in SinglePk::load(&db).unwrap() {
+        assert!(s.un2 <= un2);
+        if s.un2 == un2 {
+            assert!(s.name.clone().unwrap() >= name);
         }
-        println!("|   OK");
-        show_single(&mut trans);
-        s.name = Some("nytt namn".to_string());
-        println!("| updating existing {:?} ..", s);
-        let res = s.update(&mut trans);
-        assert!(res.is_ok());
-        assert!(format!("{:?}", s) ==
-            "SinglePk { id: Some(42), name: Some(\"nytt namn\"), data: None, \
-                un1: Some(1), un2: 42 }"
-        );
-        println!("|   OK");
-        Box::new(trans).commit().unwrap();
-        println!("'- transaction commit -----------------------------------");
-        assert!(s.find_equal(&mut db).is_some());
-        println!("    OK");
+        un2 = s.un2;
+        name = s.name.unwrap().clone();
     }
-    show_single(&mut db);
+    println!("|   OK");
+    show_single(&db);
+    s.name = Some("nytt namn".to_string());
+    println!("| updating existing {:?} ..", s);
+    let res = s.update(&db);
+    assert!(res.is_ok());
+    assert!(format!("{:?}", s) ==
+        "SinglePk { id: Some(42), name: Some(\"nytt namn\"), data: None, \
+            un1: Some(1), un2: 42 }"
+    );
+    println!("|   OK");
+    db.commit().unwrap();
+    println!("'- transaction commit -----------------------------------");
+    assert!(s.find_equal(&db).is_some());
+    println!("    OK");
+    show_single(&db);
     println!("error inserting existing ..");
-    let res = s.insert(&mut db);
+    let res = s.insert(&db);
     assert!(res.is_err());
     println!("    OK");
 
     // - - finding existing  - - - - - - - - - - - - - - - - - - - - - - - - -
 
     println!("finding existing ..");
-    let res = s.find_equal(&mut db);
+    let res = s.find_equal(&db);
     assert!(res.is_some());
     assert!(format!("{:?}", res.unwrap()) ==
         "SinglePk { id: Some(42), name: Some(\"nytt namn\"), data: None, \
@@ -471,7 +478,7 @@ pub fn main() {
     );
     println!("    OK");
     println!("finding existing by unique fields ..");
-    let res = SinglePk::find_by_un1_and_un2(&mut db, s.un1.unwrap(), s.un2);
+    let res = SinglePk::find_by_un1_and_un2(&db, s.un1.unwrap(), s.un2);
     assert!(res.is_some());
     let res = res.unwrap();
     assert!(format!("{:?}", &res) ==
@@ -480,17 +487,17 @@ pub fn main() {
     );
     assert!(
         format!("{:?}", &res)
-            == format!("{:?}", &s.find_equal_un1_and_un2(&mut db).unwrap())
+            == format!("{:?}", &s.find_equal_un1_and_un2(&db).unwrap())
     );
     assert!(SinglePk::validate_exists_un1_and_un2(
-        &mut db,
+        &db,
         s.un1.unwrap(),
         s.un2,
         "message"
     )
     .is_ok());
     assert!(
-        s.validate_unique_un1_and_un2(&mut db, "message")
+        s.validate_unique_un1_and_un2(&db, "message")
             .err()
             .unwrap()
             .to_string()
@@ -508,7 +515,7 @@ pub fn main() {
         .query()
         .unwrap();
     println!("query() with default order ..");
-    let found = SinglePk::query(&mut db, &query);
+    let found = SinglePk::query(&db, &query);
     assert!(
         format!("{:?}", found.unwrap())
             == "[\
@@ -545,7 +552,7 @@ pub fn main() {
         .order("un1, name DESC")
         .query()
         .unwrap();
-    let found = SinglePk::query(&mut db, &query);
+    let found = SinglePk::query(&db, &query);
     assert!(
         format!("{:?}", found.unwrap())
             == "[\
@@ -575,7 +582,7 @@ pub fn main() {
     println!("    OK");
     println!("query() without filter with custom order ..");
     query = MdlQueryBld::new().order("un1, name DESC").query().unwrap();
-    let found = SinglePk::query(&mut db, &query);
+    let found = SinglePk::query(&db, &query);
     assert!(
         format!("{:?}", found.unwrap())
             == "[\
@@ -612,7 +619,7 @@ pub fn main() {
     println!("    OK");
     println!("query() without filter with limit ..");
     query.set_limit(Some(2));
-    let found = SinglePk::query(&mut db, &query);
+    let found = SinglePk::query(&db, &query);
     assert!(
         format!("{:?}", found.unwrap())
             == "[\
@@ -636,7 +643,7 @@ pub fn main() {
     println!("query() without filter with offset ..");
     query.set_limit(None);
     query.set_offset(Some(1));
-    let found = SinglePk::query(&mut db, &query);
+    let found = SinglePk::query(&db, &query);
     assert!(
         format!("{:?}", found.unwrap())
             == "[\
@@ -667,7 +674,7 @@ pub fn main() {
     println!("query() without filter with limit and offset ..");
     query.set_limit(Some(2));
     query.set_offset(Some(1));
-    let found = SinglePk::query(&mut db, &query);
+    let found = SinglePk::query(&db, &query);
     assert!(
         format!("{:?}", found.unwrap())
             == "[\
@@ -693,19 +700,19 @@ pub fn main() {
 
     {
         println!(",- transaction begin ------------------------------------");
-        let mut trans = db.transaction().unwrap();
+        db.begin().unwrap();
         println!("| deleting existing {:?} ..", s);
-        let res = s.clone().delete(&mut trans);
+        let res = s.clone().delete(&db);
         assert!(res.is_ok());
         assert!(res.unwrap() == 1);
         println!("|   OK");
-        show_single(&mut trans);
+        show_single(&db);
         println!("| error deleting non-existing {:?}", s);
-        let res = s.clone().delete(&mut trans);
+        let res = s.clone().delete(&db);
         assert!(res.is_err());
         println!("|   OK");
-        Box::new(trans).rollback().unwrap();
-        assert!(s.find_equal(&mut db).is_some());
+        db.rollback().unwrap();
+        assert!(s.find_equal(&db).is_some());
         println!("'- transaction rollback ---------------------------------");
         println!("    OK");
     }
@@ -713,21 +720,21 @@ pub fn main() {
     // - - deleting  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     println!("deleting existing {:?} ..", s);
-    let res = s.clone().delete(&mut db);
+    let res = s.clone().delete(&db);
     assert!(res.is_ok());
     assert!(res.unwrap() == 1);
     println!("    OK");
     for (pks, del) in [([42, 43], 0), ([42, 3], 1), ([2, 1], 2)].iter() {
         println!("deleting {} out of batch {:?}", del, pks);
-        let res = SinglePk::delete_batch(&mut db, pks);
+        let res = SinglePk::delete_batch(&db, pks);
         assert!(res.is_ok());
         assert!(res.unwrap() == *del);
         println!("    OK");
-        show_single(&mut db);
+        show_single(&db);
     }
 }
 
-fn show_multi<'a>(db: &mut impl DbConn<'a>) {
+fn show_multi<'a>(db: &impl DbConn) {
     match SHOW {
         Show::Nothing => (),
         Show::OneLine => {
@@ -739,7 +746,7 @@ fn show_multi<'a>(db: &mut impl DbConn<'a>) {
     }
 }
 
-fn show_single<'a>(db: &mut impl DbConn<'a>) {
+fn show_single<'a>(db: &impl DbConn) {
     match SHOW {
         Show::Nothing => (),
         Show::OneLine => {

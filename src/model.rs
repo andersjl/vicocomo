@@ -16,7 +16,7 @@ pub trait MdlBelongsTo<'a, Parent>: Sized {
     /// `parent` is the parent object.
     ///
     fn belonging_to(
-        db: &mut impl DbConn<'a>,
+        db: &impl DbConn,
         parent: &Parent,
     ) -> Result<Vec<Self>, Error>;
 
@@ -31,7 +31,7 @@ pub trait MdlBelongsTo<'a, Parent>: Sized {
     ///   matching the field value, or
     /// - because of a database error of any kind.
     ///
-    fn get_parent(&self, db: &mut impl DbConn<'a>) -> Option<Parent>;
+    fn get_parent(&self, db: &impl DbConn) -> Option<Parent>;
 
     /// Set the parent reference.
     ///
@@ -46,7 +46,7 @@ pub trait MdlBelongsTo<'a, Parent>: Sized {
 pub trait MdlDelete<'a, PkType> {
     /// Return 1 after successfully deleted the corresponding database row.
     ///
-    fn delete(self, db: &mut impl DbConn<'a>) -> Result<usize, Error>;
+    fn delete(self, db: &impl DbConn) -> Result<usize, Error>;
 
     /// Return the number of successfully deleted database rows.
     ///
@@ -55,7 +55,7 @@ pub trait MdlDelete<'a, PkType> {
     /// declared in the struct.
     ///
     fn delete_batch(
-        db: &mut impl DbConn<'a>,
+        db: &impl DbConn,
         batch: &[PkType],
     ) -> Result<usize, Error>;
 }
@@ -76,7 +76,7 @@ pub trait MdlFind<'a, PkType>: Sized {
     ///
     /// The default implementaion returns `None`.
     ///
-    fn find(db: &mut impl DbConn<'a>, pk: &PkType) -> Option<Self> {
+    fn find(db: &impl DbConn, pk: &PkType) -> Option<Self> {
         None
     }
 
@@ -86,7 +86,7 @@ pub trait MdlFind<'a, PkType>: Sized {
     ///
     /// The default implementaion returns `None`.
     ///
-    fn find_equal(&self, db: &mut impl DbConn<'a>) -> Option<Self> {
+    fn find_equal(&self, db: &impl DbConn) -> Option<Self> {
         None
     }
 
@@ -96,7 +96,7 @@ pub trait MdlFind<'a, PkType>: Sized {
     ///
     /// Must be implemented.
     ///
-    fn load(db: &mut impl DbConn<'a>) -> Result<Vec<Self>, Error>;
+    fn load(db: &impl DbConn) -> Result<Vec<Self>, Error>;
 
     /// Return a vector with a possibly limited number of records that satisfy
     /// a condition possibly in a specified order.
@@ -107,7 +107,7 @@ pub trait MdlFind<'a, PkType>: Sized {
     /// Must be implemented.
     ///
     fn query(
-        db: &mut impl DbConn<'a>,
+        db: &impl DbConn,
         query: &MdlQuery,
     ) -> Result<Vec<Self>, Error>;
 
@@ -117,7 +117,7 @@ pub trait MdlFind<'a, PkType>: Sized {
     /// The default implementaion uses `find()` in the obvious way.
     ///
     fn validate_exists(
-        db: &mut impl DbConn<'a>,
+        db: &impl DbConn,
         pk: &PkType,
         msg: &str,
     ) -> Result<(), Error> {
@@ -136,7 +136,7 @@ pub trait MdlFind<'a, PkType>: Sized {
     ///
     fn validate_unique(
         &self,
-        db: &mut impl DbConn<'a>,
+        db: &impl DbConn,
         msg: &str,
     ) -> Result<(), Error> {
         match self.find_equal(db) {
@@ -159,7 +159,7 @@ pub trait MdlSave<'a>: Sized {
     /// It is an error if `self` has a primary key that exists in the
     /// database.
     ///
-    fn insert(&mut self, db: &mut impl DbConn<'a>) -> Result<(), Error> {
+    fn insert(&mut self, db: &impl DbConn) -> Result<(), Error> {
         *self = Self::insert_batch(db, std::slice::from_ref(self))?
             .pop()
             .unwrap();
@@ -178,7 +178,7 @@ pub trait MdlSave<'a>: Sized {
     /// database.
     ///
     fn insert_batch(
-        db: &mut impl DbConn<'a>,
+        db: &impl DbConn,
         data: &[Self],
     ) -> Result<Vec<Self>, Error>;
 
@@ -192,7 +192,7 @@ pub trait MdlSave<'a>: Sized {
     /// The default implementation simply tries first `update()`, then
     /// `insert()`.
     ///
-    fn save(&mut self, db: &mut impl DbConn<'a>) -> Result<(), Error> {
+    fn save(&mut self, db: &impl DbConn) -> Result<(), Error> {
         self.update(db).or_else(|_e| self.insert(db))
     }
 
@@ -202,7 +202,7 @@ pub trait MdlSave<'a>: Sized {
     /// It is an error if `self` lacks a primary key or has one that does not
     /// exist in the database.
     ///
-    fn update(&mut self, db: &mut impl DbConn<'a>) -> Result<(), Error>;
+    fn update(&mut self, db: &impl DbConn) -> Result<(), Error>;
 }
 
 /// Builds a [`MdlQuery`](struct.MdlQuery.html) for

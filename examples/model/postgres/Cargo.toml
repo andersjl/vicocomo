@@ -7,6 +7,9 @@ edition = "2018"
 [dependencies]
 chrono = "*"
 dotenv = "*"
+futures = "*"
+tokio = { version = "*", features = ["macros", "rt-threaded"] }
+tokio-postgres = "*"
 vicocomo = { path = "../../.." }
 vicocomo_postgres = { path = "../../../vicocomo_postgres" }
 

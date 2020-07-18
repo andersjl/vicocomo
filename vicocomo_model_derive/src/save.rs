@@ -118,7 +118,7 @@ pub fn save_model_impl(model: &Model) -> TokenStream {
     let gen = quote! {
         impl<'a> vicocomo::MdlSave<'a> for #struct_id {
             fn insert_batch(
-                db: &mut impl vicocomo::DbConn<'a>,
+                db: &impl vicocomo::DbConn,
                 data: &[Self],
             ) -> Result<Vec<Self>, vicocomo::Error> {
                 let mut inserts: std::collections::HashMap<
@@ -146,7 +146,7 @@ pub fn save_model_impl(model: &Model) -> TokenStream {
                 Ok(result)
             }
 
-            fn update(&mut self, db: &mut impl vicocomo::DbConn<'a>)
+            fn update(&mut self, db: &impl vicocomo::DbConn)
                 -> Result<(), vicocomo::Error>
             {
                 use std::convert::TryInto;

@@ -48,7 +48,7 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
     let pk_ids = pk_fields.iter().map(|f| &f.id).collect::<Vec<_>>();
     let gen = quote! {
         impl<'a> vicocomo::MdlDelete<'a, #pk_type> for #struct_id {
-            fn delete(self, db: &mut impl vicocomo::DbConn<'a>)
+            fn delete(self, db: &impl vicocomo::DbConn)
                 -> Result<usize, vicocomo::Error>
             {
                 let deleted = db.exec(
@@ -66,7 +66,7 @@ pub fn delete_model_impl(model: &Model) -> TokenStream {
             }
 
             fn delete_batch(
-                db: &mut impl vicocomo::DbConn<'a>,
+                db: &impl vicocomo::DbConn,
                 batch: &[#pk_type],
             ) -> Result<usize, vicocomo::Error> {
                 Ok(db.exec(
