@@ -1,9 +1,0 @@
-
-DROP TABLE IF EXISTS `Simple`;
-CREATE TABLE `Simple`
-( `id`integer NOT NULL AUTO_INCREMENT
-, `text` text NOT NULL
-, PRIMARY KEY( `id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_swedish_ci;
-SHOW WARNINGS;
-

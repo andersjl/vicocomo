@@ -1,0 +1,14 @@
+[package]
+name = "vicocomo_derive"
+version = "0.1.0"
+authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+case = "*"
+syn = "*"
+quote = "*"
+
