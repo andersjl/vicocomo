@@ -112,11 +112,11 @@ async fn main() {
     use futures::executor::block_on;
 
     dotenv::dotenv().ok();
-    let (pg_client, pg_conn) =
-        block_on(tokio_postgres::connect(
-            &std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
-            tokio_postgres::NoTls,
-        )).expect("cannot connect");
+    let (pg_client, pg_conn) = block_on(tokio_postgres::connect(
+        &std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
+        tokio_postgres::NoTls,
+    ))
+    .expect("cannot connect");
     tokio::spawn(async move {
         if let Err(e) = pg_conn.await {
             eprintln!("connection error: {}", e);
@@ -239,10 +239,7 @@ async fn main() {
     )
     .is_ok());
     assert!(
-        m.validate_unique(&db, "message")
-            .err()
-            .unwrap()
-            .to_string()
+        m.validate_unique(&db, "message").err().unwrap().to_string()
             == "Databasfel\nmessage"
     );
     println!("    OK");
@@ -296,9 +293,7 @@ async fn main() {
     // - - belongs-to association  - - - - - - - - - - - - - - - - - - - - - -
 
     println!("setting saved parent ..");
-    assert!(m
-        .set_parent(&DefaultParent::find(&db, &2).unwrap())
-        .is_ok());
+    assert!(m.set_parent(&DefaultParent::find(&db, &2).unwrap()).is_ok());
     assert!(m.default_parent_id == 2);
     assert!(m.save(&db).is_ok());
     println!("    OK");
@@ -402,8 +397,7 @@ async fn main() {
     println!("    OK");
     println!("not finding non-existing by unique fields ..");
     assert!(
-        SinglePk::find_by_un1_and_un2(&db, s.un1.unwrap(), s.un2)
-            .is_none()
+        SinglePk::find_by_un1_and_un2(&db, s.un1.unwrap(), s.un2).is_none()
     );
     assert!(s.find_equal_un1_and_un2(&db).is_none());
     assert!(
@@ -432,8 +426,9 @@ async fn main() {
     println!("| inserting non-existing ..");
     let res = s.insert(&db);
     assert!(res.is_ok());
-    assert!(format!("{:?}", s) ==
-        "SinglePk { id: Some(42), name: Some(\"hej\"), data: None, \
+    assert!(
+        format!("{:?}", s)
+            == "SinglePk { id: Some(42), name: Some(\"hej\"), data: None, \
             un1: Some(1), un2: 42 }"
     );
     let mut un2 = 1000;

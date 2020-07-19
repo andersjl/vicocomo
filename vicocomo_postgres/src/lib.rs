@@ -53,9 +53,12 @@ impl DbConn for PgConn {
         */
     }
 
-    fn query(&self, sql: &str, values: &[DbValue], types: &[DbType])
-        -> Result<Vec<Vec<DbValue>>, Error>
-    {
+    fn query(
+        &self,
+        sql: &str,
+        values: &[DbValue],
+        types: &[DbType],
+    ) -> Result<Vec<Vec<DbValue>>, Error> {
         /*
         print!(
             "PgConn.0.query(\n    {:?},\n    {:?},\n)",

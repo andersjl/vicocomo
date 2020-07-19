@@ -106,10 +106,7 @@ pub trait MdlFind<'a, PkType>: Sized {
     ///
     /// Must be implemented.
     ///
-    fn query(
-        db: &impl DbConn,
-        query: &MdlQuery,
-    ) -> Result<Vec<Self>, Error>;
+    fn query(db: &impl DbConn, query: &MdlQuery) -> Result<Vec<Self>, Error>;
 
     /// Return an error if there is no object in the database whith the given
     /// primary key(s).  See [`find()`](trait.MdlFind.html#tymethod.find).
