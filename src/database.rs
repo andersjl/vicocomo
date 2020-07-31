@@ -4,7 +4,8 @@ use crate::{db_value_convert, Error};
 use chrono::{Datelike, NaiveDate};
 use std::fmt;
 
-/// A trait for use by other `vicocomo` modules as well as by users.
+/// An SQL abstraction trait for use by other `vicocomo` modules as well as
+/// applications.
 ///
 pub trait DbConn {
     /// Begin a transaction.  The default method simply uses `exec()` to send
@@ -40,8 +41,8 @@ pub trait DbConn {
     /// `values` are the values for the parameters in `sql`.
     ///
     /// `types` indicates how the implementation should convert the result to
-    /// `DbValue` vectors.  `types``.len()` must equal the length of each of
-    /// the returned `DbValue` vectors.
+    /// `DbValue` vectors.  `types.len()` must equal the length of each of the
+    /// returned `DbValue` vectors.
     ///
     /// Returns the result as a vector of vectors of `DbValue`.
     ///
@@ -79,6 +80,8 @@ pub enum DbType {
     NulText,
 }
 
+impl Copy for DbType {}
+
 /// The obvious conversion.
 ///
 impl From<DbValue> for DbType {
@@ -98,7 +101,7 @@ impl From<DbValue> for DbType {
 /// [`DbConn`](trait.DbConn.html) implementation.
 ///
 /// Implements conversions to and from many Rust types.  The macro
-/// [`db_value_convert`](macro.db_value_convert.html) can be used to implement
+/// [`db_value_convert`](../macro.db_value_convert.html) can be used to implement
 /// more conversions.
 ///
 #[derive(Clone, Debug)]

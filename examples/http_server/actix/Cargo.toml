@@ -1,0 +1,10 @@
+[package]
+name = "vicocomo_example_actix"
+version = "0.1.0"
+authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
+edition = "2018"
+
+[dependencies]
+  vicocomo = { path = "../../.." }
+  vicocomo_actix = { path = "../../../vicocomo_actix" }
+

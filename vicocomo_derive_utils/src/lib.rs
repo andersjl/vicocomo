@@ -1,14 +1,16 @@
-//! Utilities for use by the `vicocomo` derive macros.
-//!
+//! Only for use by the `vicocomo_`... derive macros.
+
 use quote::ToTokens;
 use syn::{export::Span, Attribute, Ident};
 
+#[doc(hidden)]
 pub fn tokens_to_string<T: ToTokens>(obj: &T) -> String {
     let mut ts = proc_macro2::TokenStream::new();
     obj.to_tokens(&mut ts);
     ts.to_string()
 }
 
+#[doc(hidden)]
 pub fn get_string_from_attr<F>(
     attrs: &[Attribute],
     attr_name: &str,
@@ -37,6 +39,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn get_strings_from_attr(
     attrs: &[Attribute],
     attr_name: &str,
@@ -75,6 +78,7 @@ pub fn get_strings_from_attr(
         .collect::<Vec<_>>()
 }
 
+#[doc(hidden)]
 pub fn get_id_from_attr<F>(
     attrs: &[Attribute],
     attr_name: &str,

@@ -1,11 +1,19 @@
+pub mod controller;
 pub mod database;
 pub mod error;
 pub mod html;
+pub mod http_server;
 pub mod model;
+pub mod view;
 
+pub use controller::Controller;
 pub use database::{DbConn, DbType, DbValue};
 pub use error::Error;
 pub use html::*;
+pub use http_server::{
+    Config, Handler, HttpMethod, Request, Response, Session, SessionStore,
+    TemplEng,
+};
 pub use model::{
     MdlBelongsTo, MdlDelete, MdlFind, MdlOrder, MdlQuery, MdlQueryBld,
     MdlSave,
@@ -15,3 +23,4 @@ pub use vicocomo_html_derive::PathTag;
 pub use vicocomo_model_derive::{
     BelongsToModel, DeleteModel, FindModel, SaveModel,
 };
+pub use view::*;

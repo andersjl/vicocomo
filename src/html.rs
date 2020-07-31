@@ -79,8 +79,8 @@ impl HtmlAttr {
         self.values = Some(vals.into_iter().unique().collect::<Vec<_>>());
     }
 
-    /// Clear all values.  After Clear, the attribute will display as only a
-    /// name with no value.
+    /// Clear all values.  After `clear()`, the attribute will display as only
+    /// a name with no value.
     ///
     pub fn clear(&mut self) {
         self.values = None;
@@ -250,7 +250,7 @@ impl fmt::Display for HtmlTag {
 }
 
 /// A tag with a URL-valued attribute but no content.  See the
-/// [`PathTag`](derive.PathTag.html) derive.
+/// [`PathTag`](../../vicocomo_html_derive/derive.PathTag.html) derive.
 ///
 pub trait PathTag {
     /// Set (replace) the path attribute value of the tag.
@@ -333,7 +333,7 @@ impl fmt::Display for PathTagData {
 #[vicocomo_path_tag_data("script", "src")]
 pub struct ScriptTag(HtmlTag);
 
-/// An encapsuled vector of ScriptTag-turned-strings.
+/// An encapsuled vector of [ScriptTag](struct.ScriptTag.html)-turned-strings.
 ///
 #[derive(Deserialize, Serialize)]
 pub struct Scripts(Vec<String>);
@@ -347,14 +347,14 @@ impl Scripts {
     }
 }
 
-/// A link tag with an href attribute and rel="stylesheet".
+/// A link tag with an `href` attribute and `rel="stylesheet"`.
 ///
 #[derive(Clone, Debug, crate::PathTag)]
 #[vicocomo_path_tag_data("link", "href")]
 #[vicocomo_path_tag_attr("rel", "stylesheet")]
 pub struct StyleTag(HtmlTag);
 
-/// An encapsuled vector of StyleTag-turned-strings.
+/// An encapsuled vector of [StyleTag](struct.StyleTag.html)-turned-strings.
 ///
 #[derive(Deserialize, Serialize)]
 pub struct Styles(Vec<String>);

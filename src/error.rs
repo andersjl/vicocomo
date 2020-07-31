@@ -5,6 +5,7 @@ pub enum Error {
     Database(String),
     InvalidInput(String),
     Other(String),
+    Render(String),
 }
 
 impl Error {
@@ -24,6 +25,10 @@ impl Error {
     pub fn other(txt: &str) -> Self {
         Self::Other(txt.to_string())
     }
+    /// Create an `Error::Render`.
+    pub fn render(txt: &str) -> Self {
+        Self::Render(txt.to_string())
+    }
 }
 
 impl std::error::Error for Error {}
@@ -34,6 +39,7 @@ impl std::fmt::Display for Error {
             Self::Database(s) => ("Databasfel", s),
             Self::InvalidInput(s) => ("Felaktiga indata", s),
             Self::Other(s) => ("Fel", s),
+            Self::Render(s) => ("Kan inte rendera", s),
         };
         write!(f, "{}\n{}", kind, txt)
     }

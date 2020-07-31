@@ -5,11 +5,16 @@ authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 
 [dependencies]
+case = "*"
 chrono = "*"
 itertools = "*"
+lazy_static = "*"
+regex = "*"
+quote = "*"
 serde = { version = "*", features = ["derive"] }
+serde_json = "*"
+syn = { version = "*", features = ["full", "extra-traits", "clone-impls"] }
 vicocomo_db_macro = { path = "vicocomo_db_macro" }
 vicocomo_derive_utils = { path = "vicocomo_derive_utils" }
 vicocomo_html_derive = { path = "vicocomo_html_derive" }
 vicocomo_model_derive = { path = "vicocomo_model_derive" }
-vicocomo_route_macro = { path = "vicocomo_route_macro" }
