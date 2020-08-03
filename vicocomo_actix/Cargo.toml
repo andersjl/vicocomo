@@ -9,5 +9,8 @@ actix-files = "*"
 actix-rt = "*"
 actix-session = "*"
 actix-web = "*"
+lazy_static = "*"
+regex = "*"
+urlencoding = "*"
 vicocomo = { path = ".." }
 vicocomo_actix_config = { path = "config" }

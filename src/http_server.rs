@@ -6,7 +6,7 @@ use core::{
     fmt::{self, Display, Formatter},
 };
 use serde::{de::DeserializeOwned, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, slice::Iter};
 use syn::{
     parse::{Parse, ParseStream},
     Ident, Path,
@@ -111,6 +111,50 @@ impl Config {}
 /// Methods for getting information about and from the request.
 ///
 pub trait Request {
+    /// The parameter values in the URI (get) or body (post) as a json string.
+    /// The parameters may be structured à la PHP:
+    /// ```text
+    /// simple=1&arr[]=2&arr[]=3&map[a]=4&map[b]=5&deep[c][]=6&deep[c][]=7&deep[d]=8
+    /// // -> {
+    /// //     "simple": "1",
+    /// //     "arr":    ["2", "3"],
+    /// //     "map":    {"a": "4", "b": "5"},
+    /// //     "deep:    {"c": ["6", "7"], "d": "8"}
+    /// // }
+    /// ```
+    /// Note that all values are strings.
+    ///
+    fn json(&self) -> Result<String, Error> {
+        FormData::parse(self.param_vals()).and_then(|fd| {
+            serde_json::to_string(&fd)
+                .map_err(|e| Error::invalid_input(&e.to_string()))
+        })
+    }
+
+    /// The value of the parameter with `name` in the URI (get) or body (post)
+    /// as a URL-decoded string.  For structured paramters, use [`json()`
+    /// ](#method.json)
+    ///
+    fn param_val(&self, name: &str) -> Option<String>;
+
+    /// All parameter values in the URI (get) or body (post) as a vector of
+    /// URL-decoded key-value pairs.  Primarily intended for internal use by
+    /// [`json()`](#method.json).
+    ///
+    /// ### Note to implementors
+    ///
+    /// For array parameters to work as described in [`json()`](#method.json)
+    /// it is required that the same key kan occur more than once in the
+    /// vector, if that is what is received in the request URI or body.
+    ///
+    fn param_vals(&self) -> Vec<(String, String)>;
+
+    /// If registered as `"a/<p1>/<p2>"` and the HTTP path of the request is
+    /// `"a/42/Hello"`, this will collect as e.g.
+    /// `vec![String::from("42"), String::from("Hello")]`
+    ///
+    fn path_vals(&self) -> Iter<String>;
+
     /// The body of the request
     ///
     fn req_body(&self) -> String;
@@ -119,15 +163,6 @@ pub trait Request {
     /// W.I.P. more methods for scheme, path etc TBD.
     ///
     fn uri(&self) -> String;
-
-    /// If registered as `"a/<p1>/<p2>"` and the HTTP path of the request is
-    /// `"a/42/Hello"`, this will collect as e.g.
-    /// `vec![String::from("42"), String::from("Hello")]`
-    ///
-    fn path_vals(&self) -> std::slice::Iter<String>;
-
-    /// NYI!!!  The values of parameters in the URI (get) or body (POST)
-    fn param_val(&self, name: &str) -> Option<String>;
 }
 
 /// Methods to build the response.
@@ -550,4 +585,171 @@ fn normalize_http_path(http_path: &str) -> (String, usize) {
         result.0.extend(http_path[last..http_path.len()].chars());
     }
     result
+}
+
+#[derive(Clone, Debug)]
+enum FormData {
+    Arr(Vec<FormData>),
+    Map(HashMap<String, FormData>),
+    Leaf(String),
+}
+
+impl FormData {
+    fn new() -> Self {
+        Self::Map(HashMap::new())
+    }
+
+    fn branch(&mut self, nam: &str) -> Result<&mut Self, Error> {
+        if let FormData::Map(ref mut map) = self {
+            match map.get(nam) {
+                Some(val) => match val {
+                    Self::Map(_) => (),
+                    _ => {
+                        return Err(Error::invalid_input(&format!(
+                            "get(\"{}\") is not a Map variant",
+                            nam,
+                        )));
+                    }
+                },
+                None => {
+                    map.insert(nam.to_string(), Self::new());
+                }
+            }
+            Ok(self.get_mut(nam).unwrap())
+        } else {
+            Err(Error::invalid_input("self is not a Map variant"))
+        }
+    }
+
+    /*
+    fn get(&self, nam: &str) -> Option<&Self> {
+        if let FormData::Map(map) = self {
+            map.get(nam)
+        } else {
+            None
+        }
+    }
+    */
+
+    fn get_mut(&mut self, nam: &str) -> Option<&mut Self> {
+        if let FormData::Map(map) = self {
+            map.get_mut(nam)
+        } else {
+            None
+        }
+    }
+
+    fn insert(&mut self, nam: &str, val: &FormData) -> Result<(), Error> {
+        if let FormData::Map(ref mut map) = self {
+            if map.insert(nam.to_string(), val.clone()).is_none() {
+                Ok(())
+            } else {
+                Err(Error::invalid_input(&format!(
+                    "\"{}\" is already set",
+                    nam
+                )))
+            }
+        } else {
+            Err(Error::invalid_input("self is not a Map variant"))
+        }
+    }
+
+    /*
+    fn iter(&self) -> Option<Iter<Self>> {
+        if let FormData::Arr(arr) = self {
+            Some(arr.iter())
+        } else {
+            None
+        }
+    }
+    */
+
+    fn parse(vals: Vec<(String, String)>) -> Result<Self, Error> {
+        use lazy_static::lazy_static;
+        use regex::Regex;
+
+        lazy_static! {
+            static ref BRACKETS: Regex = Regex::new(r"\[([^]]*)\]").unwrap();
+        }
+        let mut result = FormData::new();
+        for (raw_key, raw_val) in vals {
+            let val = Self::Leaf(raw_val);
+            let mut nested = BRACKETS.captures_iter(&raw_key).peekable();
+            let mut key = if nested.peek().is_none() {
+                &raw_key
+            } else {
+                &raw_key[0..nested.peek().unwrap().get(0).unwrap().start()]
+            };
+            let mut branch = &mut result;
+            loop {
+                match nested.peek() {
+                    Some(c) => {
+                        let next_key = c.get(1).unwrap().as_str();
+                        if next_key.len() == 0 {
+                            branch.push(key, &val)?;
+                            break;
+                        }
+                        branch = branch.branch(key)?;
+                        key = next_key;
+                    }
+                    None => {
+                        branch.insert(key, &val)?;
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(result)
+    }
+
+    fn push(&mut self, nam: &str, val: &FormData) -> Result<(), Error> {
+        match self {
+            FormData::Map(ref mut map) => match map.get_mut(nam) {
+                Some(old_val) => {
+                    if let FormData::Arr(ref mut old_arr) = old_val {
+                        old_arr.push(val.clone());
+                        return Ok(());
+                    }
+                }
+                None => {
+                    map.insert(
+                        nam.to_string(),
+                        FormData::Arr(vec![val.clone()]),
+                    );
+                    return Ok(());
+                }
+            },
+            _ => (),
+        }
+        Err(Error::invalid_input(&format!(
+            "get(\"{}\") is not an Arr variant",
+            nam
+        )))
+    }
+}
+
+impl Serialize for FormData {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        match self {
+            Self::Arr(a) => {
+                let mut seq = serializer.serialize_seq(Some(a.len()))?;
+                for e in a {
+                    seq.serialize_element(e)?;
+                }
+                seq.end()
+            }
+            Self::Map(m) => {
+                let mut map = serializer.serialize_map(Some(m.len()))?;
+                for (k, v) in m {
+                    map.serialize_entry(k, v)?;
+                }
+                map.end()
+            }
+            Self::Leaf(l) => serializer.serialize_str(l),
+        }
+    }
 }

@@ -1,4 +1,5 @@
 use actix_web;
+use std::collections::HashMap;
 use vicocomo::{Request, Response, SessionStore};
 pub use vicocomo_actix_config::config;
 
@@ -9,41 +10,84 @@ pub struct AxRequest {
     body: String,
     uri: String,
     path_vals: Vec<String>,
-    param_vals: std::collections::HashMap<String, String>,
+    param_vals: HashMap<String, Vec<String>>,
 }
 
 impl AxRequest {
-    /// TODO: GET and POST parameters to param_vals.
-    ///
     pub fn new(
         body: &str,
         uri: &actix_web::http::Uri,
         path_vals: &[String],
     ) -> Self {
+        use lazy_static::lazy_static;
+        use regex::Regex;
+        use urlencoding::decode;
+        lazy_static! {
+            static ref QUERY: Regex =
+                Regex::new(r"([^&=]+=[^&=]+&)*[^&=]+=[^&=]+").unwrap();
+        }
+        let mut param_vals: HashMap<String, Vec<String>> = HashMap::new();
+        let uri_vals = uri.query().and_then(|q| decode(q).ok());
+        let body_vals = QUERY
+            .captures(&body)
+            .and_then(|c| c.get(0))
+            .and_then(|m| decode(m.as_str()).ok());
+        for key_value in match uri_vals {
+            Some(u) => match body_vals {
+                Some(b) => u + "&" + &b,
+                None => u,
+            },
+            None => body_vals.unwrap_or("".to_string()),
+        }
+        .split('&')
+        {
+            if key_value.len() == 0 {
+                continue;
+            }
+            let mut k_v = key_value.split('=');
+            let key = k_v.next().unwrap();
+            let val = k_v.next().unwrap();
+            match param_vals.get_mut(key) {
+                Some(vals) => vals.push(val.to_string()),
+                None => {
+                    param_vals.insert(key.to_string(), vec![val.to_string()]);
+                }
+            }
+        }
         Self {
             body: body.to_string(),
             uri: uri.to_string(),
             path_vals: path_vals.to_vec(),
-            param_vals: std::collections::HashMap::new(),
+            param_vals,
         }
     }
 }
 
 impl Request for AxRequest {
-    fn req_body(&self) -> String {
-        self.body.clone()
+    fn param_val(&self, name: &str) -> Option<String> {
+        self.param_vals.get(name).map(|v| v[0].clone())
     }
 
-    fn uri(&self) -> String {
-        self.uri.clone()
+    fn param_vals(&self) -> Vec<(String, String)> {
+        let mut result: Vec<(String, String)> = Vec::new();
+        for (key, vals) in &self.param_vals {
+            for val in vals {
+                result.push((key.clone(), val.clone()));
+            }
+        }
+        result
     }
 
     fn path_vals(&self) -> std::slice::Iter<String> {
         self.path_vals.iter()
     }
 
-    fn param_val(&self, name: &str) -> Option<String> {
-        self.param_vals.get(name).map(|s| s.clone())
+    fn req_body(&self) -> String {
+        self.body.clone()
+    }
+
+    fn uri(&self) -> String {
+        self.uri.clone()
     }
 }
 
