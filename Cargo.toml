@@ -1,6 +1,6 @@
 [package]
 name = "vicocomo"
-version = "0.1.7"
+version = "0.1.8"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 
