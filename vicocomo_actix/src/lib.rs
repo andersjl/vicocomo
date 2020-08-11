@@ -1,3 +1,6 @@
+//! (Ab)use `actix-web` as the web server for a vicocomo application.
+//!
+
 use actix_web;
 use std::collections::HashMap;
 use vicocomo::{Request, Response, SessionStore};

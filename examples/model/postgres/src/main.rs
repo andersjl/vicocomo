@@ -217,7 +217,7 @@ async fn main() {
             .err()
             .unwrap()
             .to_string()
-            == "Databasfel\nmessage"
+            == "Database error\nmessage"
     );
     assert!(m.validate_unique(&db, "message").is_ok());
     println!("    OK");
@@ -240,7 +240,7 @@ async fn main() {
     .is_ok());
     assert!(
         m.validate_unique(&db, "message").err().unwrap().to_string()
-            == "Databasfel\nmessage"
+            == "Database error\nmessage"
     );
     println!("    OK");
     println!("error inserting existing ..");
@@ -410,7 +410,7 @@ async fn main() {
         .err()
         .unwrap()
         .to_string()
-            == "Databasfel\nmessage: 1, 42"
+            == "Database error\nmessage: 1, 42"
     );
     assert!(s.validate_unique_un1_and_un2(&db, "message").is_ok());
     println!("    OK");
@@ -496,7 +496,7 @@ async fn main() {
             .err()
             .unwrap()
             .to_string()
-            == "Databasfel\nmessage: Some(1), 42"
+            == "Database error\nmessage: Some(1), 42"
     );
     println!("    OK");
 

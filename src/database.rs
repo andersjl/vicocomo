@@ -118,7 +118,7 @@ macro_rules! write_opt {
     ($f:ident, $o:ident) => {
         match $o {
             Some(v) => write!($f, "Some({})", v),
-            None => write!($f, "None)"),
+            None => write!($f, "None"),
         }
     };
 }

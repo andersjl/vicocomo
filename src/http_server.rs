@@ -106,8 +106,6 @@ pub struct Config {
     pub not_found: Option<(Path, Handler)>,
 }
 
-impl Config {}
-
 /// Methods for getting information about and from the request.
 ///
 pub trait Request {

@@ -4,6 +4,7 @@ pub mod error;
 pub mod html;
 pub mod http_server;
 pub mod model;
+pub mod texts;
 pub mod view;
 
 pub use controller::Controller;

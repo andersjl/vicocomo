@@ -1,5 +1,7 @@
 //! The vicocomo error type.
 //!
+// TODO i18n, probably using the "fluent" crate family.
+
 #[derive(Clone, Debug)]
 pub enum Error {
     Database(String),
@@ -36,10 +38,10 @@ impl std::error::Error for Error {}
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let (kind, txt) = match self {
-            Self::Database(s) => ("Databasfel", s),
-            Self::InvalidInput(s) => ("Felaktiga indata", s),
-            Self::Other(s) => ("Fel", s),
-            Self::Render(s) => ("Kan inte rendera", s),
+            Self::Database(s) => ("Database error", s),
+            Self::InvalidInput(s) => ("Invalid input", s),
+            Self::Other(s) => ("Error", s),
+            Self::Render(s) => ("Cannot render", s),
         };
         write!(f, "{}\n{}", kind, txt)
     }

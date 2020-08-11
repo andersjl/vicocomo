@@ -11,7 +11,7 @@ mod db_value_convert;
 ///
 /// # Usage
 ///
-/// `db_value_convert { other_type, variant, [ into_expr, [ from_expr ] ] }`
+/// `db_value_convert { `*other_type*`, `*variant*`, [ `*into_expr*`, [ `*from_expr*` ] ] }`
 ///
 /// Implements `TryInto<`*other_type*`>`, `From<`*other_type*`>` for
 /// `DbValue::`*variant*, and `TryInto<Option<`*other_type*`>>`,
