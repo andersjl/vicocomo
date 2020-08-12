@@ -2,9 +2,9 @@
 
 use handlebars;
 
-pub struct HbTemplEng(handlebars::Handlebars);
+pub struct HbTemplEng<'a>(handlebars::Handlebars<'a>);
 
-impl HbTemplEng {
+impl HbTemplEng<'_> {
     pub fn new(templ_dir: Option<&str>) -> Self {
         let mut hb = handlebars::Handlebars::new();
         hb.register_templates_directory(
@@ -16,7 +16,7 @@ impl HbTemplEng {
     }
 }
 
-impl vicocomo::TemplEng for HbTemplEng {
+impl vicocomo::TemplEng for HbTemplEng<'_> {
     fn render(
         &self,
         tmpl: &str,

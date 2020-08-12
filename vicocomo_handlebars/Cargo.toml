@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 futures = "*"
-handlebars = "2.0"
+handlebars = { version = "*", features = ["dir_source"] }
 serde = { version = "*", features = ["derive"] }
 vicocomo = { path = ".." }
 
