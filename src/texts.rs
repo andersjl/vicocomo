@@ -117,7 +117,7 @@ macro_rules! t {
             )*
             }
             result.extend((entry.1).chars());
-            result
+            result.replace("\\<", "<").replace("\\>", ">")
         }
     };
 }

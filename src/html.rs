@@ -345,6 +345,12 @@ impl Scripts {
     pub fn add(&mut self, script_tag: &ScriptTag) {
         self.0.push(script_tag.to_string());
     }
+
+/*
+    pub fn iter(&self) -> ::std::slice::Iter<String> {
+        self.0.iter()
+    }
+*/
 }
 
 /// A link tag with an `href` attribute and `rel="stylesheet"`.
@@ -366,4 +372,10 @@ impl Styles {
     pub fn add(&mut self, style_tag: &StyleTag) {
         self.0.push(style_tag.to_string());
     }
+
+/*
+    pub fn iter(&self) -> ::std::slice::Iter<String> {
+        self.0.iter()
+    }
+*/
 }

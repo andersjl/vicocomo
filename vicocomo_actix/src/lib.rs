@@ -3,21 +3,23 @@
 
 use actix_web;
 use std::collections::HashMap;
-use vicocomo::{Request, Response, SessionStore};
+use vicocomo::{Error, Request, Response, SessionStore};
 pub use vicocomo_actix_config::config;
 
 /// Implements [`vicocomo::HttpServer`](../../vicocomo/module.HttpServer.html)
 /// traits for [`actix-web`](../../actix-web/index.html).
 ///
-pub struct AxRequest {
+pub struct AxRequest<'a> {
+    request: &'a actix_web::HttpRequest,
     body: String,
     uri: String,
     path_vals: Vec<String>,
     param_vals: HashMap<String, Vec<String>>,
 }
 
-impl AxRequest {
+impl<'a> AxRequest<'a> {
     pub fn new(
+        request: &'a actix_web::HttpRequest,
         body: &str,
         uri: &actix_web::http::Uri,
         path_vals: &[String],
@@ -58,6 +60,7 @@ impl AxRequest {
             }
         }
         Self {
+            request,
             body: body.to_string(),
             uri: uri.to_string(),
             path_vals: path_vals.to_vec(),
@@ -66,7 +69,7 @@ impl AxRequest {
     }
 }
 
-impl Request for AxRequest {
+impl Request for AxRequest<'_> {
     fn param_val(&self, name: &str) -> Option<String> {
         self.param_vals.get(name).map(|v| v[0].clone())
     }
@@ -91,6 +94,14 @@ impl Request for AxRequest {
 
     fn uri(&self) -> String {
         self.uri.clone()
+    }
+
+    fn url_for_impl(&self, path: &str, params: &[&str])
+        -> Result<String, Error>
+    {
+        self.request.url_for(path, params)  // we did set name = path
+            .map(|u| u.to_string())
+            .map_err(|e| Error::invalid_input(&e.to_string()))
     }
 }
 

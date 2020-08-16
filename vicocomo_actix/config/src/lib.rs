@@ -16,6 +16,7 @@ pub fn config(input: TokenStream) -> TokenStream {
     let mut handler_fn_vec: Vec<Ident> = Vec::new();
     let mut http_meth_vec: Vec<Ident> = Vec::new();
     let mut http_path_vec: Vec<LitStr> = Vec::new();
+    let mut name_vec: Vec<LitStr> = Vec::new();
     let mut hndl_pars_vec: Vec<Punctuated<FnArg, token::Comma>> = Vec::new();
     let mut controller_vec: Vec<Path> = Vec::new();
     let mut contr_meth_vec: Vec<Ident> = Vec::new();
@@ -23,7 +24,7 @@ pub fn config(input: TokenStream) -> TokenStream {
     let hndl_pars_min: Punctuated<FnArg, token::Comma> = parse_quote!(
         db: actix_web::web::Data<vicocomo_postgres::PgConn>,
         sess: actix_session::Session,
-        hb: actix_web::web::Data<vicocomo_handlebars::HbTemplEng>,
+        hb: actix_web::web::Data<vicocomo_handlebars::HbTemplEng<'_>>,
         ax_req: actix_web::HttpRequest,
         body: String,
     );
@@ -51,6 +52,7 @@ pub fn config(input: TokenStream) -> TokenStream {
                 &http_path.replace("<", "{").replace(">", "}"),
                 Span::call_site(),
             ));
+            name_vec.push(LitStr::new(&http_path, Span::call_site()));
             let mut hndl_pars = hndl_pars_min.clone();
             let mut path_pars_expr: Expr = parse_quote!(&[]);
             if *path_par_count > 0 {
@@ -97,7 +99,16 @@ pub fn config(input: TokenStream) -> TokenStream {
                     .wrap( actix_session::CookieSession::signed(&[0; 32])
                         .secure(false)
                     )
-                 #( .service(__vicocomo__handlers::#handler_fn_vec) )*
+                #(
+                    .service(
+                        actix_web::web::resource(#http_path_vec)
+                        .name(#name_vec)
+                        .route(
+                            actix_web::web::#http_meth_vec()
+                            .to(__vicocomo__handlers::#handler_fn_vec)
+                        )
+                    )
+                )*
                     .service(actix_files::Files::new("/", "./static"))
                     .default_service(actix_web::web::route().to(
                         __vicocomo__handlers::not_found
@@ -123,11 +134,11 @@ pub fn config(input: TokenStream) -> TokenStream {
         mod __vicocomo__handlers {
             use vicocomo::Controller;
             #(
-                #[actix_web::#http_meth_vec(#http_path_vec)]
-                pub fn #handler_fn_vec(
+                pub async fn #handler_fn_vec(
                     #hndl_pars_vec
                 ) -> actix_web::HttpResponse {
                     let vi_req = vicocomo_actix::AxRequest::new(
+                        &ax_req,
                         body.as_str(),
                         ax_req.uri(),
                         #path_pars_expr_vec,

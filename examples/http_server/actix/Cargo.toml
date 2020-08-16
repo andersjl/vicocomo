@@ -5,6 +5,18 @@ authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 
 [dependencies]
-  vicocomo = { path = "../../.." }
-  vicocomo_actix = { path = "../../../vicocomo_actix" }
+actix-files = "*"
+actix-rt = "*"
+actix-session = "*"
+actix-web = "*"
+dotenv = "*"
+lazy_static = "*"
+regex = "*"
+serde = { version = "*", features = ["derive"] }
+tokio = { version = "*", features = ["macros", "rt-threaded"] }
+tokio-postgres = "*"
+vicocomo = { path = "../../.." }
+vicocomo_actix = { path = "../../../vicocomo_actix" }
+vicocomo_handlebars = { path = "../../../vicocomo_handlebars" }
+vicocomo_postgres = { path = "../../../vicocomo_postgres" }
 

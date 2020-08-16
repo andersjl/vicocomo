@@ -13,10 +13,14 @@ use syn::{
 };
 
 /// A custom syntax tree node for configuring an HTTP server.  Intended for
-/// use in a server specific `config` macro, see an [example for `actix-web`
-/// ](../../../../examples/http_server/actix/target/doc/vicocomo_example_actix/index.html).
+/// use in a server specific `config` macro.
 ///
-/// TODO: a new field and config item templ_eng, probably a a struct.
+/// There is an implementation for [`actix-web`
+/// ](https://crates.io/crates/actix-web) [here.
+/// ](../../../../vicocomo_actix/target/doc/vicocomo_actix_config/macro.config.html)
+///
+// TODO: a new field and config item templ_eng, probably a a struct.
+// TODO: a new route attribute 'name' for use in Request::url_for.
 ///
 /// # Code example:
 ///
@@ -72,27 +76,27 @@ use syn::{
 ///                        // default a simple 404 with text body
 /// ```
 ///
-///  Definition of "Controller" in `route(Controller)` and
-///  `notfnd(Controller)`:
+/// Definition of "Controller" in `route(Controller)` and
+/// `notfnd(Controller)`:
 ///
-///  The controller is given as `some::path::to::Controller`.  If the path is
-///  a single identifier, as in the examples, `crate::controllers::` is
-///  prepended.
+/// The controller is given as `some::path::to::Controller`.  If the path is a
+/// single identifier, as in the examples, `crate::controllers::` is
+/// prepended.
 ///
-///  The handling method is called as
-///  `some::path::to::Controller::handler(...)`.  So the controller may be a
-///  module, struct, or enum as long as the handling method does not have a
-///  receiver.  In the struct/enum case it would probably be a constructor.
+/// The handling method is called as
+/// `some::path::to::Controller::handler(...)`.  So the controller may be a
+/// module, struct, or enum as long as the handling method does not have a
+/// receiver.
 ///
-///  Handling method signature:
-///  ```text
-///  (
-///    &impl vicocomo::Request,       // server request
-///    &impl vicocomo::TemplEng,      // template engine
-///    &impl vicocomo::DbConn,        // database connection
-///    &mut impl vicocomo::Session,   // session object
-///    &mut impl vicocomo::Response,  // request body
-///  ) -> Result<(), vicocomo::Error>
+/// Handling method signature:
+/// ```text
+/// (
+///   &impl vicocomo::Request,       // server request
+///   &impl vicocomo::TemplEng,      // template engine
+///   &impl vicocomo::DbConn,        // database connection
+///   vicocomo::Session,             // session object
+///   &mut impl vicocomo::Response,  // response
+/// ) -> ()
 /// ```
 ///
 #[derive(Clone, Debug)]
@@ -161,6 +165,53 @@ pub trait Request {
     /// W.I.P. more methods for scheme, path etc TBD.
     ///
     fn uri(&self) -> String;
+
+    /// The URL, including scheme and host, without ending slash.
+    ///
+    /// 'path` should be as given to [`Config`](struct.Config.html).  if it
+    /// has path parameters these should be in angle brackets.  The path
+    /// parameter names are ignored and may be omitted:
+    /// `path/<>/with/<>/two/parameters`.
+    ///
+    fn url_for(
+        &self,
+        path: &str,
+        params: Option<&[&str]>,
+    ) -> Result<String, Error> {
+        let (http_path, expected_count) = normalize_http_path(path);
+        let param_count = match params {
+            Some(p) => p.len(),
+            None => 0,
+        };
+        if param_count == expected_count {
+            self.url_for_impl(&http_path, params.unwrap_or(&[]))
+                .map(|mut u| {
+                    if u.ends_with('/') {
+                        u.pop();
+                    }
+                    u
+                })
+        } else {
+            Err(Error::invalid_input(&format!(
+                "Expected {} parameters, got {}",
+                expected_count, param_count,
+            )))
+        }
+    }
+
+    /// For web server adapter developers only.  Like [`url_for()`
+    /// ](tymethod.url_for.html), but:
+    ///
+    /// - `path` parameter names are normalized to
+    /// `path/<p1>/with/<p2>/two/parameters`.
+    ///
+    /// - the numer of `params` is verified on entry.
+    ///
+    fn url_for_impl(
+        &self,
+        path: &str,
+        params: &[&str],
+    ) -> Result<String, Error>;
 }
 
 /// Methods to build the response.
@@ -345,7 +396,8 @@ enum ConfigItem {
 pub struct Handler {
     /// only tested for Get and Post.
     pub http_method: HttpMethod,
-    /// HTTP path, possibly with path parameters in angle brackets.
+    /// HTTP path, possibly with path parameters in angle brackets, normalized
+    /// to `path/<p1>/with/<p2>/two/parameters`.
     pub http_path: String,
     /// number of path parameters.
     pub path_par_count: usize,
