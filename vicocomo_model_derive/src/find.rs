@@ -49,7 +49,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
     let query_fn: ItemFn = parse_quote!(
         fn query(
             db: &impl vicocomo::DbConn,
-            query: &vicocomo::MdlQuery
+            query: &vicocomo::Query
         ) -> Result<Vec<Self>, vicocomo::Error> {
             let filter = match query.filter.as_ref() {
                 Some(f) => format!("WHERE {}", f),
@@ -64,11 +64,11 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
                 None => String::new(),
             };
             let order = match &query.order {
-                vicocomo::MdlOrder::Custom(ord) =>
+                vicocomo::Order::Custom(ord) =>
                     format!("ORDER BY {}", ord),
-                vicocomo::MdlOrder::Dflt =>
+                vicocomo::Order::Dflt =>
                     #default_order.to_string(),
-                vicocomo::MdlOrder::NoOrder => String::new(),
+                vicocomo::Order::NoOrder => String::new(),
             };
             let mut values: Vec<vicocomo::DbValue> = Vec::new();
             for opt in query.values.as_slice() {
@@ -107,7 +107,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
             }
         }
         gen.extend(quote! {
-            impl<'a> vicocomo::MdlFind<'a, #pk_type> for #struct_id {
+            impl vicocomo::Find<#pk_type> for #struct_id {
                 fn find(db: &impl vicocomo::DbConn, pk: &#pk_type)
                     -> Option<Self>
                 {
@@ -141,7 +141,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         });
     } else {
         gen.extend(quote! {
-            impl<'a> vicocomo::MdlFind<'a, #pk_type> for #struct_id {
+            impl vicocomo::Find<#pk_type> for #struct_id {
                 #load_fn
 
                 #query_fn
@@ -191,7 +191,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
         let find_eq_str = format!("find_equal_{}", uni_str);
         let find_eq_id = Ident::new(find_eq_str.as_str(), Span::call_site());
         gen.extend(quote! {
-            impl<'a> #struct_id {
+            impl #struct_id {
 
                 // -- find_by_field1_and_field3(db, v1, v3) ------------------
                 pub fn #find_by_id(#find_pars) -> Option<Self> {
@@ -245,7 +245,7 @@ pub fn find_model_impl(model: &Model) -> TokenStream {
             uni_frmt_args.push(parse_quote!(self.#fld_id));
         }
         gen.extend(quote! {
-            impl<'a> #struct_id {
+            impl #struct_id {
 
                 // -- validate_exists_field1_and_field3(db, v1, v3, msg) -----
                 pub fn #exi_id(#exi_pars) -> Result<(), vicocomo::Error> {

@@ -15,13 +15,8 @@ pub use http_server::{
     Config, Handler, HttpMethod, Request, Response, Session, SessionStore,
     TemplEng,
 };
-pub use model::{
-    MdlBelongsTo, MdlDelete, MdlFind, MdlOrder, MdlQuery, MdlQueryBld,
-    MdlSave,
-};
+pub use model::{BelongsTo, Delete, Find, Order, Query, QueryBld, Save};
 pub use vicocomo_db_macro::db_value_convert;
 pub use vicocomo_html_derive::PathTag;
-pub use vicocomo_model_derive::{
-    BelongsToModel, DeleteModel, FindModel, SaveModel,
-};
+pub use vicocomo_model_derive::{BelongsTo, Delete, Find, Save};
 pub use view::*;

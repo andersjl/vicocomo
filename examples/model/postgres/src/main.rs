@@ -14,16 +14,16 @@ mod models {
 
     pub mod multi_pk {
         use chrono::NaiveDate;
-        use vicocomo::MdlBelongsTo;
+        use vicocomo::BelongsTo;
 
         #[derive(
             Clone,
             Debug,
             PartialEq,
-            vicocomo::BelongsToModel,
-            vicocomo::DeleteModel,
-            vicocomo::FindModel,
-            vicocomo::SaveModel,
+            vicocomo::BelongsTo,
+            vicocomo::Delete,
+            vicocomo::Find,
+            vicocomo::Save,
         )]
         pub struct MultiPk {
             #[vicocomo_optional]
@@ -56,9 +56,9 @@ mod models {
         #[derive(
             Clone,
             Debug,
-            vicocomo::DeleteModel,
-            vicocomo::FindModel,
-            vicocomo::SaveModel,
+            vicocomo::Delete,
+            vicocomo::Find,
+            vicocomo::Save,
         )]
         pub struct SinglePk {
             #[vicocomo_optional]
@@ -78,7 +78,7 @@ mod models {
     }
 
     pub mod default_parent {
-        #[derive(Clone, Debug, vicocomo::FindModel)]
+        #[derive(Clone, Debug, vicocomo::Find)]
         pub struct DefaultParent {
             #[vicocomo_optional]
             #[vicocomo_primary]
@@ -88,7 +88,7 @@ mod models {
     }
 
     pub mod nonstandard_parent {
-        #[derive(Clone, Debug, vicocomo::FindModel)]
+        #[derive(Clone, Debug, vicocomo::Find)]
         pub struct NonstandardParent {
             #[vicocomo_optional]
             #[vicocomo_primary]
@@ -103,7 +103,7 @@ use models::{
     nonstandard_parent::NonstandardParent, single_pk::SinglePk,
 };
 use vicocomo::{
-    DbConn, DbValue, MdlBelongsTo, MdlDelete, MdlFind, MdlQueryBld, MdlSave,
+    DbConn, DbValue, BelongsTo, Delete, Find, QueryBld, Save,
 };
 use vicocomo_postgres::PgConn;
 
@@ -307,7 +307,7 @@ async fn main() {
     assert!(m.default_parent_id == 2);
     println!("    OK");
     println!("getting saved parent ..");
-    let p = m.get_parent(&db);
+    let p = m.parent(&db);
     assert!(p.is_some());
     let p = p.unwrap();
     assert!(
@@ -502,7 +502,7 @@ async fn main() {
 
     // - - query() - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
-    let query = MdlQueryBld::new()
+    let query = QueryBld::new()
         .col("un2")
         .eq(Some(&DbValue::Int(1)))
         .or("name")
@@ -539,7 +539,7 @@ async fn main() {
     );
     println!("    OK");
     println!("query() with custom order ..");
-    let mut query = MdlQueryBld::new()
+    let mut query = QueryBld::new()
         .col("un2")
         .eq(Some(&DbValue::Int(1)))
         .or("name")
@@ -576,7 +576,7 @@ async fn main() {
     );
     println!("    OK");
     println!("query() without filter with custom order ..");
-    query = MdlQueryBld::new().order("un1, name DESC").query().unwrap();
+    query = QueryBld::new().order("un1, name DESC").query().unwrap();
     let found = SinglePk::query(&db, &query);
     assert!(
         format!("{:?}", found.unwrap())

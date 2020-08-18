@@ -1,9 +1,7 @@
 //! # Model helper macros
 //!
 //! ```text
-//! #[derive(
-//!     <one or more of AssocModel, DeleteModel, FindModel, and SaveModel>
-//! )]
+//! #[derive(<one or more of BelongsTo, Delete, Find, and Save>)]
 //! #[vicoomo_table_name = "example_table"]  // default "examples"
 //! struct Example {
 //!     #[vicocomo_optional]          // not sent to DBMS if None
@@ -42,8 +40,8 @@ mod find;
 mod model;
 mod save;
 
-/// Derive the [`MdlBelongsTo`](../vicocomo/model/trait.MdlBelongsTo.html)
-/// trait for a `struct` with named fields.
+/// Derive the [`BelongsTo`](../vicocomo/model/trait.BelongsTo.html) trait for
+/// a `struct` with named fields.
 ///
 /// Note that the `Parent` struct must have exactly one `vicocomo_primary`
 /// field.
@@ -80,14 +78,14 @@ mod save;
 ///
 /// ## Generated code
 ///
-/// Implements [`MdlBelongsTo`](../vicocomo/model/trait.MdlBelongsTo.html).
+/// Implements [`BelongsTo`](../vicocomo/model/trait.BelongsTo.html).
 ///
 /// ### For each `vicocomo_belongs_to` attributed field
 ///
 /// TODO
 ///
 #[proc_macro_derive(
-    BelongsToModel,
+    BelongsTo,
     attributes(vicocomo_column, vicocomo_belongs_to,)
 )]
 pub fn belongs_to_model_derive(input: TokenStream) -> TokenStream {
@@ -101,8 +99,8 @@ pub fn belongs_to_model_derive(input: TokenStream) -> TokenStream {
     ))
 }
 
-/// Derive the [`MdlDelete`](../vicocomo/model/trait.MdlDelete.html) trait for
-/// a `struct` with named fields.
+/// Derive the [`Delete`](../vicocomo/model/trait.Delete.html) trait for a
+/// `struct` with named fields.
 ///
 /// ## Struct attributes
 ///
@@ -130,10 +128,10 @@ pub fn belongs_to_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// ## Generated code
 ///
-/// Implements [`MdlDelete`](../vicocomo/model/trait.MdlDelete.html).
+/// Implements [`Delete`](../vicocomo/model/trait.Delete.html).
 ///
 #[proc_macro_derive(
-    DeleteModel,
+    Delete,
     attributes(
         vicocomo_column,
         vicocomo_optional,
@@ -149,7 +147,7 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
     ))
 }
 
-/// Derive the [`MdlFind`](../vicocomo/model/trait.MdlFind.html) trait for a
+/// Derive the [`Find`](../vicocomo/model/trait.Find.html) trait for a
 /// `struct` with named fields.
 ///
 /// ## Struct attributes
@@ -182,13 +180,13 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// ## Generated code
 ///
-/// Implements [`MdlFind`](../vicocomo/model/trait.MdlFind.html).
+/// Implements [`Find`](../vicocomo/model/trait.Find.html).
 ///
 /// ### For each `vicocomo_unique` label
 ///
 /// Given the struct declaration
 /// ```text
-/// #[derive(vicocomo::FindModel)]
+/// #[derive(vicocomo::Find)]
 /// struct Example {
 ///     #[vicocomo_primary]
 ///     id: Option<u32>,
@@ -203,7 +201,7 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// ```text
 /// pub fn find_by_un1_and_un2(
-///     db: &mut impl vicocomo::DbConn<'a>,
+///     db: &mut impl vicocomo::DbConn,
 ///     un1: i32,
 ///     un2: i32,
 /// ) -> Option<Self>
@@ -219,7 +217,7 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 /// ```text
 /// pub fn find_equal_un1_and_un2(
 ///     &self,
-///     db: &mut impl vicocomo::DbConn<'a>
+///     db: &mut impl vicocomo::DbConn
 /// ) -> Option<Self>
 /// ```
 ///
@@ -231,14 +229,14 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// ```text
 /// pub fn validate_exists_un1_and_un2(
-///     db: &mut impl vicocomo::DbConn<'a>,
+///     db: &mut impl vicocomo::DbConn,
 ///     un1: i32,
 ///     un2: i32,
 ///     msg: &str,
 /// ) -> Result<(), vicocomo::Error> {
 ///
 #[proc_macro_derive(
-    FindModel,
+    Find,
     attributes(
         vicocomo_column,
         vicocomo_optional,
@@ -259,7 +257,7 @@ pub fn find_model_derive(input: TokenStream) -> TokenStream {
     ))
 }
 
-/// Derive the [`MdlSave`](../vicocomo/model/trait.MdlSave.html) trait for a
+/// Derive the [`Save`](../vicocomo/model/trait.Save.html) trait for a
 /// `struct` with named fields.
 ///
 /// ## Struct attributes
@@ -285,10 +283,10 @@ pub fn find_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// ## Generated code
 ///
-/// Implements [`MdlSave`](../vicocomo/model/trait.MdlSave.html).
+/// Implements [`Save`](../vicocomo/model/trait.Save.html).
 ///
 #[proc_macro_derive(
-    SaveModel,
+    Save,
     attributes(
         vicocomo_column,
         vicocomo_optional,

@@ -116,7 +116,7 @@ pub fn save_model_impl(model: &Model) -> TokenStream {
     let update_err = Model::query_err("update");
 
     let gen = quote! {
-        impl<'a> vicocomo::MdlSave<'a> for #struct_id {
+        impl vicocomo::Save for #struct_id {
             fn insert_batch(
                 db: &impl vicocomo::DbConn,
                 data: &[Self],

@@ -5,10 +5,10 @@ use crate::{DbConn, DbValue};
 
 /// Functions for belongs-to associations.
 ///
-/// `Parent` is the type of the parent struct.
+/// `Parent` is the type of the parent model.
 ///
 #[allow(unused_variables)]
-pub trait MdlBelongsTo<'a, Parent>: Sized {
+pub trait BelongsTo<Parent>: Sized {
     /// Retrive all child objects in the database belonging to a parent.
     ///
     /// `db` is the database connection object.
@@ -31,19 +31,33 @@ pub trait MdlBelongsTo<'a, Parent>: Sized {
     ///   matching the field value, or
     /// - because of a database error of any kind.
     ///
-    fn get_parent(&self, db: &impl DbConn) -> Option<Parent>;
+    fn parent(&self, db: &impl DbConn) -> Option<Parent>;
 
     /// Set the parent reference.
     ///
     /// `parent` is the parent object.
     ///
+    /// The new parent association is not saved to the database.
+    ///
     fn set_parent(&mut self, parent: &Parent) -> Result<(), Error>;
+
+    /// Retrive all child objects in the database (including `self`) that
+    /// belong to the same parent as `self`.
+    ///
+    fn siblings(&mut self, db: &impl DbConn) -> Result<Vec<Self>, Error> {
+        let parent;
+        match self.parent(db) {
+            Some(p) => parent = p,
+            None => return Err(Error::database("no parent")),
+        }
+        Self::belonging_to(db, &parent)
+    }
 }
 
 /// Functions for deleting models from the database.
 ///
 #[allow(unused_variables)]
-pub trait MdlDelete<'a, PkType> {
+pub trait Delete<PkType> {
     /// Return 1 after successfully deleted the corresponding database row.
     ///
     fn delete(self, db: &impl DbConn) -> Result<usize, Error>;
@@ -65,7 +79,7 @@ pub trait MdlDelete<'a, PkType> {
 /// case `PkType` should be `()`.
 ///
 #[allow(unused_variables)]
-pub trait MdlFind<'a, PkType>: Sized {
+pub trait Find<PkType>: Sized {
     /// Find an object in the database by primary key(s).
     ///
     /// `db` is the database connection object.
@@ -101,15 +115,15 @@ pub trait MdlFind<'a, PkType>: Sized {
     /// Return a vector with a possibly limited number of records that satisfy
     /// a condition possibly in a specified order.
     ///
-    /// `query` is a [`MdlQuery`](struct.MdlQuery.html), see that and
-    /// [`MdlQueryBld`](struct.MdlQueryBld.html).
+    /// `query` is a [`Query`](struct.Query.html), see that and
+    /// [`QueryBld`](struct.QueryBld.html).
     ///
     /// Must be implemented.
     ///
-    fn query(db: &impl DbConn, query: &MdlQuery) -> Result<Vec<Self>, Error>;
+    fn query(db: &impl DbConn, query: &Query) -> Result<Vec<Self>, Error>;
 
     /// Return an error if there is no object in the database whith the given
-    /// primary key(s).  See [`find()`](trait.MdlFind.html#tymethod.find).
+    /// primary key(s).  See [`find()`](trait.Find.html#tymethod.find).
     ///
     /// The default implementaion uses `find()` in the obvious way.
     ///
@@ -125,7 +139,7 @@ pub trait MdlFind<'a, PkType>: Sized {
     }
 
     /// Return an error if this object is already stored in the database.  See
-    /// [`find_equal()`](trait.MdlFind.html#tymethod.find_equal).
+    /// [`find_equal()`](trait.Find.html#tymethod.find_equal).
     ///
     /// The default implementaion uses `find_equal()` in the obvious way.
     /// Note that the default `find_equal()` will make the default
@@ -143,15 +157,36 @@ pub trait MdlFind<'a, PkType>: Sized {
     }
 }
 
+/// Functions for has-many associations.
+///
+/// `Child` is the type of the child struct.
+///
+#[allow(unused_variables)]
+pub trait HasMany<Child>: Sized {
+    /// Retrive all child objects from the database.
+    ///
+    /// `db` is the database connection object.
+    ///
+    fn children(&self, db: &impl DbConn) -> Result<Vec<Child>, Error>;
+
+    /// Set `self` to the parent of `child`
+    ///
+    /// `parent` is the parent object.
+    ///
+    /// The new parent association is not saved to the database.
+    ///
+    fn add_child(&self, child: &mut Child) -> Result<(), Error>;
+}
+
 /// Functions for saving new or old objects to the database.
 ///
 #[allow(unused_variables)]
-pub trait MdlSave<'a>: Sized {
+pub trait Save: Sized {
     /// Try to INSERT a row in the database from `self` and update `self` from
     /// the inserted row after insert.
     ///
     /// The default implementation calls
-    /// [`insert_batch()`](trait.MdlSave.html#tymethod.insert_batch).
+    /// [`insert_batch()`](trait.Save.html#tymethod.insert_batch).
     ///
     /// It is an error if `self` has a primary key that exists in the
     /// database.
@@ -167,9 +202,9 @@ pub trait MdlSave<'a>: Sized {
     /// new model structs updated from the inserted rows after insert.
     ///
     /// The implementation by
-    /// [`#[derive(vicocomo::SaveModel)]`](derive.SaveModel.html) ensures that
-    /// any field with the attribute `vicocomo_optional` will be sent to the
-    /// database only if it is `Some`.
+    /// [`#[derive(vicocomo::Save)]`](derive.Save.html) ensures that any field
+    /// with the attribute `vicocomo_optional` will be sent to the database
+    /// only if it is `Some`.
     ///
     /// It is an error if any of the data has a primary key that exists in the
     /// database.
@@ -182,9 +217,9 @@ pub trait MdlSave<'a>: Sized {
     /// Save the object's data to the database.
     ///
     /// If a row with the object's primary key exists in the database, this is
-    /// equivalent to [`update()`](trait.MdlSave.html#tymethod.update).  If
-    /// not, this is equivalent to
-    /// [`insert()`](trait.MdlSave.html#tymethod.insert).
+    /// equivalent to [`update()`](trait.Save.html#tymethod.update).  If
+    /// not, this is equivalent to [`insert()`
+    /// ](trait.Save.html#tymethod.insert).
     ///
     /// The default implementation simply tries first `update()`, then
     /// `insert()`.
@@ -202,14 +237,14 @@ pub trait MdlSave<'a>: Sized {
     fn update(&mut self, db: &impl DbConn) -> Result<(), Error>;
 }
 
-/// Builds a [`MdlQuery`](struct.MdlQuery.html) for
-/// [`MdlFind::query()`](trait.MdlFind.html#tymethod.query).
+/// Builds a [`Query`](struct.Query.html) for [`Find::query()`
+/// ](trait.Find.html#tymethod.query).
 ///
 /// Example:
 ///
 /// ```text
 /// let query =
-/// MdlQueryBld::new()           // create the query
+/// QueryBld::new()              // create the query
 /// .col("c1")                   // begin building the first WHERE condition
 /// .gt(None)                    // the condition is ">", no value (yet)
 /// .and("c2")                   // another WHERE clause condition ...
@@ -226,14 +261,14 @@ pub trait MdlSave<'a>: Sized {
 /// ```
 ///
 /// Function sequences that do not make sense, e.g. `new().and()` or
-/// `and().`*any function except a relational operator* will make
-/// [`query()`](struct.MdlQueryBld.html#method.query) return None.
+/// `and().`*any function except a relational operator* will make [`query()`
+/// ](struct.QueryBld.html#method.query) return None.
 ///
-/// For more complicated WHERE clauses, use the catch-all
-/// [`filter()`](struct.MdlQueryBld.html#method.filter).
+/// For more complicated WHERE clauses, use the catch-all [`filter()`
+/// ](struct.QueryBld.html#method.filter).
 ///
 #[derive(Clone, Debug)]
-pub struct MdlQueryBld(MdlQuery, QbState);
+pub struct QueryBld(Query, QbState);
 
 #[derive(Clone, Debug)]
 enum QbState {
@@ -282,17 +317,17 @@ macro_rules! where_log_op {
     };
 }
 
-impl MdlQueryBld {
+impl QueryBld {
     // public methods w/o receiver - - - - - - - - - - - - - - - - - - - - - -
 
     /// Create a query builder.
     pub fn new() -> Self {
         Self(
-            MdlQuery {
+            Query {
                 filter: None,
                 limit: None,
                 offset: None,
-                order: MdlOrder::Dflt,
+                order: Order::Dflt,
                 values: Vec::new(),
             },
             QbState::Valid,
@@ -327,8 +362,8 @@ impl MdlQueryBld {
     where_rel_op! {
     /// Complete building a WHERE condition.
     ///
-    /// `value` is the value to use or `None` for a reusable
-    /// [`MdlQuery`](struct.MdlQuery.html).
+    /// `value` is the value to use or `None` for a reusable [`Query`
+    /// ](struct.Query.html).
     ///
         eq, "="
     }
@@ -355,8 +390,8 @@ impl MdlQueryBld {
     where_rel_op! {
         /// Complete building a WHERE condition.
         ///
-        /// `value` is the value to use or `None` for a reusable
-        /// [`MdlQuery`](struct.MdlQuery.html).
+        /// `value` is the value to use or `None` for a reusable [`Query`
+        /// ](struct.Query.html).
         ///
         ge, ">="
     }
@@ -364,8 +399,8 @@ impl MdlQueryBld {
     where_rel_op! {
         /// Complete building a WHERE condition.
         ///
-        /// `value` is the value to use or `None` for a reusable
-        /// [`MdlQuery`](struct.MdlQuery.html).
+        /// `value` is the value to use or `None` for a reusable [`Query`
+        /// ](struct.Query.html).
         ///
         gt, ">"
     }
@@ -373,8 +408,8 @@ impl MdlQueryBld {
     where_rel_op! {
         /// Complete building a WHERE condition.
         ///
-        /// `value` is the value to use or `None` for a reusable
-        /// [`MdlQuery`](struct.MdlQuery.html).
+        /// `value` is the value to use or `None` for a reusable [`Query`
+        /// ](struct.Query.html).
         ///
         le, "<="
     }
@@ -391,8 +426,8 @@ impl MdlQueryBld {
     where_rel_op! {
         /// Complete building a WHERE condition.
         ///
-        /// `value` is the value to use or `None` for a reusable
-        /// [`MdlQuery`](struct.MdlQuery.html).
+        /// `value` is the value to use or `None` for a reusable [`Query`
+        /// ](struct.Query.html).
         ///
         lt, "<"
     }
@@ -400,8 +435,8 @@ impl MdlQueryBld {
     where_rel_op! {
         /// Complete building a WHERE condition.
         ///
-        /// `value` is the value to use or `None` for a reusable
-        /// [`MdlQuery`](struct.MdlQuery.html).
+        /// `value` is the value to use or `None` for a reusable [`Query`
+        /// ](struct.Query.html).
         ///
         ne, "<>"
     }
@@ -418,7 +453,7 @@ impl MdlQueryBld {
     /// Remove the ORDER clause, e.g. to avoid default ordering.
     ///
     pub fn no_order(mut self) -> Self {
-        self.0.order = MdlOrder::NoOrder;
+        self.0.order = Order::NoOrder;
         self
     }
 
@@ -435,19 +470,22 @@ impl MdlQueryBld {
     /// `order` is the meat of the ORDER clause - no `ORDER BY`!
     ///
     pub fn order(mut self, order: &str) -> Self {
-        self.0.order = MdlOrder::Custom(order.to_string());
+        self.0.order = Order::Custom(order.to_string());
         self
     }
 
     /// Freeze the query by returning the built
-    /// [`MdlQuery`](struct.MdlQuery.html) struct.
+    /// [`Query`](struct.Query.html) struct.
     ///
     /// `None` is returned if there were problems building the query.
     ///
-    pub fn query(self) -> Option<MdlQuery> {
+    pub fn query(self) -> Option<Query> {
         match self.1 {
             QbState::Valid => Some(self.0),
-            _ => None,
+            _ => {
+                self.invalidate();
+                None
+            }
         }
     }
 
@@ -460,22 +498,21 @@ impl MdlQueryBld {
 }
 
 /// A reusable query for
-/// [`MdlFind::query()`](trait.MdlFind.html#tymethod.query), see
-/// [`MdlQueryBld`](struct.MdlQueryBld.html) for how to build.
+/// [`Find::query()`](trait.Find.html#tymethod.query), see [`QueryBld`
+/// ](struct.QueryBld.html) for how to build.
 ///
-/// The fields are public because you need them to implement
-/// `MdlFind::query()`.
+/// The fields are public because you need them to implement `Find::query()`.
 ///
 #[derive(Clone, Debug)]
-pub struct MdlQuery {
+pub struct Query {
     pub filter: Option<String>,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
-    pub order: MdlOrder,
+    pub order: Order,
     pub values: Vec<Option<DbValue>>,
 }
 
-impl MdlQuery {
+impl Query {
     /// Set the limit to use.
     ///
     /// `limit` is the new limit or `None` for no limit.
@@ -519,21 +556,21 @@ impl MdlQuery {
     }
 }
 
-/// Represents the ordering of the objects returned by
-/// [`MdlFind::query()`](trait.MdlFind.html#tymethod.query).
+/// Represents the ordering of the objects returned by [`Find::query()`
+/// ](trait.Find.html#tymethod.query).
 ///
 /// The variants are public because you need them to implement
-/// `MdlFind::query()`.
+/// `Find::query()`.
 ///
 #[derive(Clone, Debug)]
-pub enum MdlOrder {
+pub enum Order {
     /// The meat of the ORDER clause - no `ORDER BY`!
     ///
     Custom(String),
 
-    /// Use the models default order as defined by the
-    /// [`vicocomo_order_by`](../vicocomo_model_derive/index.html) attribute
-    /// on one or more model struct fields.
+    /// Use the models default order as defined by the [`vicocomo_order_by`
+    /// ](../vicocomo_model_derive/index.html) attribute on one or more model
+    /// struct fields.
     Dflt,
 
     /// No `ORDER BY` sent to the database.
