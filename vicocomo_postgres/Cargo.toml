@@ -1,6 +1,6 @@
 [package]
 name = "vicocomo_postgres"
-version = "0.1.10"
+version = "0.1.11"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 
