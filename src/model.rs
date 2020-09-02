@@ -1,4 +1,7 @@
-//! Traits implemented by model objects.
+//! Traits implemented by model objects and some helper types.
+//!
+//! All of the traits have [derive macros
+//! ](../../vicocomo_model_derive/index.html) with the same name.
 //!
 use crate::Error;
 use crate::{DbConn, DbValue};
@@ -368,19 +371,51 @@ impl QueryBld {
         eq, "="
     }
 
-    /// Build a complete WHERE condition
+    /// Add a WHERE condition.
     ///
-    /// `fltr` is the meat of the WHERE clause - no `WHERE`! - or `None` if no
-    /// WHERE clause.  It may be parameterized using the notation `$`n for the
-    /// n:th parameter, 1 based.
+    /// `fltr` is the meat of a WHERE clause - no `WHERE`!  It may be
+    /// parameterized using the notation `$`*n* for the n:th parameter, 1
+    /// based.
     ///
-    /// `values` are the parameter values.
+    /// If there is an existing WHERE clause, *n* in the `$`*n* in the new one
+    /// are increased with the number of previously existing parameters and
+    /// the new clause will be `"(`*old clause*`) AND `*new condition*`"`.
     ///
-    pub fn filter(mut self, fltr: Option<&str>, values: &[DbValue]) -> Self {
+    /// `values` are the new parameter values, appended to any existing.
+    ///
+    pub fn filter(mut self, fltr: &str, values: &[Option<DbValue>]) -> Self {
         match self.1 {
-            QbState::Valid if self.0.filter.is_none() => {
-                self.0.filter = fltr.map(|s| s.to_string());
-                self.0.values.extend(values.iter().map(|v| Some(v.clone())));
+            QbState::Valid => {
+                self.0.filter = Some(match self.0.filter {
+                    Some(old_filter) => {
+                        // add old parameter count to new parameter indexes
+                        use lazy_static::lazy_static;
+                        use regex::Regex;
+                        lazy_static! {
+                            static ref PARAMS: Regex =
+                                Regex::new(r"\$([0-9]+)").unwrap();
+                        }
+                        let old_par_count = self.0.values.len();
+                        let mut new_filter = String::new();
+                        let mut last = 0;
+                        for cap in PARAMS.captures_iter(fltr) {
+                            println!("{:?}", cap);
+                            let nr = cap.get(1).unwrap();
+                            new_filter.extend(fltr[last..nr.start()].chars());
+                            new_filter +=
+                                &(nr.as_str().parse::<usize>().unwrap()
+                                    + old_par_count)
+                                    .to_string();
+                            last = nr.end();
+                        }
+                        if last < fltr.len() {
+                            new_filter.extend(fltr[last..].chars());
+                        }
+                        format!("({}) AND {}", old_filter, &new_filter)
+                    }
+                    None => fltr.to_string(),
+                });
+                self.0.values.extend(values.iter().map(|v| v.clone()));
                 self
             }
             _ => self.invalidate(),

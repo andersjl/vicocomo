@@ -60,7 +60,7 @@ pub fn belongs_to_model_impl(model: &Model) -> TokenStream {
                     Self::query(
                         db,
                         &vicocomo::QueryBld::new()
-                            .filter(Some(#par_filter), &[#find_expr])
+                            .filter(#par_filter, &[Some(#find_expr)])
                             .query()
                             .unwrap(),
                     )
