@@ -51,16 +51,17 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
         } else {
             parse_quote!(
                 match remote.#remote_pk {
-                    Some(pk) => Ok(pk.into()),
-                    None =>
-                        Err(::vicocomo::Error::invalid_input(#pk_is_none)),
+                    Some(ref pk) => pk.clone().into(),
+                    None => return Err(::vicocomo::Error::invalid_input(
+                        #pk_is_none
+                    )),
                 }
             )
         };
         let fk_expr_err: Expr = if bel_fld.dbt.as_ref().unwrap().1 {
             parse_quote!(
                 match self.#fk_id {
-                    Some(fk) => fk.clone().into(),
+                    Some(ref fk) => fk.clone().into(),
                     None => return Err(::vicocomo::Error::invalid_input(
                         #fk_is_none
                     )),
@@ -136,7 +137,7 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
                     Self::query(
                         db,
                         &::vicocomo::QueryBld::new()
-                            .filter(#par_filter, &[Some(#remote_pk_expr?)])
+                            .filter(#par_filter, &[Some(#remote_pk_expr)])
                             .query()
                             .unwrap(),
                     )
@@ -172,14 +173,17 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
             let belong_to_no_id =
                 format_ident!("belong_to_no_{}", assoc_snake);
             gen.extend(quote! {
-                pub fn #belong_to_no_id(
-                    &mut self
-                ) -> Result<(), ::vicocomo::Error> {
-                    self.#fk_id = None;
-                    Ok(())
+                impl #struct_id {
+                    pub fn #belong_to_no_id(
+                        &mut self
+                    ) -> Result<(), ::vicocomo::Error> {
+                        self.#fk_id = None;
+                        Ok(())
+                    }
                 }
             });
         }
     }
+    //println!("{}", ::vicocomo_derive_utils::tokens_to_string(&gen));
     gen.into()
 }

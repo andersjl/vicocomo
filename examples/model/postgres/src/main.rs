@@ -1,5 +1,4 @@
 // TODO: test optional unique field without value
-// TODO: test non-standard parent
 
 #![allow(dead_code)]
 
@@ -43,6 +42,17 @@ mod models {
             pub i32_opt_nul: Option<Option<i32>>,
             #[vicocomo_belongs_to()]
             pub default_parent_id: i64,
+            #[vicocomo_belongs_to(
+                remote_pk = "pk mandatory",
+                remote_type = "crate::models::other_parent::NonstandardParent",
+            )]
+            pub other_parent_id: Option<String>,
+            #[vicocomo_belongs_to(
+                name = "BonusParent",
+                remote_pk = "pk mandatory",
+                remote_type = "crate::models::other_parent::NonstandardParent",
+            )]
+            pub bonus_parent: String,
             pub date_mand: NaiveDate,
             pub string_mand: String,
             pub u32_mand: u32,
@@ -77,7 +87,12 @@ mod models {
     }
 
     pub mod default_parent {
-        #[derive(Clone, Debug, ::vicocomo::Find)]
+        #[derive(
+            Clone,
+            Debug,
+            vicocomo::Delete,
+            vicocomo::Find,
+        )]
         pub struct DefaultParent {
             #[vicocomo_optional]
             #[vicocomo_primary]
@@ -86,22 +101,26 @@ mod models {
         }
     }
 
-    pub mod nonstandard_parent {
-        #[derive(Clone, Debug, ::vicocomo::Find)]
+    pub mod other_parent {
+        #[derive(
+            Clone,
+            Debug,
+            vicocomo::Delete,
+            vicocomo::Find,
+        )]
         pub struct NonstandardParent {
-            #[vicocomo_optional]
             #[vicocomo_primary]
-            pub pk: Option<String>,
+            pub pk: String,
         }
     }
 }
 
 use chrono::NaiveDate;
 use models::{
-    default_parent::DefaultParent, multi_pk::MultiPk,
-    nonstandard_parent::NonstandardParent, single_pk::SinglePk,
+    default_parent::DefaultParent, multi_pk::{/*BonusParent,*/ MultiPk},
+    other_parent::{NonstandardParent}, single_pk::SinglePk,
 };
-use ::vicocomo::{DbConn, DbValue, Delete, Find, QueryBld, Save};
+use ::vicocomo::{BelongsTo, DbConn, DbValue, Delete, Find, QueryBld, Save};
 use ::vicocomo_postgres::PgConn;
 
 #[tokio::main]
@@ -137,6 +156,8 @@ async fn main() {
         ,   i32_mand       BIGINT NOT NULL
         ,   i32_opt_nul    BIGINT DEFAULT 1
         ,   default_parent_id  BIGINT NOT NULL
+        ,   other_parent_id    TEXT
+        ,   bonus_parent   TEXT NOT NULL
         ,   date_mand      BIGINT NOT NULL
         ,   string_mand    TEXT NOT NULL
         ,   u32_mand       BIGINT NOT NULL
@@ -161,7 +182,7 @@ async fn main() {
         INSERT INTO default_parents (name)
             VALUES ('default filler'), ('used default');
         INSERT INTO nonstandard_parents (pk)
-            VALUES ('used nonstandard'), ('nonstandard filler');
+            VALUES ('used nonstandard'), ('bonus nonstandard');
     ",
     )) {
         Ok(_) => println!("created tables\n"),
@@ -183,6 +204,8 @@ async fn main() {
         i32_mand: 0,
         i32_opt_nul: None,
         default_parent_id: 2,
+        other_parent_id: None,
+        bonus_parent: "bonus nonstandard".to_string(),
         date_mand: NaiveDate::from_num_days_from_ce(0),
         string_mand: String::new(),
         u32_mand: 0,
@@ -200,6 +223,7 @@ async fn main() {
             bool_mand_nul: None, f32_mand: 0.0, f32_opt: Some(1.0), \
             f64_mand: 0.0, f64_opt_nul: Some(Some(1.0)), i32_mand: 0, \
             i32_opt_nul: Some(Some(1)), default_parent_id: 2, \
+            other_parent_id: None, bonus_parent: \"bonus nonstandard\", \
             date_mand: 0000-12-31, string_mand: \"\", u32_mand: 0, \
             u64_mand: 0, usize_mand: 0 }",
     );
@@ -266,6 +290,7 @@ async fn main() {
             bool_mand_nul: Some(false), f32_mand: 32.0, f32_opt: Some(32.0), \
             f64_mand: 64.0, f64_opt_nul: Some(None), i32_mand: -32, \
             i32_opt_nul: Some(Some(-32)), default_parent_id: 1, \
+            other_parent_id: None, bonus_parent: \"bonus nonstandard\", \
             date_mand: 0001-01-01, string_mand: \"hello\", u32_mand: 32, \
             u64_mand: 64, usize_mand: 1 }",
     );
@@ -292,38 +317,64 @@ async fn main() {
     println!("setting saved parent ..");
     assert!(
         m.belong_to_default_parent(
-            &DefaultParent::find(&db, &2).unwrap()
+            &DefaultParent::find(&db, &2).unwrap(),
         )
-        .is_ok()
+        .is_ok(),
     );
     assert!(m.default_parent_id == 2);
+    let np = &NonstandardParent::find(&db, &"used nonstandard".to_string())
+        .unwrap();
+    assert!(m.belong_to_nonstandard_parent(np).is_ok());
+    assert!(m.other_parent_id == Some("used nonstandard".to_string()));
+    let bp = &NonstandardParent::find(&db, &"bonus nonstandard".to_string())
+        .unwrap();
+    assert!(m.belong_to_bonus_parent(bp).is_ok());
+    assert!(m.bonus_parent == "bonus nonstandard");
+    assert!(m.save(&db).is_ok());
+    println!("    OK");
+    println!("unsetting parent ..");
+    assert!(m.belong_to_no_nonstandard_parent().is_ok());
+    assert!(m.other_parent_id.is_none());
     assert!(m.save(&db).is_ok());
     println!("    OK");
     println!("error setting unsaved parent ..");
     assert!(
         m.belong_to_default_parent(&DefaultParent {
             id: None,
-            name: "unsaved".to_string()
+            name: "unsaved".to_string(),
         })
         .is_err()
     );
     assert!(m.default_parent_id == 2);
     println!("    OK");
     println!("getting saved parent ..");
-    let p = m.belongs_to_default_parent(&db);
-    assert!(p.is_some());
-    let p = p.unwrap();
+    let dp = m.belongs_to_default_parent(&db);
+    assert!(dp.is_some());
+    let dp = dp.unwrap();
     assert!(
-        format!("{:?}", p)
+        format!("{:?}", dp)
             == "DefaultParent { id: Some(2), name: \"used default\" }"
+    );
+    m.belong_to_nonstandard_parent(np).and_then(|()| m.save(&db)).unwrap();
+    let np = m.belongs_to_nonstandard_parent(&db);
+    assert!(np.is_some());
+    let np = np.unwrap();
+    assert!(
+        format!("{:?}", np)
+        == "NonstandardParent { pk: \"used nonstandard\" }"
     );
     println!("    OK");
     println!("finding siblings ..");
-    let sibs = MultiPk::all_belonging_to_default_parent(&db, &p);
+    let sibs = m.default_parent_siblings(&db);
     assert!(sibs.is_ok());
     let sibs = sibs.unwrap();
     assert!(sibs.len() == 2);
-    assert!(sibs.iter().filter(|m| m.default_parent_id == 2).count() == 2);
+    assert!(sibs.iter().filter(|s| s.default_parent_id == 2).count() == 2);
+    let sibs: Result<Vec<MultiPk>, ::vicocomo::Error> =
+        MultiPk::all_belonging_to_nonstandard_parent(&db, &np);
+    assert!(sibs.is_ok());
+    let sibs = sibs.unwrap();
+    assert!(sibs.len() == 1);
     println!("    OK");
 
     // - - deleting  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
