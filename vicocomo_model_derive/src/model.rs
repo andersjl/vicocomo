@@ -1,3 +1,4 @@
+use ::vicocomo_derive_utils::*;
 use proc_macro::TokenStream;
 use quote::format_ident;
 use syn::{
@@ -5,7 +6,6 @@ use syn::{
     AttrStyle, Attribute, Expr, Ident, ItemStruct, Lit, LitStr, Meta,
     NestedMeta, Type,
 };
-use ::vicocomo_derive_utils::*;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ExtraInfo {

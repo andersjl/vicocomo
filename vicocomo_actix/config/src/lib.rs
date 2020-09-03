@@ -4,13 +4,13 @@ use proc_macro::TokenStream;
 
 #[proc_macro]
 pub fn config(input: TokenStream) -> TokenStream {
+    use ::vicocomo::{Config, Handler};
     use case::CaseExt;
     use quote::{format_ident, quote};
     use syn::{
         export::Span, parse_macro_input, parse_quote, punctuated::Punctuated,
         token, Expr, FnArg, Ident, LitStr, Path,
     };
-    use ::vicocomo::{Config, Handler};
 
     let Config { routes, not_found } = parse_macro_input!(input as Config);
     let mut handler_fn_vec: Vec<Ident> = Vec::new();

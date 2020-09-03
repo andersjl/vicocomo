@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
+use ::vicocomo_derive_utils::*;
 use proc_macro::TokenStream;
 use syn::{
     parse::{self, Parse, ParseStream},
     Expr, Ident, Type,
 };
-use ::vicocomo_derive_utils::*;
 
 pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
     use quote::{format_ident, quote};

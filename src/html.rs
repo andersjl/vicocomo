@@ -346,11 +346,11 @@ impl Scripts {
         self.0.push(script_tag.to_string());
     }
 
-/*
-    pub fn iter(&self) -> ::std::slice::Iter<String> {
-        self.0.iter()
-    }
-*/
+    /*
+        pub fn iter(&self) -> ::std::slice::Iter<String> {
+            self.0.iter()
+        }
+    */
 }
 
 /// A link tag with an `href` attribute and `rel="stylesheet"`.
@@ -373,9 +373,9 @@ impl Styles {
         self.0.push(style_tag.to_string());
     }
 
-/*
-    pub fn iter(&self) -> ::std::slice::Iter<String> {
-        self.0.iter()
-    }
-*/
+    /*
+        pub fn iter(&self) -> ::std::slice::Iter<String> {
+            self.0.iter()
+        }
+    */
 }

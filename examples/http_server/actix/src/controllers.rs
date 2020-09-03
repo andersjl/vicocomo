@@ -1,8 +1,8 @@
-use serde::Serialize;
 use ::vicocomo::{
     view::render_template, DbConn, Error, Request, Response, Session,
     TemplEng,
 };
+use serde::Serialize;
 
 pub struct Static;
 

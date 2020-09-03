@@ -1,10 +1,10 @@
 //! (Ab)use `actix-web` as the web server for a vicocomo application.
 //!
 
-use actix_web;
-use std::collections::HashMap;
 use ::vicocomo::{Error, Request, Response, SessionStore};
 pub use ::vicocomo_actix_config::config;
+use actix_web;
+use std::collections::HashMap;
 
 /// Implements [`vicocomo::HttpServer`](../../vicocomo/module.HttpServer.html)
 /// traits for [`actix-web`](../../actix-web/index.html).
@@ -96,10 +96,13 @@ impl Request for AxRequest<'_> {
         self.uri.clone()
     }
 
-    fn url_for_impl(&self, path: &str, params: &[&str])
-        -> Result<String, Error>
-    {
-        self.request.url_for(path, params)  // we did set name = path
+    fn url_for_impl(
+        &self,
+        path: &str,
+        params: &[&str],
+    ) -> Result<String, Error> {
+        self.request
+            .url_for(path, params) // we did set name = path
             .map(|u| u.to_string())
             .map_err(|e| Error::invalid_input(&e.to_string()))
     }

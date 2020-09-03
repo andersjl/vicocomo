@@ -16,8 +16,7 @@ use crate::{DbConn, DbValue};
 /// `Name` is present only to allow several, different, implementations having
 /// the same `Remote` type.
 ///
-pub trait BelongsTo<Remote, Name = Remote> {
-}
+pub trait BelongsTo<Remote, Name = Remote> {}
 
 /// Functions for deleting models from the database.
 ///

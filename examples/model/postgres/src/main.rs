@@ -44,13 +44,13 @@ mod models {
             pub default_parent_id: i64,
             #[vicocomo_belongs_to(
                 remote_pk = "pk mandatory",
-                remote_type = "crate::models::other_parent::NonstandardParent",
+                remote_type = "crate::models::other_parent::NonstandardParent"
             )]
             pub other_parent_id: Option<String>,
             #[vicocomo_belongs_to(
                 name = "BonusParent",
                 remote_pk = "pk mandatory",
-                remote_type = "crate::models::other_parent::NonstandardParent",
+                remote_type = "crate::models::other_parent::NonstandardParent"
             )]
             pub bonus_parent: String,
             pub date_mand: NaiveDate,
@@ -87,12 +87,7 @@ mod models {
     }
 
     pub mod default_parent {
-        #[derive(
-            Clone,
-            Debug,
-            vicocomo::Delete,
-            vicocomo::Find,
-        )]
+        #[derive(Clone, Debug, vicocomo::Delete, vicocomo::Find)]
         pub struct DefaultParent {
             #[vicocomo_optional]
             #[vicocomo_primary]
@@ -102,12 +97,7 @@ mod models {
     }
 
     pub mod other_parent {
-        #[derive(
-            Clone,
-            Debug,
-            vicocomo::Delete,
-            vicocomo::Find,
-        )]
+        #[derive(Clone, Debug, vicocomo::Delete, vicocomo::Find)]
         pub struct NonstandardParent {
             #[vicocomo_primary]
             pub pk: String,
@@ -115,13 +105,13 @@ mod models {
     }
 }
 
-use chrono::NaiveDate;
-use models::{
-    default_parent::DefaultParent, multi_pk::{/*BonusParent,*/ MultiPk},
-    other_parent::{NonstandardParent}, single_pk::SinglePk,
-};
 use ::vicocomo::{BelongsTo, DbConn, DbValue, Delete, Find, QueryBld, Save};
 use ::vicocomo_postgres::PgConn;
+use chrono::NaiveDate;
+use models::{
+    default_parent::DefaultParent, multi_pk::MultiPk,
+    other_parent::NonstandardParent, single_pk::SinglePk,
+};
 
 #[tokio::main]
 async fn main() {
@@ -315,12 +305,9 @@ async fn main() {
     // - - belongs-to association  - - - - - - - - - - - - - - - - - - - - - -
 
     println!("setting saved parent ..");
-    assert!(
-        m.belong_to_default_parent(
-            &DefaultParent::find(&db, &2).unwrap(),
-        )
-        .is_ok(),
-    );
+    assert!(m
+        .belong_to_default_parent(&DefaultParent::find(&db, &2).unwrap(),)
+        .is_ok(),);
     assert!(m.default_parent_id == 2);
     let np = &NonstandardParent::find(&db, &"used nonstandard".to_string())
         .unwrap();
@@ -338,13 +325,12 @@ async fn main() {
     assert!(m.save(&db).is_ok());
     println!("    OK");
     println!("error setting unsaved parent ..");
-    assert!(
-        m.belong_to_default_parent(&DefaultParent {
+    assert!(m
+        .belong_to_default_parent(&DefaultParent {
             id: None,
             name: "unsaved".to_string(),
         })
-        .is_err()
-    );
+        .is_err());
     assert!(m.default_parent_id == 2);
     println!("    OK");
     println!("getting saved parent ..");
@@ -355,13 +341,15 @@ async fn main() {
         format!("{:?}", dp)
             == "DefaultParent { id: Some(2), name: \"used default\" }"
     );
-    m.belong_to_nonstandard_parent(np).and_then(|()| m.save(&db)).unwrap();
+    m.belong_to_nonstandard_parent(np)
+        .and_then(|()| m.save(&db))
+        .unwrap();
     let np = m.belongs_to_nonstandard_parent(&db);
     assert!(np.is_some());
     let np = np.unwrap();
     assert!(
         format!("{:?}", np)
-        == "NonstandardParent { pk: \"used nonstandard\" }"
+            == "NonstandardParent { pk: \"used nonstandard\" }"
     );
     println!("    OK");
     println!("finding siblings ..");

@@ -185,13 +185,14 @@ pub trait Request {
             None => 0,
         };
         if param_count == expected_count {
-            self.url_for_impl(&http_path, params.unwrap_or(&[]))
-                .map(|mut u| {
+            self.url_for_impl(&http_path, params.unwrap_or(&[])).map(
+                |mut u| {
                     if u.ends_with('/') {
                         u.pop();
                     }
                     u
-                })
+                },
+            )
         } else {
             Err(Error::invalid_input(&format!(
                 "Expected {} parameters, got {}",
