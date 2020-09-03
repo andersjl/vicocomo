@@ -14,7 +14,6 @@ mod models {
 
     pub mod multi_pk {
         use chrono::NaiveDate;
-        use ::vicocomo::BelongsTo;
 
         #[derive(
             Clone,
@@ -102,9 +101,7 @@ use models::{
     default_parent::DefaultParent, multi_pk::MultiPk,
     nonstandard_parent::NonstandardParent, single_pk::SinglePk,
 };
-use ::vicocomo::{
-    DbConn, DbValue, BelongsTo, Delete, Find, QueryBld, Save,
-};
+use ::vicocomo::{DbConn, DbValue, Delete, Find, QueryBld, Save};
 use ::vicocomo_postgres::PgConn;
 
 #[tokio::main]
