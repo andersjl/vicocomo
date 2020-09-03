@@ -1,11 +1,12 @@
-use crate::model::Model;
+use crate::model::{ForKey, Model};
 use proc_macro::TokenStream;
+//TODO code smells
 
 #[allow(unused_variables)]
-pub fn belongs_to_model_impl(model: &Model) -> TokenStream {
-    use quote::quote;
-    use syn::{export::Span, parse_quote, Expr, LitStr};
-    use vicocomo_derive_utils::tokens_to_string;
+pub(crate) fn belongs_to_model_impl(model: &Model) -> TokenStream {
+    use ::vicocomo_derive_utils::*;
+    use quote::{format_ident, quote};
+    use syn::{export::Span, parse_quote, Expr, Ident, LitStr, Type};
 
     let struct_id = &model.struct_id;
     let table_name = &model.table_name;
@@ -13,72 +14,172 @@ pub fn belongs_to_model_impl(model: &Model) -> TokenStream {
     let mut gen = proc_macro2::TokenStream::new();
     for bel_fld in model.belongs_to_fields() {
         let fk = bel_fld.fk.as_ref().unwrap();
-        let parent = &fk.path;
         let fk_id = &bel_fld.id;
-        let pk = &fk.parent_pk;
+        let ForKey {
+            assoc_name,
+            assoc_snake,
+            remote_pk,
+            remote_pk_mand,
+            remote_type,
+            trait_types,
+        } = fk;
+        gen.extend(quote! {
+            impl ::vicocomo::BelongsTo<#trait_types> for #struct_id {}
+        });
+        let fk_is_none = LitStr::new(
+            &format!(
+                "{}.{} is None",
+                struct_id.to_string(),
+                fk_id.to_string(),
+            ),
+            Span::call_site(),
+        );
         let pk_is_none = LitStr::new(
-            &format!("{}.{} is None", tokens_to_string(parent), pk),
+            &format!(
+                "{}.{} is None",
+                tokens_to_string(remote_type),
+                remote_pk,
+            ),
             Span::call_site(),
         );
         let par_filter = LitStr::new(
             &format!("{} = $1", bel_fld.col.value()),
             Span::call_site(),
         );
-        let find_expr: Expr = if fk.parent_pk_mand {
-            parse_quote!(parent.#pk.into())
+        let remote_pk_expr: Expr = if *remote_pk_mand {
+            parse_quote!(remote.#remote_pk.clone().into())
         } else {
             parse_quote!(
-                match parent.#pk {
-                    Some(pk) => pk.into(),
-                    None => return Err(
-                        vicocomo::Error::invalid_input(#pk_is_none)
-                    ),
+                match remote.#remote_pk {
+                    Some(pk) => Ok(pk.into()),
+                    None =>
+                        Err(::vicocomo::Error::invalid_input(#pk_is_none)),
                 }
             )
         };
-        let set_expr: Expr = if fk.parent_pk_mand {
-            parse_quote!({
-                self.#fk_id = parent.#pk;
-            })
+        let fk_expr_err: Expr = if bel_fld.dbt.as_ref().unwrap().1 {
+            parse_quote!(
+                match self.#fk_id {
+                    Some(fk) => fk.clone().into(),
+                    None => return Err(::vicocomo::Error::invalid_input(
+                        #fk_is_none
+                    )),
+                }
+            )
+        } else {
+            parse_quote!(self.#fk_id.clone().into())
+        };
+        let fk_expr_opt: Expr = if bel_fld.dbt.as_ref().unwrap().1 {
+            parse_quote!(
+                match self.#fk_id {
+                    Some(ref fk) => fk,
+                    None => return None,
+                }
+            )
+        } else {
+            parse_quote!(&self.#fk_id)
+        };
+        let set_fk_expr: Expr = if *remote_pk_mand {
+            if bel_fld.dbt.as_ref().unwrap().1 {
+                parse_quote!({
+                    self.#fk_id = Some(remote.#remote_pk.clone());
+                })
+            } else {
+                parse_quote!({
+                    self.#fk_id = remote.#remote_pk.clone();
+                })
+            }
+        } else if bel_fld.dbt.as_ref().unwrap().1 {
+            parse_quote!(
+                match remote.#remote_pk {
+                    Some(pk) => self.#fk_id = Some(pk),
+                    None => return Err(
+                        ::vicocomo::Error::invalid_input(#pk_is_none)
+                    ),
+                }
+            )
         } else {
             parse_quote!(
-                match parent.#pk {
+                match remote.#remote_pk {
                     Some(pk) => self.#fk_id = pk,
                     None => return Err(
-                        vicocomo::Error::invalid_input(#pk_is_none)
+                        ::vicocomo::Error::invalid_input(#pk_is_none)
                     ),
                 }
             )
         };
+        match assoc_name {
+            Some(name) => {
+                let name_id: Ident = format_ident!("{}", name);
+                let name_type: Type = parse_quote!(#name_id);
+                gen.extend(quote! {
+                    /// This is a generated type. Its only purpose is to
+                    /// distinguish different implementations of
+                    /// `vicocomo::models::BelongsTo` with the same `remote`.
+                    pub struct #name_type;
+                });
+            }
+            None => (),
+        }
+        let all_belonging_to_id =
+            format_ident!("all_belonging_to_{}", assoc_snake);
+        let belongs_to_id = format_ident!("belongs_to_{}", assoc_snake);
+        let belong_to_id = format_ident!("belong_to_{}", assoc_snake);
+        let siblings_id = format_ident!("{}_siblings", assoc_snake);
         gen.extend(quote! {
-            impl BelongsTo<#parent> for #struct_id {
-                fn belonging_to(
-                    db: &impl vicocomo::DbConn,
-                    parent: &#parent
-                ) -> Result<Vec<Self>, vicocomo::Error> {
-                    use vicocomo::Find;
+            impl #struct_id {
+                pub fn #all_belonging_to_id(
+                    db: &impl ::vicocomo::DbConn,
+                    remote: &#remote_type
+                ) -> Result<Vec<Self>, ::vicocomo::Error> {
+                    use ::vicocomo::Find;
                     Self::query(
                         db,
-                        &vicocomo::QueryBld::new()
-                            .filter(#par_filter, &[Some(#find_expr)])
+                        &::vicocomo::QueryBld::new()
+                            .filter(#par_filter, &[Some(#remote_pk_expr?)])
                             .query()
                             .unwrap(),
                     )
                 }
-                fn parent(&self, db: &impl vicocomo::DbConn)
-                    -> Option<#parent>
+                pub fn #belongs_to_id(&self, db: &impl ::vicocomo::DbConn)
+                    -> Option<#remote_type>
                 {
-                    use vicocomo::Find;
-                    #parent::find(db, &self.#fk_id)
+                    use ::vicocomo::Find;
+                    #remote_type::find(db, #fk_expr_opt)
                 }
-                fn set_parent(&mut self, parent: &#parent)
-                    -> Result<(), vicocomo::Error>
+                pub fn #belong_to_id(&mut self, remote: &#remote_type)
+                    -> Result<(), ::vicocomo::Error>
                 {
-                    #set_expr
+                    #set_fk_expr
                     Ok(())
+                }
+                pub fn #siblings_id(
+                    &mut self,
+                    db: &impl ::vicocomo::DbConn
+                ) -> Result<Vec<Self>, ::vicocomo::Error> {
+                    use ::vicocomo::Find;
+                    Self::query(
+                        db,
+                        &::vicocomo::QueryBld::new()
+                            .filter(#par_filter, &[Some(#fk_expr_err)])
+                            .query()
+                            .unwrap(),
+                    )
                 }
             }
         });
+        if bel_fld.dbt.as_ref().unwrap().1 {
+            let belong_to_no_id =
+                format_ident!("belong_to_no_{}", assoc_snake);
+            gen.extend(quote! {
+                pub fn #belong_to_no_id(
+                    &mut self
+                ) -> Result<(), ::vicocomo::Error> {
+                    self.#fk_id = None;
+                    Ok(())
+                }
+            });
+        }
     }
     gen.into()
 }

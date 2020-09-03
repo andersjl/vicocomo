@@ -92,6 +92,7 @@ pub fn belongs_to_model_derive(input: TokenStream) -> TokenStream {
     belongs_to::belongs_to_model_impl(&model::Model::new(
         input,
         vec![
+            model::ExtraInfo::BelongsToData,
             model::ExtraInfo::OrderFields,
             model::ExtraInfo::UniqueFields,
             model::ExtraInfo::DatabaseTypes,

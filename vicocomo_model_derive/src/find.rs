@@ -3,7 +3,7 @@ use proc_macro::TokenStream;
 use syn::{export::Span, Ident};
 
 #[allow(unused_variables)]
-pub fn find_model_impl(model: &Model) -> TokenStream {
+pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
     use quote::quote;
     use syn::{
         parse_quote, punctuated::Punctuated, token::Comma, Expr, ItemFn,

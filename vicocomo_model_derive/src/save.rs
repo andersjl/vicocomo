@@ -2,7 +2,7 @@ use crate::model::Model;
 use proc_macro::TokenStream;
 
 #[allow(unused_variables)]
-pub fn save_model_impl(model: &Model) -> TokenStream {
+pub(crate) fn save_model_impl(model: &Model) -> TokenStream {
     use quote::quote;
     use syn::{parse_quote, Expr};
     let struct_id = &model.struct_id;

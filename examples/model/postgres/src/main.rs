@@ -293,21 +293,27 @@ async fn main() {
     // - - belongs-to association  - - - - - - - - - - - - - - - - - - - - - -
 
     println!("setting saved parent ..");
-    assert!(m.set_parent(&DefaultParent::find(&db, &2).unwrap()).is_ok());
+    assert!(
+        m.belong_to_default_parent(
+            &DefaultParent::find(&db, &2).unwrap()
+        )
+        .is_ok()
+    );
     assert!(m.default_parent_id == 2);
     assert!(m.save(&db).is_ok());
     println!("    OK");
     println!("error setting unsaved parent ..");
-    assert!(m
-        .set_parent(&DefaultParent {
+    assert!(
+        m.belong_to_default_parent(&DefaultParent {
             id: None,
             name: "unsaved".to_string()
         })
-        .is_err());
+        .is_err()
+    );
     assert!(m.default_parent_id == 2);
     println!("    OK");
     println!("getting saved parent ..");
-    let p = m.parent(&db);
+    let p = m.belongs_to_default_parent(&db);
     assert!(p.is_some());
     let p = p.unwrap();
     assert!(
@@ -316,7 +322,7 @@ async fn main() {
     );
     println!("    OK");
     println!("finding siblings ..");
-    let sibs = MultiPk::belonging_to(&db, &p);
+    let sibs = MultiPk::all_belonging_to_default_parent(&db, &p);
     assert!(sibs.is_ok());
     let sibs = sibs.unwrap();
     assert!(sibs.len() == 2);

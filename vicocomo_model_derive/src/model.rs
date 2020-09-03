@@ -1,21 +1,27 @@
 use proc_macro::TokenStream;
-use syn::{export::Span, parse_quote, Expr, Ident, LitStr, Path, Type};
+use quote::format_ident;
+use syn::{
+    export::Span, parse_quote, punctuated::Punctuated, token::Comma,
+    AttrStyle, Attribute, Expr, Ident, ItemStruct, Lit, LitStr, Meta,
+    NestedMeta, Type,
+};
 use vicocomo_derive_utils::*;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum ExtraInfo {
+pub(crate) enum ExtraInfo {
+    BelongsToData,
     DatabaseTypes,
     OrderFields,
     UniqueFields,
 }
 
 #[derive(Clone, Debug)]
-pub enum Order {
+pub(crate) enum Order {
     Asc(u32),
     Desc(u32),
 }
 impl Order {
-    pub fn prio(&self) -> u32 {
+    pub(crate) fn prio(&self) -> u32 {
         match self {
             Self::Asc(p) => *p,
             Self::Desc(p) => *p,
@@ -24,42 +30,46 @@ impl Order {
 }
 
 #[derive(Clone, Debug)]
-pub struct ForKey {
-    pub name: String,
-    pub parent_pk: Ident,
-    pub parent_pk_mand: bool,
-    pub path: Path,
+pub(crate) struct ForKey {
+    // The name attribute value
+    pub(crate) assoc_name: Option<String>,
+    // The name attibute or the remote type last segment, snaked
+    pub(crate) assoc_snake: String,
+    // The remote type primary key field
+    pub(crate) remote_pk: Ident,
+    pub(crate) remote_pk_mand: bool,
+    pub(crate) remote_type: Type,
+    pub(crate) trait_types: Punctuated<Type, Comma>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Field {
-    pub id: Ident,
-    pub ty: Type,
-    pub col: LitStr,
-    pub dbt: Option<Expr>,
-    pub pri: bool,
-    pub uni: Option<String>,
-    pub ord: Option<Order>,
-    pub opt: bool,
-    pub fk: Option<ForKey>,
+pub(crate) struct Field {
+    pub(crate) id: Ident,
+    pub(crate) ty: Type,
+    pub(crate) col: LitStr,
+    pub(crate) dbt: Option<(Expr, bool)>,
+    pub(crate) pri: bool,
+    pub(crate) uni: Option<String>,
+    pub(crate) ord: Option<Order>,
+    pub(crate) opt: bool,
+    pub(crate) fk: Option<ForKey>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Model {
-    pub struct_id: Ident,
-    pub table_name: String,
-    pub fields: Vec<Field>,
+pub(crate) struct Model {
+    pub(crate) struct_id: Ident,
+    pub(crate) table_name: String,
+    pub(crate) fields: Vec<Field>,
 }
 
 impl Model {
     // public methods without receiver - - - - - - - - - - - - - - - - - - - -
 
-    pub fn new(input: TokenStream, compute: Vec<ExtraInfo>) -> Self {
+    pub(crate) fn new(input: TokenStream, compute: Vec<ExtraInfo>) -> Self {
         use case::CaseExt;
         use regex::Regex;
         use syn::{
-            parse, AttrStyle, Data::Struct, DeriveInput, Fields::Named,
-            FieldsNamed, Lit, Meta, NestedMeta,
+            parse, Data::Struct, DeriveInput, Fields::Named, FieldsNamed,
         };
         let struct_tokens: DeriveInput = parse(input).unwrap();
         let data = struct_tokens.data;
@@ -112,18 +122,24 @@ impl Model {
                 let attr_id =
                     attr.path.segments.first().unwrap().ident.clone();
                 match attr_id.to_string().as_str() {
-                    "vicocomo_belongs_to" => {
+                    "vicocomo_belongs_to"
+                        if compute.contains(&ExtraInfo::BelongsToData) =>
+                    {
                         let field_name = id.to_string();
-                        let mut name = Regex::new(r"_id$")
+                        let mut assoc_name: Option<String> = None;
+                        let mut remote_pk =
+                            Ident::new("id", Span::call_site());
+                        let mut remote_pk_mand = false;
+                        let mut remote_type_string = Regex::new(r"_id$")
                             .unwrap()
                             .find(&field_name)
                             .and_then(|mat| {
-                                Some(field_name[..mat.start()].to_string())
+                                Some(
+                                    field_name[..mat.start()]
+                                        .to_camel()
+                                        .to_string(),
+                                )
                             });
-                        let mut parent_pk =
-                            Ident::new("id", Span::call_site());
-                        let mut parent_pk_mand = false;
-                        let mut path: Option<String> = None;
                         match attr
                             .parse_meta()
                             .expect(EXPECT_BELONGS_TO_ERROR)
@@ -136,27 +152,27 @@ impl Model {
 Meta::NameValue(n_v) => {
     match n_v.path.get_ident().unwrap().to_string().as_str() {
         "name" => match &n_v.lit {
-            Lit::Str(s) => name = Some(s.value()),
+            Lit::Str(s) => assoc_name = Some(s.value()),
             _ => panic!(EXPECT_BELONGS_TO_ERROR),
         }
-        "parent_pk" => match &n_v.lit {
+        "remote_pk" => match &n_v.lit {
             Lit::Str(lit_str) => {
                 let given = lit_str.value();
                 let pk_string;
                 match Regex::new(r"\s+mandatory$").unwrap().find(&given) {
                     Some(mat) => {
                         pk_string = given[..mat.start()].to_string();
-                        parent_pk_mand = true;
+                        remote_pk_mand = true;
                     }
                     None => pk_string = given,
                 }
-                parent_pk = Ident::new(&pk_string, Span::call_site());
+                remote_pk = Ident::new(&pk_string, Span::call_site());
             }
             _ => panic!(EXPECT_BELONGS_TO_ERROR),
         }
-        "path" => match &n_v.lit {
+        "remote_type" => match &n_v.lit {
             Lit::Str(s) => {
-                path = Some(s.value())
+                remote_type_string = Some(s.value())
             }
             _ => panic!(EXPECT_BELONGS_TO_ERROR),
         }
@@ -172,25 +188,21 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                             }
                             _ => panic!(EXPECT_BELONGS_TO_ERROR),
                         }
-                        let name = match name {
-                            Some(s) => s,
-                            _ => panic!(EXPECT_BELONGS_TO_ERROR),
-                        };
-                        let mut path: String =
-                            path.unwrap_or(name.to_camel());
-                        if path.find("::").is_none() {
-                            path =
-                                format!("crate::models::{}::{}", name, path);
-                        }
-                        let path: Path = syn::parse_macro_input::parse(
-                            path.parse::<TokenStream>().unwrap(),
-                        )
-                        .unwrap();
+                        let (remote_type, type_str) =
+                            Self::remote_type(&remote_type_string.unwrap());
+                        let assoc_snake = assoc_name
+                            .as_ref()
+                            .unwrap_or(&type_str)
+                            .to_snake();
+                        let trait_types =
+                            Self::trait_types(&remote_type, &assoc_name);
                         fk = Some(ForKey {
-                            name,
-                            parent_pk,
-                            parent_pk_mand,
-                            path,
+                            assoc_name,
+                            assoc_snake,
+                            remote_pk,
+                            remote_pk_mand,
+                            remote_type,
+                            trait_types,
                         });
                     }
                     "vicocomo_column" => {
@@ -300,12 +312,16 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                     &field.ty
                 });
                 dbt = Some(match type_string.as_str() {
-                    "f32" | "f64" => parse_quote!(vicocomo::DbType::Float),
+                    "f32" | "f64" => {
+                        (parse_quote!(vicocomo::DbType::Float), false)
+                    }
                     "bool" | "i32" | "i64" | "u32" | "u64" | "usize"
-                    | "NaiveDate" => parse_quote!(vicocomo::DbType::Int),
-                    "String" => parse_quote!(vicocomo::DbType::Text),
+                    | "NaiveDate" | "NaiveDateTime" => {
+                        (parse_quote!(vicocomo::DbType::Int), false)
+                    }
+                    "String" => (parse_quote!(vicocomo::DbType::Text), false),
                     "Option < f32 >" | "Option < f64 >" => {
-                        parse_quote!(vicocomo::DbType::NulFloat)
+                        (parse_quote!(vicocomo::DbType::NulFloat), true)
                     }
                     "Option < bool >"
                     | "Option < i32 >"
@@ -314,10 +330,10 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                     | "Option < u64 >"
                     | "Option < usize >"
                     | "Option < NaiveDate >" => {
-                        parse_quote!(vicocomo::DbType::NulInt)
+                        (parse_quote!(vicocomo::DbType::NulInt), true)
                     }
                     "Option < String >" => {
-                        parse_quote!(vicocomo::DbType::NulText)
+                        (parse_quote!(vicocomo::DbType::NulText), true)
                     }
                     _ => panic!(
                         "Type {} currently not allowed in a vicocomo model",
@@ -345,7 +361,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         }
     }
 
-    pub fn placeholders_expr(row_cnt: Expr, col_cnt: Expr) -> Expr {
+    pub(crate) fn placeholders_expr(row_cnt: Expr, col_cnt: Expr) -> Expr {
         parse_quote!(
             (0..#row_cnt)
                 .map(|row_ix| {
@@ -366,14 +382,14 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    pub fn query_err(query: &str) -> LitStr {
+    pub(crate) fn query_err(query: &str) -> LitStr {
         LitStr::new(
             format!("{} {{}} records, expected {{}}", query).as_str(),
             Span::call_site(),
         )
     }
 
-    pub fn strip_option<'a>(ty: &'a Type) -> &'a Type {
+    pub(crate) fn strip_option<'a>(ty: &'a Type) -> &'a Type {
         use syn::{GenericArgument, PathArguments::AngleBracketed};
         match ty {
             Type::Path(p) => match p.path.segments.first() {
@@ -398,22 +414,22 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
 
     // public methods with receiver  - - - - - - - - - - - - - - - - - - - - -
 
-    pub fn belongs_to_fields(&self) -> Vec<&Field> {
+    pub(crate) fn belongs_to_fields(&self) -> Vec<&Field> {
         self.fields.iter().filter(|f| f.fk.is_some()).collect()
     }
 
-    pub fn cols(&self) -> Vec<String> {
+    pub(crate) fn cols(&self) -> Vec<String> {
         self.fields.iter().map(|f| f.col.value()).collect()
     }
 
-    pub fn db_types(&self) -> Vec<&Expr> {
+    pub(crate) fn db_types(&self) -> Vec<&Expr> {
         self.fields
             .iter()
-            .map(|f| f.dbt.as_ref().unwrap())
+            .map(|f| &f.dbt.as_ref().unwrap().0)
             .collect()
     }
 
-    pub fn default_order(&self) -> String {
+    pub(crate) fn default_order(&self) -> String {
         if self.order_fields().is_empty() {
             String::new()
         } else {
@@ -438,7 +454,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
     }
 
     // SELECT col1, col2, col3 FROM table WHERE col1 = $1 AND col3 = $2
-    pub fn find_sql(&self, uni_cols: &[String]) -> String {
+    pub(crate) fn find_sql(&self, uni_cols: &[String]) -> String {
         format!(
             "SELECT {} FROM {} WHERE {}",
             &self
@@ -457,7 +473,17 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    pub fn order_fields(&self) -> Vec<&Field> {
+    pub(crate) fn name_type_item(name: &str) -> ItemStruct {
+        let name = format_ident!("{}", name);
+        parse_quote! {
+            /// This is a generated type. Its only purpose is to
+            /// distinguish different implementations of an association trait
+            /// with the same `remote`.
+            pub struct #name;
+        }
+    }
+
+    pub(crate) fn order_fields(&self) -> Vec<&Field> {
         let mut result = self
             .fields
             .iter()
@@ -467,13 +493,13 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         result
     }
 
-    pub fn pk_batch_expr(&self, batch_name: &str) -> Expr {
+    pub(crate) fn pk_batch_expr(&self, batch_name: &str) -> Expr {
         let pk_len = self.fields.iter().filter(|f| f.pri).count();
         let batch: Ident = Ident::new(batch_name, Span::call_site());
         match pk_len {
             0 => panic!("missing primary key field"),
             1 => parse_quote!(
-                &#batch.iter().map(|v| (*v).into()).collect::<Vec<_>>()[..]
+                &#batch.iter().map(|foo| (*foo).clone().into()).collect::<Vec<_>>()[..]
             ),
             _ => {
                 let ixs = (0..pk_len).map(|i| {
@@ -497,11 +523,11 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         }
     }
 
-    pub fn pk_fields(&self) -> Vec<&Field> {
+    pub(crate) fn pk_fields(&self) -> Vec<&Field> {
         self.fields.iter().filter(|f| f.pri).collect()
     }
 
-    pub fn pk_select(&self) -> LitStr {
+    pub(crate) fn pk_select(&self) -> LitStr {
         LitStr::new(
             &self
                 .pk_fields()
@@ -517,7 +543,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
     }
 
     // the type of the returned expression is Option<PkType>
-    pub fn pk_self_to_tuple(&self) -> Expr {
+    pub(crate) fn pk_self_to_tuple(&self) -> Expr {
         let pk_fields = &self.pk_fields();
         let mut exprs: Vec<Expr> = Vec::new();
         let mut pk_opts: Vec<Ident> = Vec::new();
@@ -530,22 +556,26 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                 exprs.push(parse_quote!(self.#id.clone()));
             }
         }
-        let check: Expr = parse_quote!( #( self.#pk_opts.is_some() )&&* );
         let tuple = match pk_fields.len() {
             0 => panic!("missing primary key"),
             1 => exprs.drain(..1).next().unwrap(),
             _ => parse_quote!( ( #( #exprs ),* ) ),
         };
-        parse_quote!(
-            if #check {
-                Some(#tuple)
-            } else {
-                None
-            }
-        )
+        if pk_opts.is_empty() {
+            parse_quote!(Some(#tuple))
+        } else {
+            let check: Expr = parse_quote!( #( self.#pk_opts.is_some() )&&* );
+            parse_quote!(
+                if #check {
+                    Some(#tuple)
+                } else {
+                    None
+                }
+            )
+        }
     }
 
-    pub fn pk_type(&self) -> Type {
+    pub(crate) fn pk_type(&self) -> Type {
         Self::types_to_tuple(
             self.pk_fields()
                 .iter()
@@ -561,7 +591,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    pub fn pk_values(&self) -> Expr {
+    pub(crate) fn pk_values(&self) -> Expr {
         let pk_ids: Vec<&Ident> =
             self.pk_fields().iter().map(|f| &f.id).collect();
         parse_quote!(
@@ -573,7 +603,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    pub fn rows_to_models_expr(&self, rows: Expr) -> Expr {
+    pub(crate) fn rows_to_models_expr(&self, rows: Expr) -> Expr {
         let retrieved = &self.fields;
         let ids: Vec<&Ident> = retrieved.iter().map(|f| &f.id).collect();
         let vals: Vec<Expr> = retrieved
@@ -618,7 +648,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    pub fn unique_fields(&self) -> Vec<Vec<&Field>> {
+    pub(crate) fn unique_fields(&self) -> Vec<Vec<&Field>> {
         use std::collections::HashMap;
         let mut unis: HashMap<&str, Vec<&Field>> = HashMap::new();
         for field in &self.fields {
@@ -642,19 +672,56 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         unis.drain().map(|(_k, v)| v).collect()
     }
 
-    pub fn upd_db_types(&self) -> Vec<Expr> {
+    pub(crate) fn upd_db_types(&self) -> Vec<Expr> {
         self.fields
             .iter()
             .filter(|f| !f.pri)
-            .map(|f| f.dbt.as_ref().unwrap().clone())
+            .map(|f| f.dbt.as_ref().unwrap().0.clone())
             .collect()
     }
 
-    pub fn upd_fields(&self) -> Vec<&Field> {
+    pub(crate) fn upd_fields(&self) -> Vec<&Field> {
         self.fields.iter().filter(|f| !f.pri).collect()
     }
 
     // private methods without receiver  - - - - - - - - - - - - - - - - - - -
+
+    // (type path, last segment as string)
+    fn remote_type(path: &str) -> (Type, String) {
+        use case::CaseExt;
+        let mut type_str = path.to_string();
+        let type_vec = path.split("::").collect::<Vec<_>>();
+        if type_vec.len() == 1 {
+            type_str = format!(
+                "crate::models::{}::{}",
+                type_str.to_snake(),
+                type_str,
+            );
+        }
+        (
+            syn::parse_macro_input::parse(
+                type_str.parse::<TokenStream>().unwrap(),
+            )
+            .unwrap(),
+            type_vec.last().unwrap().to_string(),
+        )
+    }
+
+    fn trait_types(
+        remote_type: &Type,
+        assoc_name: &Option<String>,
+    ) -> Punctuated<Type, Comma> {
+        let mut result = Punctuated::<Type, Comma>::new();
+        result.push(remote_type.clone());
+        match assoc_name.as_ref() {
+            Some(name) => {
+                let name_id: Ident = format_ident!("{}", name);
+                result.push(parse_quote!(#name_id));
+            }
+            None => (),
+        }
+        result
+    }
 
     fn types_to_tuple(types: &[&Type]) -> Type {
         if 1 == types.len() {
@@ -664,7 +731,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             paren_token: syn::token::Paren {
                 span: proc_macro2::Span::call_site(),
             },
-            elems: syn::punctuated::Punctuated::new(),
+            elems: Punctuated::new(),
         };
         for ty in types {
             result.elems.push((*ty).clone());
