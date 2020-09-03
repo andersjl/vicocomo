@@ -20,7 +20,7 @@ impl HtmlAttr {
     /// values.
     ///
     /// ```
-    /// # use vicocomo::html::HtmlAttr;
+    /// # use ::vicocomo::html::HtmlAttr;
     ///
     /// assert!(
     ///     HtmlAttr::new("some-name", None).to_string() == "some-name"

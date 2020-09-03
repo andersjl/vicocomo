@@ -1,4 +1,4 @@
-//! Macros to simplify translating texts 
+//! Macros to simplify translating texts
 
 /// Register texts for access with the [`t`](macro.t.html) macro.
 ///
@@ -94,7 +94,7 @@ macro_rules! register_texts {
 ///     "example of a parameterized text",
 /// );
 /// ```
-/// 
+///
 #[macro_export]
 macro_rules! t {
     ($key: literal) => {

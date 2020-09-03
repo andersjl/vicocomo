@@ -43,8 +43,9 @@ mod save;
 /// Derive the [`BelongsTo`](../vicocomo/model/trait.BelongsTo.html) trait for
 /// a `struct` with named fields.
 ///
-/// Note that the `Parent` struct must have exactly one `vicocomo_primary`
-/// field.
+/// Note that the `Remote` struct must have exactly one `vicocomo_primary`
+/// field.  The generated code also requires the `Remote` type to implement
+/// [`Find<_>`](derive.Find.html).
 ///
 /// ## Field attributes
 ///
@@ -53,43 +54,107 @@ mod save;
 /// `vicocomo_column = "`*column name*`"` - The database column storing the
 /// field.  Default the snake cased field name.
 ///
-/// `vicocomo_belongs_to(` ... `)` - The field is a foreign key to another
-/// model object.  The following name-value pairs are optional:
+/// `vicocomo_belongs_to(` ... `)` - The field is a foreign key to a model
+/// object on the remote side of the relationship.  The following name-value
+/// pairs are optional:
 ///
-/// - `name = "`*a name*`"`:  A name for the association, that changes the
-///   default values of the other attributes and the names of some generated
-///   functions, see below.
+/// - `name = "`*a camel case name*`"`:  If there are more than one
+///   `BelongsTo` implementation for this type with *the same* `remote_type`,
+///   all except one of them must have a `name`.  A unit `struct` *the value
+///   of `name`* will be generated, which is only used for this
+///   disambiguation.
 ///
-///   If the field name ends in `_id`, the default `name` is the field name
-///   with `_id` stripped.  If not, `name` is mandatory.
-///
-/// - `parent_pk = "`*a field id*`"`: The name of the parent's primary key
-///   *field* - not the column!  Belongs-to associations to models with
+/// - `remote_pk = "`*a field id*`"`: The name of the `Remote` type's primary
+///   key *field* - not the column!  `BelongsTo` associations to models with
 ///   composite primary keys is not possible.  The primary key field is taken
 ///   to be `vicocomo_optional`.  If it is mandatory, this must be indicated
-///   by `parent_pk ="`*a field id*` mandatory`"`.
+///   by `remote_pk ="`*a field id* `mandatory"`.
 ///
 ///   The default is `id`.
 ///
-/// - `path = "`*a path*`"`:  The parent `struct` path.  If given as a simple
-///   identifier, `crate::models::name::` is prepended.
+/// - `remote_type = "`*a path*`"`:  The `Remote` type.  If the type is a
+///   single identifier, `crate::models::`*snake case identifier*`::` is
+///   prepended.
 ///
-///   The default is `crate::models::`<`to_camel(name)`>.
+///   If the field identifier ends in `_id` the default path is
+///   `crate::models::`*rem*`::`*rem camel cased*, where *rem* is the field
+///   identifier with `_id` stripped.  If not, `remote_type` is mandatory.
 ///
 /// ## Generated code
 ///
-/// Implements [`BelongsTo`](../vicocomo/model/trait.BelongsTo.html).
+/// Implements [`BelongsTo<Remote, Name = Remote>`
+/// ](../vicocomo/model/trait.BelongsTo.html).
+///
+/// For each `name` given in a `vicocomo_belongs_to` attribute, a unit
+/// `struct` with that name is declared.  Make sure it is unique in the
+/// context where the macro is expanded.
+///
+/// "`<name>`" means the `name` value if given, or the last segment of
+/// `remote_path` if not, snake cased.
 ///
 /// ### For each `vicocomo_belongs_to` attributed field
 ///
-/// TODO
+/// ```text
+/// fn all_belonging_to_<name>(
+///     db: &impl ::vicocomo::DbConn,
+///     remote: &Remote,
+/// ) -> Result<Vec<Self>, Error>
+/// ```
+/// Retrive all objects in the database belonging to an instance of
+/// `Remote`.
+///
+/// `db` is the database connection object.
+///
+/// `remote` is the object on the remote side of the relationship.
+///
+/// ```text
+/// fn belongs_to_<name>(&self, db: &impl DbConn) -> Option<Remote>
+/// ```
+/// Retrive the object on the remote side of the relationship from the
+/// database.
+///
+/// `db` is the database connection object.
+///
+/// A return value of `None` may be
+/// - because the corresponding field in `self` is `None` (if the field is
+///   an `Option`),
+/// - because there is no row in the remote table with a primary key
+///   matching the field value, or
+/// - because of some other database error.
+///
+/// ```text
+/// fn belong_to_<name>(&mut self, remote: &Remote) -> Result<(), Error>
+/// ```
+/// Set the reference to an object on the remote side of the relationship.
+///
+/// `remote` is the object on the remote side of the relationship.
+///
+/// The new remote association is not saved to the database.
+///
+/// ```text
+/// fn belong_to_no_<name>(&mut self) -> Result<(), Error>
+/// ```
+/// Forget the reference to an object on the remote side of the
+/// relationship.
+///
+/// The old reference is not removed from the database.
+///
+/// The default function returns an `Error`.
+///
+/// Should be implemented if the association field is an `Option`.
+///
+/// ```text
+/// fn <name>_siblings(&self, db: &impl DbConn) -> Result<Vec<Self>, Error>
+/// ```
+/// Retrive all owned objects in the database (including `self`) that
+/// belong to the same object as `self`.
 ///
 #[proc_macro_derive(
     BelongsTo,
     attributes(vicocomo_column, vicocomo_belongs_to,)
 )]
-pub fn belongs_to_model_derive(input: TokenStream) -> TokenStream {
-    belongs_to::belongs_to_model_impl(&model::Model::new(
+pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
+    belongs_to::belongs_to_impl(&model::Model::new(
         input,
         vec![
             model::ExtraInfo::BelongsToData,
@@ -105,7 +170,7 @@ pub fn belongs_to_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// ## Struct attributes
 ///
-/// See this [example](../vicocomo_model_derive/index.html).
+/// See this [example](../vicocomo_derive/index.html).
 ///
 /// `vicocomo_table_name = "`some table name`"` - The database table storing
 /// the struct.  Default the snake cased struct name with a plural 's'.
@@ -114,7 +179,7 @@ pub fn belongs_to_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// See this [example](../vicocomo_model_derive/index.html).
 ///
-/// `vicocomo_column = "`column name`"` - The database column storing the
+/// `vicocomo_column = "`*column name*`"` - The database column storing the
 /// field.  Default the snake cased field name.
 ///
 /// `vicocomo_optional` - The field should be a Rust `Option`, and a `None`
@@ -124,8 +189,8 @@ pub fn belongs_to_model_derive(input: TokenStream) -> TokenStream {
 /// `vicocomo_primary` - The field corresponds to a primary key in the
 /// database.
 ///
-/// `vicocomo_unique = "`a label`"` - The tuple of fields whith the same label
-/// should be unique in the database.  Primary keys do not need this.
+/// `vicocomo_unique = "`*a label*`"` - The tuple of fields whith the same
+/// label should be unique in the database.  Primary keys do not need this.
 ///
 /// ## Generated code
 ///
@@ -141,8 +206,8 @@ pub fn belongs_to_model_derive(input: TokenStream) -> TokenStream {
         vicocomo_unique,
     )
 )]
-pub fn delete_model_derive(input: TokenStream) -> TokenStream {
-    delete::delete_model_impl(&model::Model::new(
+pub fn delete_derive(input: TokenStream) -> TokenStream {
+    delete::delete_impl(&model::Model::new(
         input,
         vec![model::ExtraInfo::UniqueFields],
     ))
@@ -155,29 +220,29 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// See this [example](../vicocomo_model_derive/index.html).
 ///
-/// `vicocomo_table_name = "`some table name`"` - The database table storing
+/// `vicocomo_table_name = "`*some table name*`"` - The database table storing
 /// the struct.  Default the snake cased struct name with a plural 's'.
 ///
 /// ## Field attributes
 ///
 /// See this [example](../vicocomo_model_derive/index.html).
 ///
-/// `vicocomo_column = "`column name`"` - The database column storing the
+/// `vicocomo_column = "`*column name*`"` - The database column storing the
 /// field.  Default the snake cased field name.
 ///
 /// `vicocomo_optional` - The field should be a Rust `Option`, and a `None`
 /// value is never sent to the database.  Intended for values that may be
 /// generated by the database when missing.
 ///
-/// `vicocomo_order_by(`priority`[`, "`direction`"`]`)` - Defines a default
+/// `vicocomo_order_by(`priority`[`, "`*direction*`"`]`)` - Defines a default
 /// ordering when retrieving model objects.  Direction is optional and either
 /// `ASC` or `DESC`.
 ///
 /// `vicocomo_primary` - The field corresponds to a primary key in the
 /// database.
 ///
-/// `vicocomo_unique = "`a label`"` - The tuple of fields whith the same label
-/// should be unique in the database.  Primary keys do not need this.
+/// `vicocomo_unique = "`*a label*`"` - The tuple of fields whith the same
+/// label should be unique in the database.  Primary keys do not need this.
 ///
 /// ## Generated code
 ///
@@ -187,7 +252,7 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// Given the struct declaration
 /// ```text
-/// #[derive(vicocomo::Find)]
+/// #[derive(::vicocomo::Find)]
 /// struct Example {
 ///     #[vicocomo_primary]
 ///     id: Option<u32>,
@@ -202,7 +267,7 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// ```text
 /// pub fn find_by_un1_and_un2(
-///     db: &mut impl vicocomo::DbConn,
+///     db: &mut impl ::vicocomo::DbConn,
 ///     un1: i32,
 ///     un2: i32,
 /// ) -> Option<Self>
@@ -218,7 +283,7 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 /// ```text
 /// pub fn find_equal_un1_and_un2(
 ///     &self,
-///     db: &mut impl vicocomo::DbConn
+///     db: &mut impl ::vicocomo::DbConn
 /// ) -> Option<Self>
 /// ```
 ///
@@ -230,11 +295,11 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// ```text
 /// pub fn validate_exists_un1_and_un2(
-///     db: &mut impl vicocomo::DbConn,
+///     db: &mut impl ::vicocomo::DbConn,
 ///     un1: i32,
 ///     un2: i32,
 ///     msg: &str,
-/// ) -> Result<(), vicocomo::Error> {
+/// ) -> Result<(), ::vicocomo::Error> {
 ///
 #[proc_macro_derive(
     Find,
@@ -247,8 +312,8 @@ pub fn delete_model_derive(input: TokenStream) -> TokenStream {
         vicocomo_unique
     )
 )]
-pub fn find_model_derive(input: TokenStream) -> TokenStream {
-    find::find_model_impl(&model::Model::new(
+pub fn find_derive(input: TokenStream) -> TokenStream {
+    find::find_impl(&model::Model::new(
         input,
         vec![
             model::ExtraInfo::OrderFields,
@@ -265,14 +330,14 @@ pub fn find_model_derive(input: TokenStream) -> TokenStream {
 ///
 /// See this [example](../vicocomo_model_derive/index.html).
 ///
-/// `vicocomo_table_name = "`some table name`"` - The database table storing
+/// `vicocomo_table_name = "`*some table name*`"` - The database table storing
 /// the struct.  Default the snake cased struct name with a plural 's'.
 ///
 /// ## Field attributes
 ///
 /// See this [example](../vicocomo_model_derive/index.html).
 ///
-/// `vicocomo_column = "`column name`"` - The database column storing the
+/// `vicocomo_column = "`*column name*`"` - The database column storing the
 /// field.  Default the snake cased field name.
 ///
 /// `vicocomo_optional` - The field should be a Rust `Option`, and a `None`
@@ -295,8 +360,8 @@ pub fn find_model_derive(input: TokenStream) -> TokenStream {
         vicocomo_table_name
     )
 )]
-pub fn save_model_derive(input: TokenStream) -> TokenStream {
-    save::save_model_impl(&model::Model::new(
+pub fn save_derive(input: TokenStream) -> TokenStream {
+    save::save_impl(&model::Model::new(
         input,
         vec![model::ExtraInfo::DatabaseTypes],
     ))

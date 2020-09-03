@@ -16,14 +16,14 @@ impl HbTemplEng<'_> {
     }
 }
 
-impl vicocomo::TemplEng for HbTemplEng<'_> {
+impl ::vicocomo::TemplEng for HbTemplEng<'_> {
     fn render(
         &self,
         tmpl: &str,
         data: &impl serde::Serialize,
-    ) -> Result<String, vicocomo::Error> {
+    ) -> Result<String, ::vicocomo::Error> {
         self.0
             .render(tmpl, data)
-            .map_err(|e| vicocomo::Error::render(e.to_string().as_str()))
+            .map_err(|e| ::vicocomo::Error::render(e.to_string().as_str()))
     }
 }

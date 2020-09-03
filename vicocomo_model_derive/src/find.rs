@@ -3,7 +3,7 @@ use proc_macro::TokenStream;
 use syn::{export::Span, Ident};
 
 #[allow(unused_variables)]
-pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
+pub(crate) fn find_impl(model: &Model) -> TokenStream {
     use quote::quote;
     use syn::{
         parse_quote, punctuated::Punctuated, token::Comma, Expr, ItemFn,
@@ -41,16 +41,16 @@ pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
     let find_model = model.rows_to_models_expr(parse_quote!(outp));
     let load_fn: ItemFn = parse_quote!(
         fn load(
-            db: &impl vicocomo::DbConn,
-        ) -> Result<Vec<Self>, vicocomo::Error> {
+            db: &impl ::vicocomo::DbConn,
+        ) -> Result<Vec<Self>, ::vicocomo::Error> {
             #load_models
         }
     );
     let query_fn: ItemFn = parse_quote!(
         fn query(
-            db: &impl vicocomo::DbConn,
-            query: &vicocomo::Query
-        ) -> Result<Vec<Self>, vicocomo::Error> {
+            db: &impl ::vicocomo::DbConn,
+            query: &::vicocomo::Query
+        ) -> Result<Vec<Self>, ::vicocomo::Error> {
             let filter = match query.filter.as_ref() {
                 Some(f) => format!("WHERE {}", f),
                 None => String::new(),
@@ -64,18 +64,18 @@ pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
                 None => String::new(),
             };
             let order = match &query.order {
-                vicocomo::Order::Custom(ord) =>
+                ::vicocomo::Order::Custom(ord) =>
                     format!("ORDER BY {}", ord),
-                vicocomo::Order::Dflt =>
+                ::vicocomo::Order::Dflt =>
                     #default_order.to_string(),
-                vicocomo::Order::NoOrder => String::new(),
+                ::vicocomo::Order::NoOrder => String::new(),
             };
-            let mut values: Vec<vicocomo::DbValue> = Vec::new();
+            let mut values: Vec<::vicocomo::DbValue> = Vec::new();
             for opt in query.values.as_slice() {
                 match opt {
                     Some(v) => values.push(v.clone()),
-                    None => return Err(vicocomo::Error::InvalidInput(
-                        "value is None".to_string()
+                    None => return Err(::vicocomo::Error::invalid_input(
+                        "value is None",
                     )),
                 }
             }
@@ -107,8 +107,8 @@ pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
             }
         }
         gen.extend(quote! {
-            impl vicocomo::Find<#pk_type> for #struct_id {
-                fn find(db: &impl vicocomo::DbConn, pk: &#pk_type)
+            impl ::vicocomo::Find<#pk_type> for #struct_id {
+                fn find(db: &impl ::vicocomo::DbConn, pk: &#pk_type)
                     -> Option<Self>
                 {
                     match db.query(
@@ -128,7 +128,7 @@ pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
                     }
                 }
 
-                fn find_equal(&self, db: &impl vicocomo::DbConn)
+                fn find_equal(&self, db: &impl ::vicocomo::DbConn)
                     -> Option<Self>
                 {
                     #pk_self_to_tuple.and_then(|tup| Self::find(db, &tup))
@@ -141,7 +141,7 @@ pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
         });
     } else {
         gen.extend(quote! {
-            impl vicocomo::Find<#pk_type> for #struct_id {
+            impl ::vicocomo::Find<#pk_type> for #struct_id {
                 #load_fn
 
                 #query_fn
@@ -162,7 +162,7 @@ pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
         let mut find_args: Punctuated<Expr, Comma> = Punctuated::new();
         let mut par_vals: Punctuated<Expr, Comma> = Punctuated::new();
         let mut self_args: Punctuated<Expr, Comma> = Punctuated::new();
-        find_pars.push(parse_quote!(db: &impl vicocomo::DbConn));
+        find_pars.push(parse_quote!(db: &impl ::vicocomo::DbConn));
         find_args.push(parse_quote!(db));
         self_args.push(parse_quote!(db));
         for field in &uni_flds {
@@ -213,7 +213,7 @@ pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
                 }
 
                 // -- find_equal_field1_and_field3(db) -----------------------
-                pub fn #find_eq_id(&self, db: &impl vicocomo::DbConn)
+                pub fn #find_eq_id(&self, db: &impl ::vicocomo::DbConn)
                 -> Option<Self> {
                     Self::#find_by_id(#self_args)
                 }
@@ -248,11 +248,11 @@ pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
             impl #struct_id {
 
                 // -- validate_exists_field1_and_field3(db, v1, v3, msg) -----
-                pub fn #exi_id(#exi_pars) -> Result<(), vicocomo::Error> {
+                pub fn #exi_id(#exi_pars) -> Result<(), ::vicocomo::Error> {
                     match Self::#find_by_id(#find_args) {
                         Some(_) => Ok(()),
-                        None => Err(vicocomo::Error::Database(
-                            format!(#exi_frmt_args)
+                        None => Err(::vicocomo::Error::database(
+                            &format!(#exi_frmt_args)
                         )),
                     }
                 }
@@ -260,12 +260,12 @@ pub(crate) fn find_model_impl(model: &Model) -> TokenStream {
                 // -- validate_unique_field1_and_field3(db, msg) -------------
                 pub fn #uni_id(
                     &self,
-                    db: &impl vicocomo::DbConn,
+                    db: &impl ::vicocomo::DbConn,
                     msg: &str
-                ) -> Result<(), vicocomo::Error> {
+                ) -> Result<(), ::vicocomo::Error> {
                     match self.#find_eq_id(db) {
-                        Some(_) => Err(vicocomo::Error::Database(
-                            format!(#uni_frmt_args)
+                        Some(_) => Err(::vicocomo::Error::database(
+                            &format!(#uni_frmt_args)
                         )),
                         None => Ok(()),
                     }

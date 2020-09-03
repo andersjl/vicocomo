@@ -3,7 +3,7 @@
 use futures::executor::block_on;
 use postgres_types;
 use tokio_postgres;
-use vicocomo::{DbConn, DbType, DbValue, Error};
+use ::vicocomo::{DbConn, DbType, DbValue, Error};
 
 /// A wrapping of `tokio_postgres::Client` that implements `vicocomo::DbConn`.
 pub struct PgConn(tokio_postgres::Client);

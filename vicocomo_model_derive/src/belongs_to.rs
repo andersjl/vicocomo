@@ -3,7 +3,7 @@ use proc_macro::TokenStream;
 //TODO code smells
 
 #[allow(unused_variables)]
-pub(crate) fn belongs_to_model_impl(model: &Model) -> TokenStream {
+pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
     use ::vicocomo_derive_utils::*;
     use quote::{format_ident, quote};
     use syn::{export::Span, parse_quote, Expr, Ident, LitStr, Type};

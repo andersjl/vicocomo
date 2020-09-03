@@ -2,7 +2,7 @@ use crate::model::Model;
 use proc_macro::TokenStream;
 
 #[allow(unused_variables)]
-pub(crate) fn save_model_impl(model: &Model) -> TokenStream {
+pub(crate) fn save_impl(model: &Model) -> TokenStream {
     use quote::quote;
     use syn::{parse_quote, Expr};
     let struct_id = &model.struct_id;
@@ -116,18 +116,18 @@ pub(crate) fn save_model_impl(model: &Model) -> TokenStream {
     let update_err = Model::query_err("update");
 
     let gen = quote! {
-        impl vicocomo::Save for #struct_id {
+        impl ::vicocomo::Save for #struct_id {
             fn insert_batch(
-                db: &impl vicocomo::DbConn,
+                db: &impl ::vicocomo::DbConn,
                 data: &[Self],
-            ) -> Result<Vec<Self>, vicocomo::Error> {
+            ) -> Result<Vec<Self>, ::vicocomo::Error> {
                 let mut inserts: std::collections::HashMap<
                     Vec<String>,
-                    Vec<Vec<vicocomo::DbValue>>,
+                    Vec<Vec<::vicocomo::DbValue>>,
                 > = std::collections::HashMap::new();
                 for data_itm in data {
                     let mut insert_cols = Vec::new();
-                    let mut pars: Vec<vicocomo::DbValue> = Vec::new();
+                    let mut pars: Vec<::vicocomo::DbValue> = Vec::new();
                     #( #insert_push_expr )*
                     match inserts.get_mut(&insert_cols) {
                         Some(ins_pars) => ins_pars.push(pars),
@@ -146,8 +146,8 @@ pub(crate) fn save_model_impl(model: &Model) -> TokenStream {
                 Ok(result)
             }
 
-            fn update(&mut self, db: &impl vicocomo::DbConn)
-                -> Result<(), vicocomo::Error>
+            fn update(&mut self, db: &impl ::vicocomo::DbConn)
+                -> Result<(), ::vicocomo::Error>
             {
                 use std::convert::TryInto;
                 let mut params = #pk_values;
@@ -165,7 +165,7 @@ pub(crate) fn save_model_impl(model: &Model) -> TokenStream {
                         &[ #( #upd_db_types ),* ],
                     )?;
                 if updated.is_empty() {
-                   return Err(vicocomo::Error::Database(
+                   return Err(::vicocomo::Error::Database(
                         format!(#update_err, 0, 1)
                     ));
                 }

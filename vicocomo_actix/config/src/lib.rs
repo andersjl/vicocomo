@@ -10,7 +10,7 @@ pub fn config(input: TokenStream) -> TokenStream {
         export::Span, parse_macro_input, parse_quote, punctuated::Punctuated,
         token, Expr, FnArg, Ident, LitStr, Path,
     };
-    use vicocomo::{Config, Handler};
+    use ::vicocomo::{Config, Handler};
 
     let Config { routes, not_found } = parse_macro_input!(input as Config);
     let mut handler_fn_vec: Vec<Ident> = Vec::new();
@@ -22,9 +22,9 @@ pub fn config(input: TokenStream) -> TokenStream {
     let mut contr_meth_vec: Vec<Ident> = Vec::new();
     let mut path_pars_expr_vec: Vec<Expr> = Vec::new();
     let hndl_pars_min: Punctuated<FnArg, token::Comma> = parse_quote!(
-        db: actix_web::web::Data<vicocomo_postgres::PgConn>,
+        db: actix_web::web::Data<::vicocomo_postgres::PgConn>,
         sess: actix_session::Session,
-        hb: actix_web::web::Data<vicocomo_handlebars::HbTemplEng<'_>>,
+        hb: actix_web::web::Data<::vicocomo_handlebars::HbTemplEng<'_>>,
         ax_req: actix_web::HttpRequest,
         body: String,
     );
@@ -87,9 +87,9 @@ pub fn config(input: TokenStream) -> TokenStream {
                 }
             });
             let database_ref = actix_web::web::Data::new(
-                vicocomo_postgres::PgConn::new(client),
+                ::vicocomo_postgres::PgConn::new(client),
             );
-            let handlebars = vicocomo_handlebars::HbTemplEng::new(None);
+            let handlebars = ::vicocomo_handlebars::HbTemplEng::new(None);
             let handlebars_ref = actix_web::web::Data::new(handlebars);
             let port_str = std::env::var("PORT").unwrap_or_default();
             actix_web::HttpServer::new(move || {
@@ -132,23 +132,23 @@ pub fn config(input: TokenStream) -> TokenStream {
 
         #[allow(non_snake_case)]
         mod __vicocomo__handlers {
-            use vicocomo::Controller;
+            use ::vicocomo::Controller;
             #(
                 pub async fn #handler_fn_vec(
                     #hndl_pars_vec
                 ) -> actix_web::HttpResponse {
-                    let vi_req = vicocomo_actix::AxRequest::new(
+                    let vi_req = ::vicocomo_actix::AxRequest::new(
                         &ax_req,
                         body.as_str(),
                         ax_req.uri(),
                         #path_pars_expr_vec,
                     );
-                    let mut vi_resp = vicocomo_actix::AxResponse::new();
+                    let mut vi_resp = ::vicocomo_actix::AxResponse::new();
                     #controller_vec::#contr_meth_vec(
                         &vi_req,
                         hb.into_inner().as_ref(),
                         db.into_inner().as_ref(),
-                        vicocomo::Session::new(
+                        ::vicocomo::Session::new(
                             &vicocomo_actix::AxSessionStore::new(sess)
                         ),
                         &mut vi_resp,

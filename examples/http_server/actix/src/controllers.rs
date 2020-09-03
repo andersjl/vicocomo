@@ -1,5 +1,5 @@
 use serde::Serialize;
-use vicocomo::{
+use ::vicocomo::{
     view::render_template, DbConn, Error, Request, Response, Session,
     TemplEng,
 };
@@ -14,7 +14,7 @@ impl Static {
         sess: Session,
         resp: &mut impl Response,
     ) {
-        use vicocomo::t;
+        use ::vicocomo::t;
         #[derive(Serialize)]
         struct Data {
             hej: &'static str,

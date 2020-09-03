@@ -5,7 +5,7 @@ use syn::{
     AttrStyle, Attribute, Expr, Ident, ItemStruct, Lit, LitStr, Meta,
     NestedMeta, Type,
 };
-use vicocomo_derive_utils::*;
+use ::vicocomo_derive_utils::*;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ExtraInfo {
@@ -313,15 +313,17 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                 });
                 dbt = Some(match type_string.as_str() {
                     "f32" | "f64" => {
-                        (parse_quote!(vicocomo::DbType::Float), false)
+                        (parse_quote!(::vicocomo::DbType::Float), false)
                     }
                     "bool" | "i32" | "i64" | "u32" | "u64" | "usize"
                     | "NaiveDate" | "NaiveDateTime" => {
-                        (parse_quote!(vicocomo::DbType::Int), false)
+                        (parse_quote!(::vicocomo::DbType::Int), false)
                     }
-                    "String" => (parse_quote!(vicocomo::DbType::Text), false),
+                    "String" => {
+                        (parse_quote!(::vicocomo::DbType::Text), false)
+                    }
                     "Option < f32 >" | "Option < f64 >" => {
-                        (parse_quote!(vicocomo::DbType::NulFloat), true)
+                        (parse_quote!(::vicocomo::DbType::NulFloat), true)
                     }
                     "Option < bool >"
                     | "Option < i32 >"
@@ -330,10 +332,10 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                     | "Option < u64 >"
                     | "Option < usize >"
                     | "Option < NaiveDate >" => {
-                        (parse_quote!(vicocomo::DbType::NulInt), true)
+                        (parse_quote!(::vicocomo::DbType::NulInt), true)
                     }
                     "Option < String >" => {
-                        (parse_quote!(vicocomo::DbType::NulText), true)
+                        (parse_quote!(::vicocomo::DbType::NulText), true)
                     }
                     _ => panic!(
                         "Type {} currently not allowed in a vicocomo model",
@@ -596,7 +598,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             self.pk_fields().iter().map(|f| &f.id).collect();
         parse_quote!(
             {
-                let mut values: Vec<vicocomo::DbValue> = Vec::new();
+                let mut values: Vec<::vicocomo::DbValue> = Vec::new();
                 #( values.push(self.#pk_ids.clone().into()); )*
                 values
             }
@@ -619,9 +621,9 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         parse_quote!(
             {
                 use std::convert::TryInto;
-                let mut error: Option<vicocomo::Error> = None;
+                let mut error: Option<::vicocomo::Error> = None;
                 let mut models = Vec::new();
-                let mut rows: Vec<Vec<vicocomo::DbValue>> = #rows;
+                let mut rows: Vec<Vec<::vicocomo::DbValue>> = #rows;
                 for mut row in rows.drain(..) {
                     #(
                         let #ids;

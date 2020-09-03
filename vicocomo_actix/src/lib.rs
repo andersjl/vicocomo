@@ -3,8 +3,8 @@
 
 use actix_web;
 use std::collections::HashMap;
-use vicocomo::{Error, Request, Response, SessionStore};
-pub use vicocomo_actix_config::config;
+use ::vicocomo::{Error, Request, Response, SessionStore};
+pub use ::vicocomo_actix_config::config;
 
 /// Implements [`vicocomo::HttpServer`](../../vicocomo/module.HttpServer.html)
 /// traits for [`actix-web`](../../actix-web/index.html).
@@ -183,9 +183,9 @@ impl SessionStore for AxSessionStore {
         self.0.remove(key)
     }
 
-    fn set(&self, key: &str, value: &str) -> Result<(), vicocomo::Error> {
+    fn set(&self, key: &str, value: &str) -> Result<(), ::vicocomo::Error> {
         self.0
             .set(key, value)
-            .map_err(|e| vicocomo::Error::other(&e.to_string()))
+            .map_err(|e| ::vicocomo::Error::other(&e.to_string()))
     }
 }

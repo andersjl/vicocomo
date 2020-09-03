@@ -13,8 +13,8 @@ macro_rules! controller_nyi {
             sess: Session,
             resp: &mut impl Response,
         ) {
-            resp.internal_server_error(Some(&Error::Other(
-                String::from($txt) + " not implemented",
+            resp.internal_server_error(Some(&Error::other(
+                &(String::from($txt) + " not implemented"),
             )))
         }
     };

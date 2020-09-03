@@ -14,16 +14,16 @@ mod models {
 
     pub mod multi_pk {
         use chrono::NaiveDate;
-        use vicocomo::BelongsTo;
+        use ::vicocomo::BelongsTo;
 
         #[derive(
             Clone,
             Debug,
             PartialEq,
-            vicocomo::BelongsTo,
-            vicocomo::Delete,
-            vicocomo::Find,
-            vicocomo::Save,
+            ::vicocomo::BelongsTo,
+            ::vicocomo::Delete,
+            ::vicocomo::Find,
+            ::vicocomo::Save,
         )]
         pub struct MultiPk {
             #[vicocomo_optional]
@@ -56,9 +56,9 @@ mod models {
         #[derive(
             Clone,
             Debug,
-            vicocomo::Delete,
-            vicocomo::Find,
-            vicocomo::Save,
+            ::vicocomo::Delete,
+            ::vicocomo::Find,
+            ::vicocomo::Save,
         )]
         pub struct SinglePk {
             #[vicocomo_optional]
@@ -78,7 +78,7 @@ mod models {
     }
 
     pub mod default_parent {
-        #[derive(Clone, Debug, vicocomo::Find)]
+        #[derive(Clone, Debug, ::vicocomo::Find)]
         pub struct DefaultParent {
             #[vicocomo_optional]
             #[vicocomo_primary]
@@ -88,7 +88,7 @@ mod models {
     }
 
     pub mod nonstandard_parent {
-        #[derive(Clone, Debug, vicocomo::Find)]
+        #[derive(Clone, Debug, ::vicocomo::Find)]
         pub struct NonstandardParent {
             #[vicocomo_optional]
             #[vicocomo_primary]
@@ -102,10 +102,10 @@ use models::{
     default_parent::DefaultParent, multi_pk::MultiPk,
     nonstandard_parent::NonstandardParent, single_pk::SinglePk,
 };
-use vicocomo::{
+use ::vicocomo::{
     DbConn, DbValue, BelongsTo, Delete, Find, QueryBld, Save,
 };
-use vicocomo_postgres::PgConn;
+use ::vicocomo_postgres::PgConn;
 
 #[tokio::main]
 async fn main() {

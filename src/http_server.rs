@@ -17,10 +17,11 @@ use syn::{
 ///
 /// There is an implementation for [`actix-web`
 /// ](https://crates.io/crates/actix-web) [here.
-/// ](../../../../vicocomo_actix/target/doc/vicocomo_actix_config/macro.config.html)
+/// ](../../vicocomo_actix/macro.config.html)
 ///
 // TODO: a new field and config item templ_eng, probably a a struct.
 // TODO: a new route attribute 'name' for use in Request::url_for.
+// TODO: implement not_found.
 ///
 /// # Code example:
 ///
@@ -91,11 +92,11 @@ use syn::{
 /// Handling method signature:
 /// ```text
 /// (
-///   &impl vicocomo::Request,       // server request
-///   &impl vicocomo::TemplEng,      // template engine
-///   &impl vicocomo::DbConn,        // database connection
-///   vicocomo::Session,             // session object
-///   &mut impl vicocomo::Response,  // response
+///   &impl ::vicocomo::Request,       // server request
+///   &impl ::vicocomo::TemplEng,      // template engine
+///   &impl ::vicocomo::DbConn,        // database connection
+///   ::vicocomo::Session,             // session object
+///   &mut impl ::vicocomo::Response,  // response
 /// ) -> ()
 /// ```
 ///

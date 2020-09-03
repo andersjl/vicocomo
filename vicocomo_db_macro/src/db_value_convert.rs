@@ -5,7 +5,7 @@ use syn::{
     parse::{self, Parse, ParseStream},
     Expr, Ident, Type,
 };
-use vicocomo_derive_utils::*;
+use ::vicocomo_derive_utils::*;
 
 pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
     use quote::{format_ident, quote};
@@ -61,8 +61,8 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
             fn try_into(self) -> Result<#other, Self::Error> {
                 match self {
                     DbValue::#variant(value) => Ok(#value_to_other),
-                    _ => Err(Error::InvalidInput(
-                        format!(#wrong_variant, self),
+                    _ => Err(Error::invalid_input(
+                        &format!(#wrong_variant, self),
                     )),
                 }
             }
@@ -77,8 +77,8 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
             fn try_into(self) -> Result<Option<#other>, Self::Error> {
                 match self {
                     DbValue::#nul_variant(option) => Ok(#into_option),
-                    _ => Err(Error::InvalidInput(
-                        format!(#wrong_option, self),
+                    _ => Err(Error::invalid_input(
+                        &format!(#wrong_option, self),
                     )),
                 }
             }
