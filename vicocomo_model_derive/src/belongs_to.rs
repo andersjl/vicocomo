@@ -6,7 +6,7 @@ use proc_macro::TokenStream;
 pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
     use ::vicocomo_derive_utils::*;
     use quote::{format_ident, quote};
-    use syn::{export::Span, parse_quote, Expr, Ident, LitStr, Type};
+    use syn::{export::Span, parse_quote, Expr, LitStr};
 
     let struct_id = &model.struct_id;
     let table_name = &model.table_name;
@@ -26,6 +26,13 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
         gen.extend(quote! {
             impl ::vicocomo::BelongsTo<#trait_types> for #struct_id {}
         });
+        if assoc_name.is_some() {
+            let name_type =
+                Model::name_type_item(assoc_name.as_ref().unwrap());
+            gen.extend(quote! {
+                #name_type
+            });
+        }
         let fk_is_none = LitStr::new(
             &format!(
                 "{}.{} is None",
@@ -109,19 +116,6 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
                 }
             )
         };
-        match assoc_name {
-            Some(name) => {
-                let name_id: Ident = format_ident!("{}", name);
-                let name_type: Type = parse_quote!(#name_id);
-                gen.extend(quote! {
-                    /// This is a generated type. Its only purpose is to
-                    /// distinguish different implementations of
-                    /// `vicocomo::models::BelongsTo` with the same `remote`.
-                    pub struct #name_type;
-                });
-            }
-            None => (),
-        }
         let all_belonging_to_id =
             format_ident!("all_belonging_to_{}", assoc_snake);
         let belongs_to_id = format_ident!("belongs_to_{}", assoc_snake);

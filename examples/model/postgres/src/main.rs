@@ -87,7 +87,14 @@ mod models {
     }
 
     pub mod default_parent {
-        #[derive(Clone, Debug, vicocomo::Delete, vicocomo::Find)]
+        #[derive(
+            Clone,
+            Debug,
+            vicocomo::Delete,
+            vicocomo::Find,
+            vicocomo::HasMany,
+        )]
+        #[vicocomo_has_many(on_delete = "cascade", remote_type = "MultiPk")]
         pub struct DefaultParent {
             #[vicocomo_optional]
             #[vicocomo_primary]
@@ -97,15 +104,41 @@ mod models {
     }
 
     pub mod other_parent {
-        #[derive(Clone, Debug, vicocomo::Delete, vicocomo::Find)]
+        #[derive(
+            Clone,
+            Debug,
+            vicocomo::BelongsTo,
+            vicocomo::Delete,
+            vicocomo::Find,
+            vicocomo::HasMany,
+            vicocomo::Save,
+        )]
+        #[vicocomo_has_many(
+            on_delete = "forget",
+            remote_fk_col = "other_parent_id",
+            remote_type = "MultiPk",
+        )]
+        #[vicocomo_has_many(
+            name = "BonusChild",
+            remote_fk_col = "bonus_parent",
+            remote_type = "MultiPk",
+        )]
+        #[vicocomo_has_many(
+            remote_type = "crate::models::other_parent::NonstandardParent",
+        )]
         pub struct NonstandardParent {
             #[vicocomo_primary]
             pub pk: String,
+            #[vicocomo_belongs_to(
+                remote_pk = "pk mandatory",
+                remote_type = "crate::models::other_parent::NonstandardParent"
+            )]
+            pub nonstandard_parent_id: Option<String>,
         }
     }
 }
 
-use ::vicocomo::{BelongsTo, DbConn, DbValue, Delete, Find, QueryBld, Save};
+use ::vicocomo::{DbConn, DbValue, Delete, Find, QueryBld, Save};
 use ::vicocomo_postgres::PgConn;
 use chrono::NaiveDate;
 use models::{
@@ -129,12 +162,11 @@ async fn main() {
         }
     });
     match block_on(pg_client.batch_execute(
-        "
-        DROP TABLE IF EXISTS multi_pks;
-        DROP TABLE IF EXISTS single_pks;
-        DROP TABLE IF EXISTS default_parents;
-        DROP TABLE IF EXISTS nonstandard_parents;
-        CREATE TABLE multi_pks
+        " DROP TABLE IF EXISTS multi_pks
+        ; DROP TABLE IF EXISTS single_pks
+        ; DROP TABLE IF EXISTS default_parents
+        ; DROP TABLE IF EXISTS nonstandard_parents
+        ; CREATE TABLE multi_pks
         (   id             BIGINT NOT NULL DEFAULT 1
         ,   id2            BIGINT
         ,   bool_mand      BIGINT NOT NULL
@@ -154,25 +186,27 @@ async fn main() {
         ,   u64_mand       BIGINT NOT NULL
         ,   usize_mand     BIGINT NOT NULL
         ,   PRIMARY KEY(id, id2)
-        );
-        CREATE TABLE single_pks
+        )
+        ; CREATE TABLE single_pks
         (   id    BIGSERIAL PRIMARY KEY
         ,   name  TEXT NOT NULL DEFAULT 'default'
         ,   data  FLOAT(53)
         ,   un1   BIGINT
         ,   un2   BIGINT NOT NULL
-        );
-        CREATE TABLE default_parents
+        )
+        ; CREATE TABLE default_parents
         (   id    BIGSERIAL PRIMARY KEY
         ,   name  TEXT NOT NULL
-        );
-        CREATE TABLE nonstandard_parents
-        (   pk  TEXT PRIMARY KEY
-        );
-        INSERT INTO default_parents (name)
-            VALUES ('default filler'), ('used default');
-        INSERT INTO nonstandard_parents (pk)
-            VALUES ('used nonstandard'), ('bonus nonstandard');
+        )
+        ; CREATE TABLE nonstandard_parents
+        (   pk                     TEXT PRIMARY KEY
+        ,   nonstandard_parent_id  TEXT
+        )
+        ; INSERT INTO default_parents (name)
+            VALUES ('default filler'), ('used default')
+        ; INSERT INTO nonstandard_parents (pk, nonstandard_parent_id)
+            VALUES ('nonstandard', NULL) , ('bonus nonstandard', NULL)
+        ;
     ",
     )) {
         Ok(_) => println!("created tables\n"),
@@ -309,15 +343,19 @@ async fn main() {
         .belong_to_default_parent(&DefaultParent::find(&db, &2).unwrap(),)
         .is_ok(),);
     assert!(m.default_parent_id == 2);
-    let np = &NonstandardParent::find(&db, &"used nonstandard".to_string())
+    let np = &NonstandardParent::find(&db, &"nonstandard".to_string())
         .unwrap();
     assert!(m.belong_to_nonstandard_parent(np).is_ok());
-    assert!(m.other_parent_id == Some("used nonstandard".to_string()));
-    let bp = &NonstandardParent::find(&db, &"bonus nonstandard".to_string())
-        .unwrap();
+    assert!(m.other_parent_id == Some("nonstandard".to_string()));
+    let bp =
+        &mut NonstandardParent::find(&db, &"bonus nonstandard".to_string())
+            .unwrap();
     assert!(m.belong_to_bonus_parent(bp).is_ok());
     assert!(m.bonus_parent == "bonus nonstandard");
+    assert!(bp.belong_to_nonstandard_parent(np).is_ok());
+    assert!(bp.nonstandard_parent_id == Some("nonstandard".to_string()));
     assert!(m.save(&db).is_ok());
+    assert!(bp.save(&db).is_ok());
     println!("    OK");
     println!("unsetting parent ..");
     assert!(m.belong_to_no_nonstandard_parent().is_ok());
@@ -349,20 +387,48 @@ async fn main() {
     let np = np.unwrap();
     assert!(
         format!("{:?}", np)
-            == "NonstandardParent { pk: \"used nonstandard\" }"
+            == "NonstandardParent { \
+                pk: \"nonstandard\", nonstandard_parent_id: None \
+            }"
     );
     println!("    OK");
     println!("finding siblings ..");
-    let sibs = m.default_parent_siblings(&db);
-    assert!(sibs.is_ok());
-    let sibs = sibs.unwrap();
-    assert!(sibs.len() == 2);
-    assert!(sibs.iter().filter(|s| s.default_parent_id == 2).count() == 2);
-    let sibs: Result<Vec<MultiPk>, ::vicocomo::Error> =
+    let dp_sibs = m.default_parent_siblings(&db);
+    assert!(dp_sibs.is_ok());
+    let dp_sibs = dp_sibs.unwrap();
+    assert!(dp_sibs.len() == 2);
+    assert!(dp_sibs.iter().filter(|s| s.default_parent_id == 2).count() == 2);
+    let np_sibs: Result<Vec<MultiPk>, ::vicocomo::Error> =
         MultiPk::all_belonging_to_nonstandard_parent(&db, &np);
-    assert!(sibs.is_ok());
-    let sibs = sibs.unwrap();
-    assert!(sibs.len() == 1);
+    assert!(np_sibs.is_ok());
+    let np_sibs = np_sibs.unwrap();
+    assert!(np_sibs.len() == 1);
+    let grown_sibs: Result<Vec<NonstandardParent>, ::vicocomo::Error> =
+        NonstandardParent::all_belonging_to_nonstandard_parent(&db, &np);
+    assert!(grown_sibs.is_ok());
+    let grown_sibs = grown_sibs.unwrap();
+    assert!(grown_sibs.len() == 1);
+    println!("    OK");
+
+    // - - has-many association  - - - - - - - - - - - - - - - - - - - - - - -
+
+    show_multi(&db);
+    println!("finding children ..");
+    let dp_chn = dp.find_remote_multi_pk(&db, None);
+    assert!(dp_chn.is_ok());
+    let dp_chn = dp_chn.unwrap();
+    assert!(format!("{:?}", dp_chn) == format!("{:?}", dp_sibs));
+    let bp_chn = bp.find_remote_bonus_child(&db, None);
+    assert!(bp_chn.is_ok());
+    let bp_chn = bp_chn.unwrap();
+    assert!(
+        format!("{:?}", bp_chn)
+            == format!("{:?}", MultiPk::load(&db).unwrap()),
+    );
+    let grown_chn = np.find_remote_nonstandard_parent(&db, None);
+    assert!(grown_chn.is_ok());
+    let grown_chn = grown_chn.unwrap();
+    assert!(format!("{:?}", grown_chn) == format!("{:?}", grown_sibs));
     println!("    OK");
 
     // - - deleting  - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -375,6 +441,23 @@ async fn main() {
     println!("error deleting non-existing {:?}", m);
     let res = m.delete(&db);
     assert!(res.is_err());
+    println!("    OK");
+    println!("error deleting restricted parent");
+    let mut m = MultiPk::find(&db, &(1, 17)).unwrap();
+    m.belong_to_nonstandard_parent(&np)
+        .and_then(|()| m.save(&db))
+        .unwrap();
+    let old_counts = (
+        np.find_remote_multi_pk(&db, None).unwrap().len(),
+        np.find_remote_nonstandard_parent(&db, None).unwrap().len(),
+    );
+    let res = np.clone().delete(&db);
+    assert!(res.is_err());
+    let new_counts = (
+        np.find_remote_multi_pk(&db, None).unwrap().len(),
+        np.find_remote_nonstandard_parent(&db, None).unwrap().len(),
+    );
+    assert!(new_counts == old_counts);
     println!("    OK");
 
     // --- SinglePk ----------------------------------------------------------

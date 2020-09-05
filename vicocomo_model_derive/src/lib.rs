@@ -1,8 +1,19 @@
 //! # Model helper macros
 //!
 //! ```text
-//! #[derive(<one or more of BelongsTo, Delete, Find, and Save>)]
-//! #[vicoomo_table_name = "example_table"]  // default "examples"
+//! #[derive(<one or more of BelongsTo, Delete, Find, HasMany, and Save>)]
+//! #[vicocomo_table_name = "example_table"]  // default "examples"
+//! // one or more vicocomo_has_many attributes, see HasMany below
+//! #[vicocomo_has_many(              // one-to-many or possibly ...
+//!     through = "tnam",             // ... many-to-many w join table "tnam"
+//!     name = "SomeName",            // needed if several impl same Rem
+//!     on_delete = "cascade",        // cascade / forget / restrict (default)
+//!     remote_type = "super::Rem",   // Remote type, identifier mandatory
+//!     remote_fk_col = "fk_self",    // Remote or join key to self, default
+//!                                   // "t_id" if the type of Self is T
+//!     // ... if many-to-many, i.e. "through" join table given --------------
+//!     join_fk_col = "fk_rem",       // join tab key to Rem, default "rem_id"
+//!     remote_pk_col = "pk")]        // Rem primary col name, default "id",
 //! struct Example {
 //!     #[vicocomo_optional]          // not sent to DBMS if None
 //!     #[vicocomo_primary]           // To find a row to update() or delete()
@@ -19,14 +30,13 @@
 //!     #[vicocomo_optional]          // not sent to DBMS if None
 //!     opt_null:                     // INTEGER DEFAULT 43
 //!         Option<Option<i32>>,      // None -> 43, Some(None) -> NULL
-//!     #[vicocomo_belongs_to(        // child referencing parent
-//!         name = "father",          // base for generated function names,
-//!                                   // default strip "_id" from field name
-//!         path = "crate::x::OlMan", // parent struct path, default
-//!                                   // crate::models::<name.to_camel()>
-//!         parent_pk = "pk",         // parent PK field, default "id", must
-//!     )]                            // be a single primary key field
-//!     parent_id: u32,               // May be nullable, in this case not
+//!     #[vicocomo_belongs_to(        // "many" side of one-to-many
+//!         name = "Father",          // needed if several impl same Remote
+//!         remote_type =             // remote struct path, default
+//!             "crate::x::OlMan",    // crate::models::rem::Rem (if rem_id)
+//!         remote_pk = "pk",         // remote PK field, default "id",
+//!     )]                            // must be a single primary key field
+//!     rem_id: u32,                  // May be nullable, in this case not
 //! }
 //! ```
 extern crate proc_macro;
@@ -37,6 +47,7 @@ use proc_macro::TokenStream;
 mod belongs_to;
 mod delete;
 mod find;
+mod has_many;
 mod model;
 mod save;
 
@@ -89,8 +100,8 @@ mod save;
 /// `struct` with that name is declared.  Make sure it is unique in the
 /// context where the macro is expanded.
 ///
-/// "`<name>`" means the `name` value if given, or the last segment of
-/// `remote_path` if not, snake cased.
+/// Below, "`<name>`" means the `name` value if given, or the last segment of
+/// `remote_type` if not, snake cased.
 ///
 /// ### For each `vicocomo_belongs_to` attributed field
 ///
@@ -170,10 +181,32 @@ pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
 ///
 /// ## Struct attributes
 ///
-/// See this [example](../vicocomo_derive/index.html).
+/// See this [example](../vicocomo_model_derive/index.html).
 ///
-/// `vicocomo_table_name = "`some table name`"` - The database table storing
+/// `vicocomo_table_name = "`*some table name*`"` - The database table storing
 /// the struct.  Default the snake cased struct name with a plural 's'.
+///
+/// `vicocomo_delete_errors`: - See [`DeleteErrors`
+/// ](../vicocomo/model/trait.DeleteError.html).  If present, the generated
+/// code calls [`errors_preventing_delete()`
+/// ](../vicocomo/model/trait.DeleteError.html#tymethod.errors_preventing_delete).
+///
+/// `vicocomo_has_many(` ... `)` - See [`HasMany`](derive.HasMany.html).  For
+/// `Delete`, we need this to handle the objects associated to this one by a
+/// `HasMany` association that is one-to-many.  Depending on the value of the
+/// `on_delete = "`...`"` name-value pair
+///   - `cascade`:  The associated objects are deleted when `self` is.  Note
+///     that this requires that `Remote`, too, implements [`Delete`
+///     ](../vicocomo/model/trait.Delete.html).
+///   - `forget`:  The remote references are set to `None`.  Note that this
+///     requires that`Remote` object derives [`BelongsTo`
+///     ](derive.BelongsTo.html).
+///   - `restrict`:  Error return, `self` cannot be deleted as long as there
+///     are associatied objects.  This is the default.
+///
+///   Ignored for many-to-many associations.  For those, the remote object is
+///   never deleted, and the row in the join table is always deleted when
+///   `self` is.
 ///
 /// ## Field attributes
 ///
@@ -200,6 +233,8 @@ pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
     Delete,
     attributes(
         vicocomo_column,
+        vicocomo_delete_errors,
+        vicocomo_has_many,  // we must know what to do on delete
         vicocomo_optional,
         vicocomo_primary,
         vicocomo_table_name,
@@ -209,7 +244,10 @@ pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
 pub fn delete_derive(input: TokenStream) -> TokenStream {
     delete::delete_impl(&model::Model::new(
         input,
-        vec![model::ExtraInfo::UniqueFields],
+        vec![
+            model::ExtraInfo::HasManyData,
+            model::ExtraInfo::UniqueFields,
+        ],
     ))
 }
 
@@ -319,6 +357,106 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
             model::ExtraInfo::OrderFields,
             model::ExtraInfo::UniqueFields,
             model::ExtraInfo::DatabaseTypes,
+        ],
+    ))
+}
+
+/// Derive the [`HasMany`](../vicocomo/model/trait.HasMany.html) trait for a
+/// `struct` with named fields.
+///
+/// Note that `Self` must have exactly one `vicocomo_primary` field.  The
+/// generated code also requires `Self` to implement [`Find<_>`
+/// ](derive.Find.html).
+///
+/// ## Struct attributes
+///
+/// See this [example](../vicocomo_model_derive/index.html).
+///
+/// `vicocomo_has_many(` ... `)` - Self has a {one,many}-to-many association.
+/// There should be one `vicocomo_has_many` for each -to-many association.
+/// The following name-value pairs are recognized:
+///
+/// - `remote_type = "`*the type of the associated object*`"`:  Mandatory.  If
+///   the type given is a single identifier,
+///   `crate::models::`*snake case identifier*`::` is prepended.
+///
+/// - `name = "`*a camel case name*`"`:  If there are more than one
+///   `HasMany` implementation for this type with *the same* `remote_type`,
+///   all except one of them must have a `name`.  A unit `struct` *the value
+///   of `name`* will be generated, which is only used for this
+///   disambiguation.
+///
+/// - `remote_fk_col = "`*a database column name*`"`:  If one-to-many, the
+///   column in the remote model, if many-to-many in the join table, that
+///   refers to `self`.  Default *snake case last identifier in `Self`*`_id`.
+///
+/// - <b>Only if one-to-many</b>
+///
+///   - `on_delete = "`*one of `cascade`, `forget`, or `restrict`*`"`:  See
+///     [`Delete`](derive.Delete.html).  Defines the beavior when `self` is
+///     deleted.  Optional, with default `restrict`.
+///
+///   - <b>Only if `on_delete = "forget"`</b>
+///
+///     - `remote_assoc = "`*a `BelongsTo` association name*`"`: To call
+///       *remote object*`.belongs_to_no_`*snaked value of `remote_assoc`*.
+///       Optional, default *last identifier in `Self`*.
+///
+/// - <b>Only if many-to-many</b>
+///
+///   A many-to-many association is realized by way of a "join table", having
+///   exactly one row for each associations instance, with foreign keys to the
+///   rows representing the associated objects.
+///
+///   When `self` is deleted, all join table rows associated to `self` should
+///   be deleted, but no rows representing `Remote` objects.
+///
+///   - `through = "`*a database table name*`"`:  The name of a join table,
+///     making the association many-to-many.
+///
+///   - `join_fk_col = "`*a database column name*`"`:  Optional name of the
+///     foreign key column in the join table referring to the remote model.
+///     The default is *snake case last identifier in `remote_type`*`_id`.
+///
+///   - `remote_pk_col = "`*a database column name*`"`:  Optional name of the
+///     `Remote` type's primary key column.  `HasMany through` associations to
+///     models with composite primary keys is not possible.
+///
+///     The default is `id`.
+///
+/// ## Generated code
+///
+/// Implements [`HasMany<Remote, Name = Remote>`
+/// ](../vicocomo/model/trait.BelongsTo.html).
+///
+/// For each `name` given in a `vicocomo_has_many` attribute, a unit `struct`
+/// with that name is declared.  Make sure it is unique in the context where
+/// the macro is expanded.
+///
+/// Below, "`<name>`" means the snake cased version of the `name` value if
+/// present or of the last segment of `remote_type` if not.
+///
+/// ### For each `vicocomo_has_many` struct attribute
+///
+/// ```text
+/// fn find_remote_<name>(
+///     &self,
+///     db: &impl DbConn,
+///     filter: Option<&Query>,
+/// ) -> Result<Vec<Remote>, Error>;
+///```
+/// Find items related to `self` by the association, filtered by `filter`.
+///
+/// `filter`, see [`QueryBld`](struct.QueryBld.html).  A condition to select
+/// only among the associated objects is automatically added.
+///
+#[proc_macro_derive(HasMany, attributes(vicocomo_hasmany))]
+pub fn has_many_derive(input: TokenStream) -> TokenStream {
+    has_many::has_many_impl(&model::Model::new(
+        input,
+        vec![
+            model::ExtraInfo::DatabaseTypes,
+            model::ExtraInfo::HasManyData,
         ],
     ))
 }

@@ -113,7 +113,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
             }
         })
         .collect();
-    let update_err = Model::query_err("update");
+    let update_err = Model::row_count_err("update");
 
     let gen = quote! {
         impl ::vicocomo::Save for #struct_id {
@@ -165,8 +165,8 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
                         &[ #( #upd_db_types ),* ],
                     )?;
                 if updated.is_empty() {
-                   return Err(::vicocomo::Error::Database(
-                        format!(#update_err, 0, 1)
+                   return Err(::vicocomo::Error::database(
+                        &format!(#update_err, 0, 1)
                     ));
                 }
                 let mut output = updated

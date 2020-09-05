@@ -5,6 +5,7 @@
 #[derive(Clone, Debug)]
 pub enum Error {
     Database(String),
+    Delete(String),
     InvalidInput(String),
     Other(String),
     Render(String),
@@ -14,6 +15,10 @@ impl Error {
     /// Create an `Error::Database`.
     pub fn database(txt: &str) -> Self {
         Self::Database(txt.to_string())
+    }
+    /// Create an `Error::Delete`.
+    pub fn delete(txt: &str) -> Self {
+        Self::Delete(txt.to_string())
     }
     /// Create an `Error::InvalidInput`.
     pub fn invalid_input(txt: &str) -> Self {
@@ -37,13 +42,16 @@ impl std::error::Error for Error {}
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use ::v_htmlescape::escape;
+
         let (kind, txt) = match self {
             Self::Database(s) => ("Database error", s),
+            Self::Delete(s) => ("Errors preventing delete", s),
             Self::InvalidInput(s) => ("Invalid input", s),
             Self::Other(s) => ("Error", s),
             Self::Render(s) => ("Cannot render", s),
         };
-        write!(f, "{}\n{}", kind, txt)
+        write!(f, "{}\n{}", kind, escape(txt))
     }
 }
 

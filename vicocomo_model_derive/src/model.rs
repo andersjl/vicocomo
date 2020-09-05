@@ -11,6 +11,7 @@ use syn::{
 pub(crate) enum ExtraInfo {
     BelongsToData,
     DatabaseTypes,
+    HasManyData,
     OrderFields,
     UniqueFields,
 }
@@ -37,8 +38,11 @@ pub(crate) struct ForKey {
     pub(crate) assoc_snake: String,
     // The remote type primary key field
     pub(crate) remote_pk: Ident,
+    // Mandatory remote type primary key field
     pub(crate) remote_pk_mand: bool,
+    // The remote type full path
     pub(crate) remote_type: Type,
+    // remote_type plus assoc_name if some
     pub(crate) trait_types: Punctuated<Type, Comma>,
 }
 
@@ -56,9 +60,52 @@ pub(crate) struct Field {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct HasMany {
+    // The name attribute value, as a String
+    pub(crate) assoc_name: Option<String>,
+    // The name attibute or the remote type last segment, snaked
+    pub(crate) assoc_snake: String,
+    // What to do when deleting self
+    pub(crate) on_delete: OnDelete,
+    // The name of the Remote BelongsTo association to Self
+    pub(crate) remote_assoc: String,
+    // The database name of the foreign key column to Self in Remote or join
+    pub(crate) remote_fk_col: String,
+    // The remote type full path
+    pub(crate) remote_type: Type,
+    // remote_type plus assoc_name if some
+    pub(crate) trait_types: Punctuated<Type, Comma>,
+    // The rest differs between one- and many-to-many
+    pub(crate) many_to_many: Option<ManyToMany>,
+}
+
+// relevant only for a many-to-many association
+#[derive(Clone, Debug)]
+pub(crate) struct ManyToMany {
+    // The database name of the join table
+    pub(crate) join_table_name: String,
+    // The database name of the join table foreign key column to Remote
+    pub(crate) join_fk_col: String,
+    // The remote type primary key field
+    pub(crate) remote_pk_col: String,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum OnDelete {
+    Cascade,
+    Forget,
+    Restrict,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct Model {
+    // The struct that derives
     pub(crate) struct_id: Ident,
+    // Database table name
     pub(crate) table_name: String,
+    pub(crate) has_many: Vec<HasMany>,
+    // indicates presence of the vicocomo_delete_errors attribute
+    pub(crate) delete_errors: bool,
     pub(crate) fields: Vec<Field>,
 }
 
@@ -71,6 +118,20 @@ impl Model {
         use syn::{
             parse, Data::Struct, DeriveInput, Fields::Named, FieldsNamed,
         };
+
+        const EXPECT_BELONGS_TO_ERROR: &'static str =
+            "expected #[vicocomo_belongs_to( ... )]";
+        const EXPECT_COLUMN_ERROR: &'static str =
+            "expected #[vicocomo_column = \"column_name\"]";
+        const EXPECT_OPTIONAL_ERROR: &'static str =
+            "expected #[vicocomo_optional]";
+        const EXPECT_ORDER_ERROR: &'static str =
+            "expected #[vicocomo_order_by(<int>, <\"ASC\"/\"DESC\">)]";
+        const EXPECT_PRIMARY_ERROR: &'static str =
+            "expected #[vicocomo_primary]";
+        const EXPECT_UNIQUE_ERROR: &'static str =
+            "expected #[vicocomo_unique = \"label\"]";
+
         let struct_tokens: DeriveInput = parse(input).unwrap();
         let data = struct_tokens.data;
         let mut named_fields: Option<FieldsNamed> = None;
@@ -90,18 +151,14 @@ impl Model {
             get_string_from_attr(&attrs, "table_name", &struct_id, |id| {
                 format!("{}s", id).to_snake()
             });
-        const EXPECT_BELONGS_TO_ERROR: &'static str =
-            "expected #[vicocomo_belongs_to( ... )]";
-        const EXPECT_COLUMN_ERROR: &'static str =
-            "expected #[vicocomo_column = \"column_name\"]";
-        const EXPECT_OPTIONAL_ERROR: &'static str =
-            "expected #[vicocomo_optional]";
-        const EXPECT_ORDER_ERROR: &'static str =
-            "expected #[vicocomo_order_by(<int>, <\"ASC\"/\"DESC\">)]";
-        const EXPECT_PRIMARY_ERROR: &'static str =
-            "expected #[vicocomo_primary]";
-        const EXPECT_UNIQUE_ERROR: &'static str =
-            "expected #[vicocomo_unique = \"label\"]";
+        let delete_errors: bool =
+            attrs.iter().any(|a| a.path.is_ident("vicocomo_delete_errors"));
+        let has_many: Vec<HasMany> =
+            if compute.contains(&ExtraInfo::HasManyData) {
+                Self::get_has_many(attrs, &struct_id.to_string())
+            } else {
+                Vec::new()
+            };
         let mut fields = Vec::new();
         for field in named_fields {
             let id = field.ident.expect("expected field identifier").clone();
@@ -188,11 +245,11 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                             }
                             _ => panic!(EXPECT_BELONGS_TO_ERROR),
                         }
-                        let (remote_type, type_str) =
+                        let (remote_type, rem_type_str) =
                             Self::remote_type(&remote_type_string.unwrap());
                         let assoc_snake = assoc_name
                             .as_ref()
-                            .unwrap_or(&type_str)
+                            .unwrap_or(&rem_type_str)
                             .to_snake();
                         let trait_types =
                             Self::trait_types(&remote_type, &assoc_name);
@@ -359,6 +416,8 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         Self {
             struct_id,
             table_name,
+            has_many,
+            delete_errors,
             fields,
         }
     }
@@ -384,7 +443,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    pub(crate) fn query_err(query: &str) -> LitStr {
+    pub(crate) fn row_count_err(query: &str) -> LitStr {
         LitStr::new(
             format!("{} {{}} records, expected {{}}", query).as_str(),
             Span::call_site(),
@@ -687,6 +746,136 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
     }
 
     // private methods without receiver  - - - - - - - - - - - - - - - - - - -
+
+    fn get_has_many(attrs: Vec<Attribute>, struct_nam: &str) -> Vec<HasMany> {
+        use ::case::CaseExt;
+        const EXPECT_HAS_MANY_ERROR: &'static str =
+            "expected #[vicocomo_has_many( ... )]";
+
+        let mut result = Vec::new();
+        for attr in attrs {
+            match attr.style {
+                AttrStyle::Inner(_) => continue,
+                _ => (),
+            }
+            let attr_id = attr.path.segments.first().unwrap().ident.clone();
+            match attr_id.to_string().as_str() {
+                "vicocomo_has_many" => {
+                    let mut assoc_name: Option<String> = None;
+                    let mut join_fk_col: Option<String> = None;
+                    let mut join_table_name: Option<String> = None;
+                    let mut on_delete: OnDelete = OnDelete::Restrict;
+                    let mut remote_assoc: Option<String> = None;
+                    let mut remote_fk_col: Option<String> = None;
+                    let mut remote_pk_col: Option<String> = None;
+                    let mut remote_type_string: Option<String> = None;
+                    match attr.parse_meta().expect(EXPECT_HAS_MANY_ERROR) {
+                        Meta::List(list) => {
+                            for entry in list.nested.iter() {
+                                match entry {
+                                    NestedMeta::Meta(nested) => match nested {
+Meta::NameValue(n_v) => {
+    match n_v.path.get_ident().unwrap().to_string().as_str() {
+        "join_fk_col" =>
+        match &n_v.lit {
+            Lit::Str(s) => join_fk_col = Some(s.value()),
+            _ => panic!(EXPECT_HAS_MANY_ERROR),
+        }
+        "name" =>
+        match &n_v.lit {
+            Lit::Str(s) => assoc_name = Some(s.value()),
+            _ => panic!(EXPECT_HAS_MANY_ERROR),
+        }
+        "on_delete" =>
+        match &n_v.lit {
+            Lit::Str(s) => {
+                on_delete = match s.value().as_str() {
+                    "cascade" => OnDelete::Cascade,
+                    "forget" => OnDelete::Forget,
+                    "restrict" => OnDelete::Restrict,
+                    _ => panic!(
+                        "expected \"cascade\", \"forget\", or \"restrict\""
+                    ),
+                }
+            }
+            _ => panic!(EXPECT_HAS_MANY_ERROR),
+        }
+        "remote_assoc" =>
+        match &n_v.lit {
+            Lit::Str(s) => remote_assoc = Some(s.value()),
+            _ => panic!(EXPECT_HAS_MANY_ERROR),
+        }
+        "remote_fk_col" =>
+        match &n_v.lit {
+            Lit::Str(s) => remote_fk_col = Some(s.value()),
+            _ => panic!(EXPECT_HAS_MANY_ERROR),
+        }
+        "remote_pk_col" =>
+        match &n_v.lit {
+            Lit::Str(s) => remote_pk_col = Some(s.value()),
+            _ => panic!(EXPECT_HAS_MANY_ERROR),
+        }
+        "remote_type" =>
+        match &n_v.lit {
+            Lit::Str(s) => {
+                remote_type_string = Some(s.value())
+            }
+            _ => panic!(EXPECT_HAS_MANY_ERROR),
+        }
+        "through" =>
+        match &n_v.lit {
+            Lit::Str(s) => {
+                join_table_name = Some(s.value())
+            }
+            _ => panic!(EXPECT_HAS_MANY_ERROR),
+        }
+        _ => panic!(EXPECT_HAS_MANY_ERROR),
+    }
+}
+_ => panic!(EXPECT_HAS_MANY_ERROR),
+                                    },
+                                    _ => panic!(EXPECT_HAS_MANY_ERROR),
+                                }
+                            }
+                        }
+                        _ => panic!(EXPECT_HAS_MANY_ERROR),
+                    }
+                    let (remote_type, rem_type_str) =
+                        Self::remote_type(&remote_type_string.unwrap());
+                    let assoc_snake = assoc_name
+                        .as_ref()
+                        .unwrap_or(&rem_type_str)
+                        .to_snake();
+                    let trait_types =
+                        Self::trait_types(&remote_type, &assoc_name);
+                    result.push(HasMany {
+                        assoc_name,
+                        assoc_snake,
+                        on_delete,
+                        remote_assoc: remote_assoc
+                            .unwrap_or(struct_nam.to_string()),
+                        remote_fk_col: remote_fk_col
+                            .unwrap_or(
+                                struct_nam.to_string().to_snake() + "_id",
+                            ),
+                        remote_type,
+                        trait_types,
+                        many_to_many: join_table_name.map(|join_tab| {
+                            ManyToMany {
+                                join_table_name: join_tab,
+                                join_fk_col: join_fk_col
+                                    .unwrap_or(rem_type_str + "_id"),
+                                remote_pk_col: remote_pk_col
+                                    .unwrap_or("id".to_string()),
+                            }
+                        }),
+                    });
+                }
+                _ => (),
+            }
+        }
+        result
+    }
 
     // (type path, last segment as string)
     fn remote_type(path: &str) -> (Type, String) {
