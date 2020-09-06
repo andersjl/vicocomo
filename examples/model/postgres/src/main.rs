@@ -93,8 +93,10 @@ mod models {
             vicocomo::Delete,
             vicocomo::Find,
             vicocomo::HasMany,
+            vicocomo::Save,
         )]
         #[vicocomo_has_many(on_delete = "cascade", remote_type = "MultiPk")]
+        #[vicocomo_has_many(remote_type = "SinglePk", join_table = "joins")]
         pub struct DefaultParent {
             #[vicocomo_optional]
             #[vicocomo_primary]
@@ -162,7 +164,8 @@ async fn main() {
         }
     });
     match block_on(pg_client.batch_execute(
-        " DROP TABLE IF EXISTS multi_pks
+        " DROP TABLE IF EXISTS joins
+        ; DROP TABLE IF EXISTS multi_pks
         ; DROP TABLE IF EXISTS single_pks
         ; DROP TABLE IF EXISTS default_parents
         ; DROP TABLE IF EXISTS nonstandard_parents
@@ -191,8 +194,14 @@ async fn main() {
         (   id    BIGSERIAL PRIMARY KEY
         ,   name  TEXT NOT NULL DEFAULT 'default'
         ,   data  FLOAT(53)
-        ,   un1   BIGINT
+        ,   un1   BIGINT DEFAULT 4711
         ,   un2   BIGINT NOT NULL
+        ,   UNIQUE(un1, un2)
+        )
+        ; CREATE TABLE joins
+        ( default_parent_id  BIGINT NOT NULL
+        , single_pk_id       BIGINT NOT NULL
+        , PRIMARY KEY(default_parent_id, single_pk_id)
         )
         ; CREATE TABLE default_parents
         (   id    BIGSERIAL PRIMARY KEY
@@ -410,7 +419,7 @@ async fn main() {
     assert!(grown_sibs.len() == 1);
     println!("    OK");
 
-    // - - has-many association  - - - - - - - - - - - - - - - - - - - - - - -
+    // - - one-to-many association - - - - - - - - - - - - - - - - - - - - - -
 
     show_multi(&db);
     println!("finding children ..");
@@ -852,6 +861,70 @@ async fn main() {
         println!("    OK");
         show_single(&db);
     }
+
+    // - - many-to-many association  - - - - - - - - - - - - - - - - - - - - -
+
+    println!("many-to-many ..");
+    let mut pa = DefaultParent {
+        id: None,
+        name: "parent-a".to_string(),
+    };
+    pa.save(&db).unwrap();
+    let mut pb = DefaultParent {
+        id: None,
+        name: "parent-b".to_string(),
+    };
+    pb.save(&db).unwrap();
+    let mut sa = SinglePk {
+        id: None,
+        name: Some("child-a".to_string()),
+        data: None,
+        un1: None,
+        un2: 101,
+    };
+    sa.save(&db).unwrap();
+    let mut sb = SinglePk {
+        id: None,
+        name: Some("child-b".to_string()),
+        data: None,
+        un1: None,
+        un2: 102,
+    };
+    sb.save(&db).unwrap();
+    assert!(pa.connect_to_single_pk(&db, &sa).is_ok());
+    assert!(pa.connect_to_single_pk(&db, &sa).is_err());
+    assert!(pa.connect_to_single_pk(&db, &sb).is_ok());
+    assert!(pb.connect_to_single_pk(&db, &sb).is_ok());
+    assert!(pa.find_remote_single_pk(&db, None).unwrap().len() == 2);
+    let pa_sb_assoc =
+        "Ok([SinglePk { id: Some(5), name: Some(\"child-b\"), data: None, \
+        un1: Some(4711), un2: 102 }])";
+    assert!(
+        format!(
+            "{:?}",
+            pa.find_remote_single_pk(
+                &db,
+                QueryBld::new()
+                    .col("name")
+                    .eq(Some(&DbValue::Text("child-b".to_string())))
+                    .query()
+                    .as_ref(),
+            ),
+        ) == pa_sb_assoc
+    );
+    assert!(
+        format!("{:?}", pb.disconnect_from_single_pk(&db, &sa)) == "Ok(0)"
+    );
+    assert!(
+        format!("{:?}", pb.disconnect_from_single_pk(&db, &sb)) == "Ok(1)"
+    );
+    assert!(
+        format!("{:?}", pa.disconnect_from_single_pk(&db, &sa)) == "Ok(1)"
+    );
+    assert!(
+        format!("{:?}", pa.find_remote_single_pk(&db, None)) == pa_sb_assoc
+    );
+    println!("    OK");
 }
 
 fn show_multi<'a>(db: &impl DbConn) {

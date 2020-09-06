@@ -369,7 +369,6 @@ impl QueryBld {
                         let mut new_filter = String::new();
                         let mut last = 0;
                         for cap in PARAMS.captures_iter(fltr) {
-                            println!("{:?}", cap);
                             let nr = cap.get(1).unwrap();
                             new_filter.extend(fltr[last..nr.start()].chars());
                             new_filter +=

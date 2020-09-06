@@ -5,13 +5,13 @@
 //! #[vicocomo_table_name = "example_table"]  // default "examples"
 //! // one or more vicocomo_has_many attributes, see HasMany below
 //! #[vicocomo_has_many(              // one-to-many or possibly ...
-//!     through = "tnam",             // ... many-to-many w join table "tnam"
+//!     join_table = "tnam",          // ... many-to-many w join table "tnam"
 //!     name = "SomeName",            // needed if several impl same Rem
 //!     on_delete = "cascade",        // cascade / forget / restrict (default)
 //!     remote_type = "super::Rem",   // Remote type, identifier mandatory
 //!     remote_fk_col = "fk_self",    // Remote or join key to self, default
 //!                                   // "t_id" if the type of Self is T
-//!     // ... if many-to-many, i.e. "through" join table given --------------
+//!     // ... if many-to-many, i.e. "join_table" table given ----------------
 //!     join_fk_col = "fk_rem",       // join tab key to Rem, default "rem_id"
 //!     remote_pk_col = "pk")]        // Rem primary col name, default "id",
 //! struct Example {
@@ -106,7 +106,7 @@ mod save;
 /// ### For each `vicocomo_belongs_to` attributed field
 ///
 /// ```text
-/// fn all_belonging_to_<name>(
+/// pub fn all_belonging_to_<name>(
 ///     db: &impl ::vicocomo::DbConn,
 ///     remote: &Remote,
 /// ) -> Result<Vec<Self>, Error>
@@ -119,7 +119,7 @@ mod save;
 /// `remote` is the object on the remote side of the relationship.
 ///
 /// ```text
-/// fn belongs_to_<name>(&self, db: &impl DbConn) -> Option<Remote>
+/// pub fn belongs_to_<name>(&self, db: &impl DbConn) -> Option<Remote>
 /// ```
 /// Retrive the object on the remote side of the relationship from the
 /// database.
@@ -134,7 +134,7 @@ mod save;
 /// - because of some other database error.
 ///
 /// ```text
-/// fn belong_to_<name>(&mut self, remote: &Remote) -> Result<(), Error>
+/// pub fn belong_to_<name>(&mut self, remote: &Remote) -> Result<(), Error>
 /// ```
 /// Set the reference to an object on the remote side of the relationship.
 ///
@@ -143,7 +143,7 @@ mod save;
 /// The new remote association is not saved to the database.
 ///
 /// ```text
-/// fn belong_to_no_<name>(&mut self) -> Result<(), Error>
+/// pub fn belong_to_no_<name>(&mut self) -> Result<(), Error>
 /// ```
 /// Forget the reference to an object on the remote side of the
 /// relationship.
@@ -155,7 +155,7 @@ mod save;
 /// Should be implemented if the association field is an `Option`.
 ///
 /// ```text
-/// fn <name>_siblings(&self, db: &impl DbConn) -> Result<Vec<Self>, Error>
+/// pub fn <name>_siblings(&self, db: &impl DbConn) -> Result<Vec<Self>, Error>
 /// ```
 /// Retrive all owned objects in the database (including `self`) that
 /// belong to the same object as `self`.
@@ -365,7 +365,7 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 /// `struct` with named fields.
 ///
 /// Note that `Self` must have exactly one `vicocomo_primary` field.  The
-/// generated code also requires `Self` to implement [`Find<_>`
+/// generated code also requires `Remote` to implement [`Find<_>`
 /// ](derive.Find.html).
 ///
 /// ## Struct attributes
@@ -390,6 +390,9 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 ///   column in the remote model, if many-to-many in the join table, that
 ///   refers to `self`.  Default *snake case last identifier in `Self`*`_id`.
 ///
+///   Note that a model with a composite primary key cannot have any `HasMany`
+///   associations.
+///
 /// - <b>Only if one-to-many</b>
 ///
 ///   - `on_delete = "`*one of `cascade`, `forget`, or `restrict`*`"`:  See
@@ -411,18 +414,26 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 ///   When `self` is deleted, all join table rows associated to `self` should
 ///   be deleted, but no rows representing `Remote` objects.
 ///
-///   - `through = "`*a database table name*`"`:  The name of a join table,
+///   - `join_table = "`*a database table name*`"`:  The name of a join table,
 ///     making the association many-to-many.
 ///
 ///   - `join_fk_col = "`*a database column name*`"`:  Optional name of the
 ///     foreign key column in the join table referring to the remote model.
 ///     The default is *snake case last identifier in `remote_type`*`_id`.
 ///
-///   - `remote_pk_col = "`*a database column name*`"`:  Optional name of the
-///     `Remote` type's primary key column.  `HasMany through` associations to
-///     models with composite primary keys is not possible.
+///   - `remote_pk = "`*a field id*`"`: The name of the `Remote` type's
+///     primary key *field* - not the column!  Many-to-many associations to
+///     models with composite primary keys is not possible.  The primary key
+///     field is taken to be `vicocomo_optional`.  If it is mandatory, this
+///     must be indicated by `remote_pk ="`*a field id* `mandatory"`.
 ///
 ///     The default is `id`.
+///
+///   - `remote_pk_col = "`*a database column name*`"`:  Optional name of the
+///     `Remote` type's primary key column.  Many-to-many associations to
+///     models with composite primary keys is not possible.
+///
+///     The default is *value of `remote_pk`* if given or `id`.
 ///
 /// ## Generated code
 ///
@@ -439,7 +450,7 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 /// ### For each `vicocomo_has_many` struct attribute
 ///
 /// ```text
-/// fn find_remote_<name>(
+/// pub fn find_remote_<name>(
 ///     &self,
 ///     db: &impl DbConn,
 ///     filter: Option<&Query>,
@@ -449,6 +460,30 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 ///
 /// `filter`, see [`QueryBld`](struct.QueryBld.html).  A condition to select
 /// only among the associated objects is automatically added.
+///
+/// #### Functions only for many-to-many associations
+///
+/// ```text
+/// pub fn connect_to_<name>(
+///     &self,
+///     db: &impl DbConn,
+///     remote: &Remote,
+/// ) -> Result<usize, Error>;
+/// ```
+/// Insert a join table row connecting `self` to `remote`.  Returns `Ok(1)` on
+/// success.  Does *not* check that such a row did not exist previously!  It
+/// is strongly recommended to create a unique index in the database to
+/// prevent multiple connections between the same objects.
+///
+/// ```text
+/// pub fn disconnect_from_<name>(
+///     &self,
+///     db: &impl DbConn,
+///     remote: &Remote,
+/// ) -> Result<usize, Error>;
+/// ```
+/// Delete the join table row connecting `self` to `remote`.  *Returns `Ok(0)`
+/// if they are not connected*.
 ///
 #[proc_macro_derive(HasMany, attributes(vicocomo_hasmany))]
 pub fn has_many_derive(input: TokenStream) -> TokenStream {

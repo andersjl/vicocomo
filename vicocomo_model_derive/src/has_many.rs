@@ -1,5 +1,6 @@
 use crate::model::{HasMany, ManyToMany, Model};
-use proc_macro::TokenStream;
+use ::proc_macro::TokenStream;
+use ::vicocomo_derive_utils::*;
 
 #[allow(unused_variables)]
 pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
@@ -24,6 +25,21 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
             ref trait_types,
             ref many_to_many,
         } = has_many;
+        let mut join_table_name = String::new();
+        let mut join_fk_col = String::new();
+        let mut remote_pk = format_ident!("dummy");
+        let mut remote_pk_mand = false;
+        let mut remote_pk_col = String::new();
+        &match many_to_many {
+            Some(mtm) => {
+                join_table_name = mtm.join_table_name.clone();
+                join_fk_col = mtm.join_fk_col.clone();
+                remote_pk = mtm.remote_pk.clone();
+                remote_pk_mand = mtm.remote_pk_mand;
+                remote_pk_col = mtm.remote_pk_col.clone();
+            }
+            None => (),
+        };
         gen.extend(quote! {
             impl ::vicocomo::HasMany<#trait_types> for #struct_id {}
         });
@@ -36,19 +52,16 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
         }
         let mut select: String;
         let filter_assoc = LitStr::new(
-            &match many_to_many {
-                Some(ManyToMany {
-                    join_table_name,
-                    join_fk_col,
-                    remote_pk_col,
-                }) => format!(
+            &if many_to_many.is_some() {
+                format!(
                     "{} IN (SELECT {} FROM {} WHERE {} = $1)",
                     remote_pk_col,
                     join_fk_col,
                     join_table_name,
                     remote_fk_col,
-                ),
-                None => format!("{} = $1", remote_fk_col),
+                )
+            } else {
+                format!("{} = $1", remote_fk_col)
             },
             Span::call_site(),
         );
@@ -61,7 +74,7 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
             ),
             Span::call_site(),
         );
-        let self_pk: Expr = if pk.opt {
+        let self_pk_expr: Expr = if pk.opt {
             parse_quote!(
                 match self.#pk_id {
                     Some(pk) => pk,
@@ -73,7 +86,79 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
         } else {
             parse_quote!(self.#pk_id)
         };
+        let remote_pk_expr: Expr = if many_to_many.is_some() {
+            if remote_pk_mand {
+                parse_quote!(remote.#remote_pk)
+            } else {
+                let remote_pk_is_none = LitStr::new(
+                    &format!(
+                        "{}.{} is None",
+                        tokens_to_string(&remote_type),
+                        remote_pk.to_string()
+                    ),
+                    Span::call_site(),
+                );
+                parse_quote!(
+                    match remote.#remote_pk {
+                        Some(ref pk) => pk,
+                        None => return Err(::vicocomo::Error::invalid_input(
+                            #remote_pk_is_none
+                        )),
+                    }
+                )
+            }
+        } else {
+            parse_quote!(())
+        };
+        let connect_sql = if many_to_many.is_some() {
+            format!(
+                "INSERT INTO {} ({}, {}) VALUES ($1, $2)",
+                join_table_name,
+                remote_fk_col,
+                join_fk_col,
+            )
+        } else {
+            String::new()
+        };
+        let disconnect_sql = if many_to_many.is_some() {
+            format!(
+                "DELETE FROM {} WHERE {} = $1 AND {} = $2",
+                join_table_name,
+                remote_fk_col,
+                join_fk_col,
+            )
+        } else {
+            String::new()
+        };
+        let join_col_vals_expr: Expr = parse_quote!(
+            &[#self_pk_expr.clone().into(), #remote_pk_expr.clone().into()]
+        );
+        let connect_to_id = format_ident!("connect_to_{}", assoc_snake);
+        let disconnect_from_id =
+            format_ident!("disconnect_from_{}", assoc_snake);
         let find_remote_id = format_ident!("find_remote_{}", assoc_snake);
+
+        if many_to_many.is_some() {
+            gen.extend(quote! {
+                impl #struct_id {
+                    pub fn #connect_to_id(
+                        &self,
+                        db: &impl ::vicocomo::DbConn,
+                        remote: &#remote_type,
+                    ) -> Result<usize, ::vicocomo::Error> {
+                        db.exec(#connect_sql, #join_col_vals_expr)
+                    }
+
+                    pub fn #disconnect_from_id(
+                        &self,
+                        db: &impl ::vicocomo::DbConn,
+                        remote: &#remote_type,
+                    ) -> Result<usize, ::vicocomo::Error> {
+                        db.exec(#disconnect_sql, #join_col_vals_expr)
+                    }
+                }
+            });
+        }
 
         gen.extend(quote! {
             impl #struct_id {
@@ -94,7 +179,7 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
                         db,
                         bld.filter(
                             #filter_assoc,
-                            &[Some(#self_pk.clone().into())]
+                            &[Some(#self_pk_expr.clone().into())]
                         )
                             .query()
                             .as_ref()
@@ -104,5 +189,6 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
             }
         });
     }
+//println!("{}", ::vicocomo_derive_utils::tokens_to_string(&gen));
     gen.into()
 }

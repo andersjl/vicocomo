@@ -87,6 +87,10 @@ pub(crate) struct ManyToMany {
     // The database name of the join table foreign key column to Remote
     pub(crate) join_fk_col: String,
     // The remote type primary key field
+    pub(crate) remote_pk: Ident,
+    // Mandatory remote type primary key field
+    pub(crate) remote_pk_mand: bool,
+    // The remote type primary key field
     pub(crate) remote_pk_col: String,
 }
 
@@ -749,6 +753,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
 
     fn get_has_many(attrs: Vec<Attribute>, struct_nam: &str) -> Vec<HasMany> {
         use ::case::CaseExt;
+        use regex::Regex;
         const EXPECT_HAS_MANY_ERROR: &'static str =
             "expected #[vicocomo_has_many( ... )]";
 
@@ -767,6 +772,8 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                     let mut on_delete: OnDelete = OnDelete::Restrict;
                     let mut remote_assoc: Option<String> = None;
                     let mut remote_fk_col: Option<String> = None;
+                    let mut remote_pk = Ident::new("id", Span::call_site());
+                    let mut remote_pk_mand = false;
                     let mut remote_pk_col: Option<String> = None;
                     let mut remote_type_string: Option<String> = None;
                     match attr.parse_meta().expect(EXPECT_HAS_MANY_ERROR) {
@@ -810,6 +817,22 @@ Meta::NameValue(n_v) => {
             Lit::Str(s) => remote_fk_col = Some(s.value()),
             _ => panic!(EXPECT_HAS_MANY_ERROR),
         }
+        "remote_pk" =>
+        match &n_v.lit {
+            Lit::Str(lit_str) => {
+                let given = lit_str.value();
+                let pk_string;
+                match Regex::new(r"\s+mandatory$").unwrap().find(&given) {
+                    Some(mat) => {
+                        pk_string = given[..mat.start()].to_string();
+                        remote_pk_mand = true;
+                    }
+                    None => pk_string = given,
+                }
+                remote_pk = Ident::new(&pk_string, Span::call_site());
+            }
+            _ => panic!(EXPECT_HAS_MANY_ERROR),
+        }
         "remote_pk_col" =>
         match &n_v.lit {
             Lit::Str(s) => remote_pk_col = Some(s.value()),
@@ -822,7 +845,7 @@ Meta::NameValue(n_v) => {
             }
             _ => panic!(EXPECT_HAS_MANY_ERROR),
         }
-        "through" =>
+        "join_table" =>
         match &n_v.lit {
             Lit::Str(s) => {
                 join_table_name = Some(s.value())
@@ -863,10 +886,13 @@ _ => panic!(EXPECT_HAS_MANY_ERROR),
                         many_to_many: join_table_name.map(|join_tab| {
                             ManyToMany {
                                 join_table_name: join_tab,
-                                join_fk_col: join_fk_col
-                                    .unwrap_or(rem_type_str + "_id"),
+                                join_fk_col: join_fk_col.unwrap_or(
+                                    rem_type_str.to_snake() + "_id"
+                                ),
+                                remote_pk: remote_pk.clone(),
+                                remote_pk_mand,
                                 remote_pk_col: remote_pk_col
-                                    .unwrap_or("id".to_string()),
+                                    .unwrap_or(remote_pk.to_string()),
                             }
                         }),
                     });
