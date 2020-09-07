@@ -12,7 +12,7 @@ const SHOW: Show = Show::Nothing;
 mod models {
 
     pub mod multi_pk {
-        use chrono::NaiveDate;
+        use chrono::{NaiveDate, NaiveDateTime};
 
         #[derive(
             Clone,
@@ -54,6 +54,7 @@ mod models {
             )]
             pub bonus_parent: String,
             pub date_mand: NaiveDate,
+            pub date_time_mand: NaiveDateTime,
             pub string_mand: String,
             pub u32_mand: u32,
             pub u64_mand: u64,
@@ -118,15 +119,15 @@ mod models {
         #[vicocomo_has_many(
             on_delete = "forget",
             remote_fk_col = "other_parent_id",
-            remote_type = "MultiPk",
+            remote_type = "MultiPk"
         )]
         #[vicocomo_has_many(
             name = "BonusChild",
             remote_fk_col = "bonus_parent",
-            remote_type = "MultiPk",
+            remote_type = "MultiPk"
         )]
         #[vicocomo_has_many(
-            remote_type = "crate::models::other_parent::NonstandardParent",
+            remote_type = "crate::models::other_parent::NonstandardParent"
         )]
         pub struct NonstandardParent {
             #[vicocomo_primary]
@@ -142,7 +143,7 @@ mod models {
 
 use ::vicocomo::{DbConn, DbValue, Delete, Find, QueryBld, Save};
 use ::vicocomo_postgres::PgConn;
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime};
 use models::{
     default_parent::DefaultParent, multi_pk::MultiPk,
     other_parent::NonstandardParent, single_pk::SinglePk,
@@ -170,24 +171,25 @@ async fn main() {
         ; DROP TABLE IF EXISTS default_parents
         ; DROP TABLE IF EXISTS nonstandard_parents
         ; CREATE TABLE multi_pks
-        (   id             BIGINT NOT NULL DEFAULT 1
-        ,   id2            BIGINT
-        ,   bool_mand      BIGINT NOT NULL
-        ,   bool_mand_nul  BIGINT
-        ,   f32_mand       FLOAT(53) NOT NULL
-        ,   f32_opt        FLOAT(53) NOT NULL DEFAULT 1.0
-        ,   f64_mand       FLOAT(53) NOT NULL
-        ,   f64_opt_nul    FLOAT(53) DEFAULT 1.0
-        ,   i32_mand       BIGINT NOT NULL
-        ,   i32_opt_nul    BIGINT DEFAULT 1
+        (   id                 BIGINT NOT NULL DEFAULT 1
+        ,   id2                BIGINT
+        ,   bool_mand          BIGINT NOT NULL
+        ,   bool_mand_nul      BIGINT
+        ,   f32_mand           FLOAT(53) NOT NULL
+        ,   f32_opt            FLOAT(53) NOT NULL DEFAULT 1.0
+        ,   f64_mand           FLOAT(53) NOT NULL
+        ,   f64_opt_nul        FLOAT(53) DEFAULT 1.0
+        ,   i32_mand           BIGINT NOT NULL
+        ,   i32_opt_nul        BIGINT DEFAULT 1
         ,   default_parent_id  BIGINT NOT NULL
         ,   other_parent_id    TEXT
-        ,   bonus_parent   TEXT NOT NULL
-        ,   date_mand      BIGINT NOT NULL
-        ,   string_mand    TEXT NOT NULL
-        ,   u32_mand       BIGINT NOT NULL
-        ,   u64_mand       BIGINT NOT NULL
-        ,   usize_mand     BIGINT NOT NULL
+        ,   bonus_parent       TEXT NOT NULL
+        ,   date_mand          BIGINT NOT NULL
+        ,   date_time_mand     BIGINT NOT NULL
+        ,   string_mand        TEXT NOT NULL
+        ,   u32_mand           BIGINT NOT NULL
+        ,   u64_mand           BIGINT NOT NULL
+        ,   usize_mand         BIGINT NOT NULL
         ,   PRIMARY KEY(id, id2)
         )
         ; CREATE TABLE single_pks
@@ -240,6 +242,7 @@ async fn main() {
         other_parent_id: None,
         bonus_parent: "bonus nonstandard".to_string(),
         date_mand: NaiveDate::from_num_days_from_ce(0),
+        date_time_mand: NaiveDateTime::from_timestamp(0, 0),
         string_mand: String::new(),
         u32_mand: 0,
         u64_mand: 0,
@@ -257,8 +260,8 @@ async fn main() {
             f64_mand: 0.0, f64_opt_nul: Some(Some(1.0)), i32_mand: 0, \
             i32_opt_nul: Some(Some(1)), default_parent_id: 2, \
             other_parent_id: None, bonus_parent: \"bonus nonstandard\", \
-            date_mand: 0000-12-31, string_mand: \"\", u32_mand: 0, \
-            u64_mand: 0, usize_mand: 0 }",
+            date_mand: 0000-12-31, date_time_mand: 1970-01-01T00:00:00, \
+            string_mand: \"\", u32_mand: 0, u64_mand: 0, usize_mand: 0 }",
     );
     println!("    OK");
     show_multi(&db);
@@ -324,8 +327,9 @@ async fn main() {
             f64_mand: 64.0, f64_opt_nul: Some(None), i32_mand: -32, \
             i32_opt_nul: Some(Some(-32)), default_parent_id: 1, \
             other_parent_id: None, bonus_parent: \"bonus nonstandard\", \
-            date_mand: 0001-01-01, string_mand: \"hello\", u32_mand: 32, \
-            u64_mand: 64, usize_mand: 1 }",
+            date_mand: 0001-01-01, date_time_mand: 1970-01-01T00:00:00, \
+            string_mand: \"hello\", u32_mand: 32, u64_mand: 64, \
+            usize_mand: 1 }",
     );
     println!("    OK");
     println!("save() existing after change ..");
@@ -352,8 +356,8 @@ async fn main() {
         .belong_to_default_parent(&DefaultParent::find(&db, &2).unwrap(),)
         .is_ok(),);
     assert!(m.default_parent_id == 2);
-    let np = &NonstandardParent::find(&db, &"nonstandard".to_string())
-        .unwrap();
+    let np =
+        &NonstandardParent::find(&db, &"nonstandard".to_string()).unwrap();
     assert!(m.belong_to_nonstandard_parent(np).is_ok());
     assert!(m.other_parent_id == Some("nonstandard".to_string()));
     let bp =

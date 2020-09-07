@@ -1,7 +1,7 @@
 //! Trait and helper types to abstract an SQL database.
 //!
 use crate::{db_value_convert, Error};
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use std::fmt;
 
 /// An SQL abstraction trait for use by other `vicocomo` modules as well as
@@ -146,6 +146,12 @@ db_value_convert! {
     Int,
     NaiveDate::from_num_days_from_ce(value as i32),
     other.num_days_from_ce() as i64,
+}
+db_value_convert! {
+    NaiveDateTime,
+    Int,
+    NaiveDateTime::from_timestamp(value, 0),
+    other.timestamp(),
 }
 db_value_convert! { String, Text }
 db_value_convert! { u32, Int }
