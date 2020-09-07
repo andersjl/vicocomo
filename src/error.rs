@@ -9,6 +9,7 @@ pub enum Error {
     InvalidInput(String),
     Other(String),
     Render(String),
+    Save(String),
 }
 
 impl Error {
@@ -36,6 +37,10 @@ impl Error {
     pub fn render(txt: &str) -> Self {
         Self::Render(txt.to_string())
     }
+    /// Create an `Error::Save`.
+    pub fn save(txt: &str) -> Self {
+        Self::Save(txt.to_string())
+    }
 }
 
 impl std::error::Error for Error {}
@@ -50,6 +55,7 @@ impl std::fmt::Display for Error {
             Self::InvalidInput(s) => ("Invalid input", s),
             Self::Other(s) => ("Error", s),
             Self::Render(s) => ("Cannot render", s),
+            Self::Save(s) => ("Errors preventing save", s),
         };
         write!(f, "{}\n{}", kind, escape(txt))
     }

@@ -5,18 +5,25 @@ use proc_macro::TokenStream;
 pub(crate) fn save_impl(model: &Model) -> TokenStream {
     use quote::quote;
     use syn::{parse_quote, Expr};
-    let struct_id = &model.struct_id;
-    let table_name = &model.table_name;
+
+    let Model {
+        ref struct_id,
+        ref table_name,
+        ref has_many,
+        delete_errors,
+        save_errors,
+        ref fields,
+    } = model;
     let db_types = model.db_types();
     let insert_fmt = format!(
         "INSERT INTO {} ({{}}) VALUES {{}} RETURNING {}",
-        &model.table_name,
+        table_name,
         &model.cols().join(", "),
     );
     let upd_fields = model.upd_fields();
     let update_fmt = format!(
         "UPDATE {} SET {{}} WHERE {{}} RETURNING {}",
-        &model.table_name,
+        table_name,
         upd_fields
             .iter()
             .map(|f| f.col.value())
@@ -29,8 +36,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
     );
     let pk_select = model.pk_select();
     let pk_values = model.pk_values();
-    let insert_push_expr: Vec<Expr> = model
-        .fields
+    let insert_push_expr: Vec<Expr> = fields
         .iter()
         .map(|f| {
             let id = &f.id;
@@ -114,6 +120,26 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
         })
         .collect();
     let update_err = Model::row_count_err("update");
+    let insert_batch_errors_expr: Expr = if *save_errors {
+        parse_quote!({
+            let errors: Vec<String> = data_itm.errors_preventing_save(db);
+            if !errors.is_empty() {
+                return Err(::vicocomo::Error::save(&errors.join("\n")));
+            }
+        })
+    } else {
+        parse_quote!(())
+    };
+    let update_self_errors_expr: Expr = if *save_errors {
+        parse_quote!({
+            let errors: Vec<String> = data_itm.errors_preventing_save(db);
+            if !errors.is_empty() {
+                return Err(::vicocomo::Error::save(&errors.join("\n")));
+            }
+        })
+    } else {
+        parse_quote!(())
+    };
 
     let gen = quote! {
         impl ::vicocomo::Save for #struct_id {
@@ -128,6 +154,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
                 for data_itm in data {
                     let mut insert_cols = Vec::new();
                     let mut pars: Vec<::vicocomo::DbValue> = Vec::new();
+                    #insert_batch_errors_expr;
                     #( #insert_push_expr )*
                     match inserts.get_mut(&insert_cols) {
                         Some(ins_pars) => ins_pars.push(pars),
@@ -153,6 +180,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
                 let mut params = #pk_values;
                 let mut par_ix = params.len();
                 let mut update_cols: Vec<String> = Vec::new();
+                #update_self_errors_expr;
                 #( #update_input_expr )*
                 let mut updated = db
                     .query(

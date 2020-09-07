@@ -20,6 +20,6 @@ pub use http_server::{
 };
 pub use model::{
     BelongsTo, Delete, DeleteErrors, Find, HasMany, Order, Query, QueryBld,
-    Save,
+    Save, SaveErrors,
 };
 pub use view::*;

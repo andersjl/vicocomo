@@ -14,7 +14,7 @@
 ///
 /// `register_texts` creates a module `vicocomo_text` in the module where it
 /// is invoked.  [`t`](macro.t.html) expects this module to be
-/// `crate::__vicocomo_text`.  So, unless you invoke `register_texts` in your
+/// `crate::vicocomo_text`.  So, unless you invoke `register_texts` in your
 /// `main.rs` or `lib.rs`, you must put a line
 /// ```text
 /// pub use the::module::you::invoke::register_texts::in::vicocomo_text

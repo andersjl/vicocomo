@@ -110,6 +110,8 @@ pub(crate) struct Model {
     pub(crate) has_many: Vec<HasMany>,
     // indicates presence of the vicocomo_delete_errors attribute
     pub(crate) delete_errors: bool,
+    // indicates presence of the vicocomo_save_errors attribute
+    pub(crate) save_errors: bool,
     pub(crate) fields: Vec<Field>,
 }
 
@@ -157,6 +159,8 @@ impl Model {
             });
         let delete_errors: bool =
             attrs.iter().any(|a| a.path.is_ident("vicocomo_delete_errors"));
+        let save_errors: bool =
+            attrs.iter().any(|a| a.path.is_ident("vicocomo_save_errors"));
         let has_many: Vec<HasMany> =
             if compute.contains(&ExtraInfo::HasManyData) {
                 Self::get_has_many(attrs, &struct_id.to_string())
@@ -422,6 +426,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             table_name,
             has_many,
             delete_errors,
+            save_errors,
             fields,
         }
     }

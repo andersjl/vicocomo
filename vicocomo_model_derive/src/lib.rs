@@ -187,14 +187,20 @@ pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
 /// the struct.  Default the snake cased struct name with a plural 's'.
 ///
 /// `vicocomo_delete_errors`: - See [`DeleteErrors`
-/// ](../vicocomo/model/trait.DeleteError.html).  If present, the generated
-/// code calls [`errors_preventing_delete()`
-/// ](../vicocomo/model/trait.DeleteError.html#tymethod.errors_preventing_delete).
+/// ](../vicocomo/model/trait.DeleteErrors.html).  If present, the generated
+/// [`Delete::delete()`](../vicocomo/model/trait.Delete.html#tymethod.delete)
+/// requires the model to implement [`DeleteErrors`
+/// ](../vicocomo/model/trait.DeleteErrors.html) and calls
+/// [`errors_preventing_delete()`
+/// ](../vicocomo/model/trait.DeleteErrors.html#tymethod.errors_preventing_delete).
 ///
 /// `vicocomo_has_many(` ... `)` - See [`HasMany`](derive.HasMany.html).  For
 /// `Delete`, we need this to handle the objects associated to this one by a
-/// `HasMany` association that is one-to-many.  Depending on the value of the
-/// `on_delete = "`...`"` name-value pair
+/// `HasMany` association.
+///
+/// - #### One-to-many associations
+///
+///   Depending on the value of the `on_delete = "`...`"` name-value pair
 ///   - `cascade`:  The associated objects are deleted when `self` is.  Note
 ///     that this requires that `Remote`, too, implements [`Delete`
 ///     ](../vicocomo/model/trait.Delete.html).
@@ -204,9 +210,10 @@ pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
 ///   - `restrict`:  Error return, `self` cannot be deleted as long as there
 ///     are associatied objects.  This is the default.
 ///
-///   Ignored for many-to-many associations.  For those, the remote object is
-///   never deleted, and the row in the join table is always deleted when
-///   `self` is.
+/// - #### Many-to-many associations
+///
+///   The remote object is never deleted, and all rows in the join table
+///   referring to `self` are always deleted when `self` is.
 ///
 /// ## Field attributes
 ///
@@ -228,6 +235,12 @@ pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
 /// ## Generated code
 ///
 /// Implements [`Delete`](../vicocomo/model/trait.Delete.html).
+///
+/// Note that the implementation of [`delete_batch()`
+/// ](../vicocomo/model/trait.Delete.html#tymethod.delete_batch) ignores the
+/// attribute `vicocomo_delete_errors` and does *not* call
+/// [`DeleteErrors::errors_preventing_delete()`
+/// ](../vicocomo/model/trait.DeleteErrors.html#tymethod.errors_preventing_delete)!
 ///
 #[proc_macro_derive(
     Delete,
@@ -411,8 +424,8 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 ///   exactly one row for each associations instance, with foreign keys to the
 ///   rows representing the associated objects.
 ///
-///   When `self` is deleted, all join table rows associated to `self` should
-///   be deleted, but no rows representing `Remote` objects.
+///   When `self` is deleted, all join table rows associated to `self` are
+///   deleted, but no rows representing `Remote` objects.
 ///
 ///   - `join_table = "`*a database table name*`"`:  The name of a join table,
 ///     making the association many-to-many.
@@ -530,6 +543,7 @@ pub fn has_many_derive(input: TokenStream) -> TokenStream {
         vicocomo_column,
         vicocomo_optional,
         vicocomo_primary,
+        vicocomo_save_errors,
         vicocomo_table_name
     )
 )]

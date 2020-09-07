@@ -210,6 +210,18 @@ pub trait Save: Sized {
     fn update(&mut self, db: &impl DbConn) -> Result<(), Error>;
 }
 
+/// Report errors preventing saving `self` to the database.
+///
+pub trait SaveErrors {
+    /// If the returned vector is not empty,
+    /// [`insert()`](trait.Save.html#tymethod.insert),
+    /// [`save()`](trait.Save.html#tymethod.save), and
+    /// [`update()`](trait.Save.html#tymethod.update) should return at least
+    /// those errors.
+    ///
+    fn errors_preventing_save(&self, db: &impl DbConn) -> Vec<String>;
+}
+
 /// Builds a [`Query`](struct.Query.html) for [`Find::query()`
 /// ](trait.Find.html#tymethod.query).
 ///

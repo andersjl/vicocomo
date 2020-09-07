@@ -12,6 +12,7 @@ pub(crate) fn delete_impl(model: &Model) -> TokenStream {
         ref table_name,
         ref has_many,
         delete_errors,
+        save_errors,
         ref fields,
     } = model;
     let pk_fields = model.pk_fields();
