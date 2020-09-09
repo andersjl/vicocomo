@@ -1,4 +1,4 @@
-use crate::model::{HasMany, ManyToMany, Model};
+use crate::model::{HasMany, Model};
 use ::proc_macro::TokenStream;
 use ::vicocomo_derive_utils::*;
 
@@ -22,7 +22,6 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
             ref remote_assoc,
             ref remote_fk_col,
             ref remote_type,
-            ref trait_types,
             ref many_to_many,
         } = has_many;
         let mut join_table_name = String::new();
@@ -40,9 +39,6 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
             }
             None => (),
         };
-        gen.extend(quote! {
-            impl ::vicocomo::HasMany<#trait_types> for #struct_id {}
-        });
         if assoc_name.is_some() {
             let name_type =
                 Model::name_type_item(assoc_name.as_ref().unwrap());

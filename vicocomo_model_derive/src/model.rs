@@ -2,9 +2,8 @@ use ::vicocomo_derive_utils::*;
 use proc_macro::TokenStream;
 use quote::format_ident;
 use syn::{
-    export::Span, parse_quote, punctuated::Punctuated, token::Comma,
-    AttrStyle, Attribute, Expr, Ident, ItemStruct, Lit, LitStr, Meta,
-    NestedMeta, Type,
+    export::Span, parse_quote, punctuated::Punctuated, AttrStyle, Attribute,
+    Expr, Ident, ItemStruct, Lit, LitStr, Meta, NestedMeta, Type,
 };
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -42,8 +41,6 @@ pub(crate) struct ForKey {
     pub(crate) remote_pk_mand: bool,
     // The remote type full path
     pub(crate) remote_type: Type,
-    // remote_type plus assoc_name if some
-    pub(crate) trait_types: Punctuated<Type, Comma>,
 }
 
 #[derive(Clone, Debug)]
@@ -73,8 +70,6 @@ pub(crate) struct HasMany {
     pub(crate) remote_fk_col: String,
     // The remote type full path
     pub(crate) remote_type: Type,
-    // remote_type plus assoc_name if some
-    pub(crate) trait_types: Punctuated<Type, Comma>,
     // The rest differs between one- and many-to-many
     pub(crate) many_to_many: Option<ManyToMany>,
 }
@@ -261,15 +256,12 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                             .as_ref()
                             .unwrap_or(&rem_type_str)
                             .to_snake();
-                        let trait_types =
-                            Self::trait_types(&remote_type, &assoc_name);
                         fk = Some(ForKey {
                             assoc_name,
                             assoc_snake,
                             remote_pk,
                             remote_pk_mand,
                             remote_type,
-                            trait_types,
                         });
                     }
                     "vicocomo_column" => {
@@ -876,8 +868,6 @@ _ => panic!(EXPECT_HAS_MANY_ERROR),
                         .as_ref()
                         .unwrap_or(&rem_type_str)
                         .to_snake();
-                    let trait_types =
-                        Self::trait_types(&remote_type, &assoc_name);
                     result.push(HasMany {
                         assoc_name,
                         assoc_snake,
@@ -888,7 +878,6 @@ _ => panic!(EXPECT_HAS_MANY_ERROR),
                             struct_nam.to_string().to_snake() + "_id",
                         ),
                         remote_type,
-                        trait_types,
                         many_to_many: join_table_name.map(|join_tab| {
                             ManyToMany {
                                 join_table_name: join_tab,
@@ -928,22 +917,6 @@ _ => panic!(EXPECT_HAS_MANY_ERROR),
             .unwrap(),
             type_vec.last().unwrap().to_string(),
         )
-    }
-
-    fn trait_types(
-        remote_type: &Type,
-        assoc_name: &Option<String>,
-    ) -> Punctuated<Type, Comma> {
-        let mut result = Punctuated::<Type, Comma>::new();
-        result.push(remote_type.clone());
-        match assoc_name.as_ref() {
-            Some(name) => {
-                let name_id: Ident = format_ident!("{}", name);
-                result.push(parse_quote!(#name_id));
-            }
-            None => (),
-        }
-        result
     }
 
     fn types_to_tuple(types: &[&Type]) -> Type {

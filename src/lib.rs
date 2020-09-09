@@ -19,7 +19,6 @@ pub use http_server::{
     TemplEng,
 };
 pub use model::{
-    BelongsTo, Delete, DeleteErrors, Find, HasMany, Order, Query, QueryBld,
-    Save, SaveErrors,
+    Delete, DeleteErrors, Find, Order, Query, QueryBld, Save, SaveErrors,
 };
 pub use view::*;

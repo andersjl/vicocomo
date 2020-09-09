@@ -70,7 +70,6 @@ pub(crate) fn delete_impl(model: &Model) -> TokenStream {
             ref remote_assoc,
             ref remote_fk_col,
             ref remote_type,
-            ref trait_types,
             ref many_to_many,
         } = assoc;
         let get_id = format_ident!("{}s", assoc_snake);
@@ -105,17 +104,15 @@ pub(crate) fn delete_impl(model: &Model) -> TokenStream {
                 });
             }
             OnDelete::Restrict => {
-                let trait_types_str = LitStr::new(
-                    &::vicocomo_derive_utils::tokens_to_string(&trait_types),
-                    Span::call_site(),
-                );
+                let assoc_snake_str =
+                    LitStr::new(assoc_snake, Span::call_site());
                 restrict_expr.push(parse_quote! {
                     if self.#get_id(db, None)
                         .map(|objs| !objs.is_empty())?
                     {
                         errors.push(format!(
-                            "the HasMany<{}> association is not empty",
-                            #trait_types_str,
+                            "the HasMany association {} is not empty",
+                            #assoc_snake_str,
                         ));
                     }
                 });
