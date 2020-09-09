@@ -353,31 +353,31 @@ async fn main() {
 
     println!("setting saved parent ..");
     assert!(m
-        .belong_to_default_parent(&DefaultParent::find(&db, &2).unwrap(),)
+        .set_default_parent(&DefaultParent::find(&db, &2).unwrap(),)
         .is_ok(),);
     assert!(m.default_parent_id == 2);
     let np =
         &NonstandardParent::find(&db, &"nonstandard".to_string()).unwrap();
-    assert!(m.belong_to_nonstandard_parent(np).is_ok());
+    assert!(m.set_nonstandard_parent(np).is_ok());
     assert!(m.other_parent_id == Some("nonstandard".to_string()));
     let bp =
         &mut NonstandardParent::find(&db, &"bonus nonstandard".to_string())
             .unwrap();
-    assert!(m.belong_to_bonus_parent(bp).is_ok());
+    assert!(m.set_bonus_parent(bp).is_ok());
     assert!(m.bonus_parent == "bonus nonstandard");
-    assert!(bp.belong_to_nonstandard_parent(np).is_ok());
+    assert!(bp.set_nonstandard_parent(np).is_ok());
     assert!(bp.nonstandard_parent_id == Some("nonstandard".to_string()));
     assert!(m.save(&db).is_ok());
     assert!(bp.save(&db).is_ok());
     println!("    OK");
     println!("unsetting parent ..");
-    assert!(m.belong_to_no_nonstandard_parent().is_ok());
+    assert!(m.forget_nonstandard_parent().is_ok());
     assert!(m.other_parent_id.is_none());
     assert!(m.save(&db).is_ok());
     println!("    OK");
     println!("error setting unsaved parent ..");
     assert!(m
-        .belong_to_default_parent(&DefaultParent {
+        .set_default_parent(&DefaultParent {
             id: None,
             name: "unsaved".to_string(),
         })
@@ -385,17 +385,17 @@ async fn main() {
     assert!(m.default_parent_id == 2);
     println!("    OK");
     println!("getting saved parent ..");
-    let dp = m.belongs_to_default_parent(&db);
+    let dp = m.default_parent(&db);
     assert!(dp.is_some());
     let dp = dp.unwrap();
     assert!(
         format!("{:?}", dp)
             == "DefaultParent { id: Some(2), name: \"used default\" }"
     );
-    m.belong_to_nonstandard_parent(np)
+    m.set_nonstandard_parent(np)
         .and_then(|()| m.save(&db))
         .unwrap();
-    let np = m.belongs_to_nonstandard_parent(&db);
+    let np = m.nonstandard_parent(&db);
     assert!(np.is_some());
     let np = np.unwrap();
     assert!(
@@ -427,18 +427,18 @@ async fn main() {
 
     show_multi(&db);
     println!("finding children ..");
-    let dp_chn = dp.find_remote_multi_pk(&db, None);
+    let dp_chn = dp.multi_pks(&db, None);
     assert!(dp_chn.is_ok());
     let dp_chn = dp_chn.unwrap();
     assert!(format!("{:?}", dp_chn) == format!("{:?}", dp_sibs));
-    let bp_chn = bp.find_remote_bonus_child(&db, None);
+    let bp_chn = bp.bonus_childs(&db, None);
     assert!(bp_chn.is_ok());
     let bp_chn = bp_chn.unwrap();
     assert!(
         format!("{:?}", bp_chn)
             == format!("{:?}", MultiPk::load(&db).unwrap()),
     );
-    let grown_chn = np.find_remote_nonstandard_parent(&db, None);
+    let grown_chn = np.nonstandard_parents(&db, None);
     assert!(grown_chn.is_ok());
     let grown_chn = grown_chn.unwrap();
     assert!(format!("{:?}", grown_chn) == format!("{:?}", grown_sibs));
@@ -457,18 +457,18 @@ async fn main() {
     println!("    OK");
     println!("error deleting restricted parent");
     let mut m = MultiPk::find(&db, &(1, 17)).unwrap();
-    m.belong_to_nonstandard_parent(&np)
+    m.set_nonstandard_parent(&np)
         .and_then(|()| m.save(&db))
         .unwrap();
     let old_counts = (
-        np.find_remote_multi_pk(&db, None).unwrap().len(),
-        np.find_remote_nonstandard_parent(&db, None).unwrap().len(),
+        np.multi_pks(&db, None).unwrap().len(),
+        np.nonstandard_parents(&db, None).unwrap().len(),
     );
     let res = np.clone().delete(&db);
     assert!(res.is_err());
     let new_counts = (
-        np.find_remote_multi_pk(&db, None).unwrap().len(),
-        np.find_remote_nonstandard_parent(&db, None).unwrap().len(),
+        np.multi_pks(&db, None).unwrap().len(),
+        np.nonstandard_parents(&db, None).unwrap().len(),
     );
     assert!(new_counts == old_counts);
     println!("    OK");
@@ -899,14 +899,14 @@ async fn main() {
     assert!(pa.connect_to_single_pk(&db, &sa).is_err());
     assert!(pa.connect_to_single_pk(&db, &sb).is_ok());
     assert!(pb.connect_to_single_pk(&db, &sb).is_ok());
-    assert!(pa.find_remote_single_pk(&db, None).unwrap().len() == 2);
+    assert!(pa.single_pks(&db, None).unwrap().len() == 2);
     let pa_sb_assoc =
         "Ok([SinglePk { id: Some(5), name: Some(\"child-b\"), data: None, \
         un1: Some(4711), un2: 102 }])";
     assert!(
         format!(
             "{:?}",
-            pa.find_remote_single_pk(
+            pa.single_pks(
                 &db,
                 QueryBld::new()
                     .col("name")
@@ -925,9 +925,7 @@ async fn main() {
     assert!(
         format!("{:?}", pa.disconnect_from_single_pk(&db, &sa)) == "Ok(1)"
     );
-    assert!(
-        format!("{:?}", pa.find_remote_single_pk(&db, None)) == pa_sb_assoc
-    );
+    assert!(format!("{:?}", pa.single_pks(&db, None)) == pa_sb_assoc);
     println!("    OK");
 }
 

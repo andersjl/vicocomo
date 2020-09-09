@@ -113,9 +113,7 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
         let connect_sql = if many_to_many.is_some() {
             format!(
                 "INSERT INTO {} ({}, {}) VALUES ($1, $2)",
-                join_table_name,
-                remote_fk_col,
-                join_fk_col,
+                join_table_name, remote_fk_col, join_fk_col,
             )
         } else {
             String::new()
@@ -123,9 +121,7 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
         let disconnect_sql = if many_to_many.is_some() {
             format!(
                 "DELETE FROM {} WHERE {} = $1 AND {} = $2",
-                join_table_name,
-                remote_fk_col,
-                join_fk_col,
+                join_table_name, remote_fk_col, join_fk_col,
             )
         } else {
             String::new()
@@ -136,7 +132,7 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
         let connect_to_id = format_ident!("connect_to_{}", assoc_snake);
         let disconnect_from_id =
             format_ident!("disconnect_from_{}", assoc_snake);
-        let find_remote_id = format_ident!("find_remote_{}", assoc_snake);
+        let get_id = format_ident!("{}s", assoc_snake);
 
         if many_to_many.is_some() {
             gen.extend(quote! {
@@ -162,7 +158,7 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
 
         gen.extend(quote! {
             impl #struct_id {
-                pub fn #find_remote_id(
+                pub fn #get_id(
                     &self,
                     db: &impl ::vicocomo::DbConn,
                     filter: Option<&::vicocomo::Query>,
@@ -189,6 +185,6 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
             }
         });
     }
-//println!("{}", ::vicocomo_derive_utils::tokens_to_string(&gen));
+    //println!("{}", ::vicocomo_derive_utils::tokens_to_string(&gen));
     gen.into()
 }

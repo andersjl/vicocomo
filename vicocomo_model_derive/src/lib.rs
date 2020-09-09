@@ -20,15 +20,15 @@
 //!     primary: Option<u32>,         // primary key should be ensured by DBMS
 //!     #[vicocomo_column = "db_col"] // different name of DB column
 //!     #[vicocomo_unique = "un1"]    // "un1" labels fields w unique comb.
-//!     not_null: String,             // VARCHAR NOT NULL
+//!     not_null: String,             // TEXT NOT NULL
 //!     #[vicocomo_order_by(2)]       // precedence 2, see opt_null below
-//!     nullable: Option<String>,     // VARCHAR, None -> NULL
+//!     nullable: Option<String>,     // TEXT, None -> NULL
 //!     #[vicocomo_optional]          // not sent to DBMS if None
 //!     #[vicocomo_unique = "un1"]    // UNIQUE(db_col, opt_not_null)
-//!     opt_not_null: Option<i32>,    // INTEGER NOT NULL DEFAULT 42
+//!     opt_not_null: Option<i32>,    // BIGINT NOT NULL DEFAULT 42
 //!     #[vicocomo_order_by(1, "desc")] // ORDER BY opt_null DESC, nullable
 //!     #[vicocomo_optional]          // not sent to DBMS if None
-//!     opt_null:                     // INTEGER DEFAULT 43
+//!     opt_null:                     // BIGINT DEFAULT 43
 //!         Option<Option<i32>>,      // None -> 43, Some(None) -> NULL
 //!     #[vicocomo_belongs_to(        // "many" side of one-to-many
 //!         name = "Father",          // needed if several impl same Remote
@@ -93,17 +93,16 @@ mod save;
 ///
 /// ## Generated code
 ///
+/// ### For each `vicocomo_belongs_to` attributed field
+///
 /// Implements [`BelongsTo<Remote, Name = Remote>`
 /// ](../vicocomo/model/trait.BelongsTo.html).
 ///
-/// For each `name` given in a `vicocomo_belongs_to` attribute, a unit
-/// `struct` with that name is declared.  Make sure it is unique in the
-/// context where the macro is expanded.
+/// If a `name` value is present, declares a unit `struct` with that name.
+/// Make sure it is unique in the context where the macro is expanded.
 ///
 /// Below, "`<name>`" means the `name` value if given, or the last segment of
 /// `remote_type` if not, snake cased.
-///
-/// ### For each `vicocomo_belongs_to` attributed field
 ///
 /// ```text
 /// pub fn all_belonging_to_<name>(
@@ -119,7 +118,7 @@ mod save;
 /// `remote` is the object on the remote side of the relationship.
 ///
 /// ```text
-/// pub fn belongs_to_<name>(&self, db: &impl DbConn) -> Option<Remote>
+/// pub fn <name>(&self, db: &impl DbConn) -> Option<Remote>
 /// ```
 /// Retrive the object on the remote side of the relationship from the
 /// database.
@@ -134,7 +133,7 @@ mod save;
 /// - because of some other database error.
 ///
 /// ```text
-/// pub fn belong_to_<name>(&mut self, remote: &Remote) -> Result<(), Error>
+/// pub fn set_<name>(&mut self, remote: &Remote) -> Result<(), Error>
 /// ```
 /// Set the reference to an object on the remote side of the relationship.
 ///
@@ -143,7 +142,7 @@ mod save;
 /// The new remote association is not saved to the database.
 ///
 /// ```text
-/// pub fn belong_to_no_<name>(&mut self) -> Result<(), Error>
+/// pub fn forget_<name>(&mut self) -> Result<(), Error>
 /// ```
 /// Forget the reference to an object on the remote side of the
 /// relationship.
@@ -450,20 +449,19 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 ///
 /// ## Generated code
 ///
-/// Implements [`HasMany<Remote, Name = Remote>`
-/// ](../vicocomo/model/trait.BelongsTo.html).
-///
-/// For each `name` given in a `vicocomo_has_many` attribute, a unit `struct`
-/// with that name is declared.  Make sure it is unique in the context where
-/// the macro is expanded.
-///
-/// Below, "`<name>`" means the snake cased version of the `name` value if
-/// present or of the last segment of `remote_type` if not.
-///
 /// ### For each `vicocomo_has_many` struct attribute
 ///
+/// Implements [`HasMany<Remote, Name = Remote>`
+/// ](../vicocomo/model/trait.HasMany.html).
+///
+/// If a `name` value is present, declares a unit `struct` with that name.
+/// Make sure it is unique in the context where the macro is expanded.
+///
+/// Below, "`<name>`" means the `name` value if given, or the last segment of
+/// `remote_type` if not, snake cased.
+///
 /// ```text
-/// pub fn find_remote_<name>(
+/// pub fn <name>s(
 ///     &self,
 ///     db: &impl DbConn,
 ///     filter: Option<&Query>,

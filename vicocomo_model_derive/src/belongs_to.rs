@@ -118,8 +118,8 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
         };
         let all_belonging_to_id =
             format_ident!("all_belonging_to_{}", assoc_snake);
-        let belongs_to_id = format_ident!("belongs_to_{}", assoc_snake);
-        let belong_to_id = format_ident!("belong_to_{}", assoc_snake);
+        let get_id = format_ident!("{}", assoc_snake);
+        let set_id = format_ident!("set_{}", assoc_snake);
         let siblings_id = format_ident!("{}_siblings", assoc_snake);
         gen.extend(quote! {
             impl #struct_id {
@@ -136,13 +136,13 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
                             .unwrap(),
                     )
                 }
-                pub fn #belongs_to_id(&self, db: &impl ::vicocomo::DbConn)
+                pub fn #get_id(&self, db: &impl ::vicocomo::DbConn)
                     -> Option<#remote_type>
                 {
                     use ::vicocomo::Find;
                     #remote_type::find(db, #fk_expr_opt)
                 }
-                pub fn #belong_to_id(&mut self, remote: &#remote_type)
+                pub fn #set_id(&mut self, remote: &#remote_type)
                     -> Result<(), ::vicocomo::Error>
                 {
                     #set_fk_expr
@@ -164,11 +164,10 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
             }
         });
         if bel_fld.dbt.as_ref().unwrap().1 {
-            let belong_to_no_id =
-                format_ident!("belong_to_no_{}", assoc_snake);
+            let forget_id = format_ident!("forget_{}", assoc_snake);
             gen.extend(quote! {
                 impl #struct_id {
-                    pub fn #belong_to_no_id(
+                    pub fn #forget_id(
                         &mut self
                     ) -> Result<(), ::vicocomo::Error> {
                         self.#fk_id = None;

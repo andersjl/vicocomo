@@ -73,11 +73,11 @@ pub(crate) fn delete_impl(model: &Model) -> TokenStream {
             ref trait_types,
             ref many_to_many,
         } = assoc;
-        let find_remote_id = format_ident!("find_remote_{}", assoc_snake);
+        let get_id = format_ident!("{}s", assoc_snake);
         match on_delete {
             OnDelete::Cascade => {
                 on_delete_expr.push(parse_quote! {
-                    self.#find_remote_id(db, None)
+                    self.#get_id(db, None)
                         .and_then(|objs| {
                             for mut obj in objs {
                                 obj.delete(db)?;
@@ -88,17 +88,15 @@ pub(crate) fn delete_impl(model: &Model) -> TokenStream {
             }
             OnDelete::Forget => {
                 use ::case::CaseExt;
-                let belong_to_no_id = format_ident!(
-                    "belong_to_no_{}",
-                    remote_assoc.to_snake(),
-                );
+                let forget_id =
+                    format_ident!("forget_{}", remote_assoc.to_snake(),);
                 on_delete_expr.push(parse_quote! {
                     {
                         use ::vicocomo::Save;
-                        self.#find_remote_id(db, None)
+                        self.#get_id(db, None)
                             .and_then(|objs| {
                                 for mut obj in objs {
-                                    obj.#belong_to_no_id()?;
+                                    obj.#forget_id()?;
                                     obj.save(db)?;
                                 }
                                 Ok(())
@@ -112,7 +110,7 @@ pub(crate) fn delete_impl(model: &Model) -> TokenStream {
                     Span::call_site(),
                 );
                 restrict_expr.push(parse_quote! {
-                    if self.#find_remote_id(db, None)
+                    if self.#get_id(db, None)
                         .map(|objs| !objs.is_empty())?
                     {
                         errors.push(format!(
@@ -122,7 +120,7 @@ pub(crate) fn delete_impl(model: &Model) -> TokenStream {
                     }
                 });
                 on_delete_expr.push(parse_quote! {
-                    self.#find_remote_id(db, None)
+                    self.#get_id(db, None)
                         .and_then(|objs| {
                             if objs.is_empty() {
                                 Ok(())

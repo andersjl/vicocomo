@@ -157,10 +157,12 @@ impl Model {
             get_string_from_attr(&attrs, "table_name", &struct_id, |id| {
                 format!("{}s", id).to_snake()
             });
-        let delete_errors: bool =
-            attrs.iter().any(|a| a.path.is_ident("vicocomo_delete_errors"));
-        let save_errors: bool =
-            attrs.iter().any(|a| a.path.is_ident("vicocomo_save_errors"));
+        let delete_errors: bool = attrs
+            .iter()
+            .any(|a| a.path.is_ident("vicocomo_delete_errors"));
+        let save_errors: bool = attrs
+            .iter()
+            .any(|a| a.path.is_ident("vicocomo_save_errors"));
         let has_many: Vec<HasMany> =
             if compute.contains(&ExtraInfo::HasManyData) {
                 Self::get_has_many(attrs, &struct_id.to_string())
@@ -882,17 +884,16 @@ _ => panic!(EXPECT_HAS_MANY_ERROR),
                         on_delete,
                         remote_assoc: remote_assoc
                             .unwrap_or(struct_nam.to_string()),
-                        remote_fk_col: remote_fk_col
-                            .unwrap_or(
-                                struct_nam.to_string().to_snake() + "_id",
-                            ),
+                        remote_fk_col: remote_fk_col.unwrap_or(
+                            struct_nam.to_string().to_snake() + "_id",
+                        ),
                         remote_type,
                         trait_types,
                         many_to_many: join_table_name.map(|join_tab| {
                             ManyToMany {
                                 join_table_name: join_tab,
                                 join_fk_col: join_fk_col.unwrap_or(
-                                    rem_type_str.to_snake() + "_id"
+                                    rem_type_str.to_snake() + "_id",
                                 ),
                                 remote_pk: remote_pk.clone(),
                                 remote_pk_mand,
