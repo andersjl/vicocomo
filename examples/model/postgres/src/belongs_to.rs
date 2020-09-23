@@ -6,31 +6,18 @@ use super::models::{
 use ::vicocomo::{Find, Save};
 
 pub fn test_belongs_to(db: &::vicocomo_postgres::PgConn) {
-    let (mut m, _m2, dp, mut bp, np) = super::models::setup(db);
-/*
-    let (mut m, _m2, dp) = super::models::default_parent(db);
-*/
+    let (mut m, _m2, _dp, mut bp, np) = super::models::setup(db);
 
     println!("\nBelongsTo associations ----------------------------------\n");
 
     println!("setting saved parent ..");
     assert!(m
-        .set_default_parent(&DefaultParent::find(db, &1).unwrap(),)
+        .set_default_parent(&DefaultParent::find(db, &2).unwrap(),)
         .is_ok(),);
-    assert!(m.default_parent_id == 1);
-    m.set_default_parent(&dp).unwrap();
+    assert!(m.default_parent_id == 2);
     m.save(db).unwrap();
-/*
-    let np =
-        &NonstandardParent::find(db, &"nonstandard".to_string()).unwrap();
-*/
     assert!(m.set_nonstandard_parent(&np).is_ok());
     assert!(m.other_parent_id == Some("nonstandard".to_string()));
-/*
-    let bp =
-        &mut NonstandardParent::find(db, &"bonus nonstandard".to_string())
-            .unwrap();
-*/
     assert!(m.set_bonus_parent(&bp).is_ok());
     assert!(m.bonus_parent == "bonus nonstandard");
     assert!(bp.set_nonstandard_parent(&np).is_ok());
@@ -43,7 +30,7 @@ pub fn test_belongs_to(db: &::vicocomo_postgres::PgConn) {
     assert!(m.other_parent_id.is_none());
     assert!(m.save(db).is_ok());
     println!("    OK");
-    println!("error setting parent w/o PK ..");
+    println!("error saving after setting parent w/o PK ..");
     assert!(m
         .set_default_parent(&DefaultParent {
             id: None,
@@ -51,6 +38,23 @@ pub fn test_belongs_to(db: &::vicocomo_postgres::PgConn) {
         })
         .is_err());
     assert!(m.default_parent_id == 2);
+    println!("    OK");
+    println!("error saving after setting parent with PK not in database ..");
+    m.default_parent_id = 4711;
+    assert!(m.save(db).is_err());
+    m.default_parent_id = 2;
+    assert!(m == MultiPk::find(db, &(1, 1)).unwrap());
+    assert!(
+        m.set_default_parent(
+            &DefaultParent {
+                id: Some(4711),
+                name: "not saved".to_string(),
+            },
+        ).is_ok()
+    );
+    assert!(m.save(db).is_err());
+    m.default_parent_id = 2;
+    assert!(m == MultiPk::find(db, &(1, 1)).unwrap());
     println!("    OK");
     println!("getting saved parent ..");
     let dp = m.default_parent(db);
@@ -77,7 +81,7 @@ pub fn test_belongs_to(db: &::vicocomo_postgres::PgConn) {
     let dp_sibs = m.default_parent_siblings(db);
     assert!(dp_sibs.is_ok());
     let dp_sibs = dp_sibs.unwrap();
-    println!("{}", MultiPk::idss(&dp_sibs));
+    println!("{}", MultiPk::pks(&dp_sibs));
     assert!(dp_sibs.len() == 2);
     assert!(dp_sibs.iter().filter(|s| s.default_parent_id == 2).count() == 2);
     let np_sibs: Result<Vec<MultiPk>, ::vicocomo::Error> =

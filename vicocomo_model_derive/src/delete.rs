@@ -1,18 +1,17 @@
-use crate::model::{HasMany, Model};
+use crate::model::Model;
 use proc_macro::TokenStream;
 
 #[allow(unused_variables)]
 pub(crate) fn delete_impl(model: &Model) -> TokenStream {
-    use crate::model::OnDelete;
-    use ::quote::{format_ident, quote};
+    use ::quote::quote;
     use ::syn::{export::Span, parse_quote, Expr, LitStr};
 
     let Model {
         ref struct_id,
         ref table_name,
-        ref has_many,
-        delete_errors,
-        save_errors,
+        has_many,
+        before_delete,
+        before_save,
         ref fields,
     } = model;
     let pk_fields = model.pk_fields();
@@ -49,126 +48,51 @@ pub(crate) fn delete_impl(model: &Model) -> TokenStream {
         .as_str(),
         Span::call_site(),
     );
-    let row_count_err = Model::row_count_err("delete");
+    let check_delete_count = Model::check_row_count_expr(
+        "delete()",
+        parse_quote!(deleted_count),
+        parse_quote!(1),
+    );
+    let check_batch_count = Model::check_row_count_expr(
+        "delete_batch()",
+        parse_quote!(deleted_count),
+        parse_quote!(batch.len()),
+    );
     let batch_placeholders = Model::placeholders_expr(
         parse_quote!(batch.len()),
         parse_quote!(#pk_len),
     );
     let pk_ids = pk_fields.iter().map(|f| &f.id).collect::<Vec<_>>();
-    let mut on_delete_expr: Vec<Expr> = Vec::new();
-    let mut restrict_expr: Vec<Expr> = Vec::new();
-    let delete_errors_expr: Expr = if *delete_errors {
-        parse_quote!(self.errors_preventing_delete(db))
+    let before_delete_expr: Expr = if *before_delete {
+        parse_quote!(self.before_delete(db)?)
     } else {
-        parse_quote!(Vec::new())
+        parse_quote!(())
     };
-    for assoc in has_many {
-        let HasMany {
-            ref assoc_name,
-            ref assoc_snake,
-            on_delete,
-            ref remote_assoc,
-            ref remote_fk_col,
-            ref remote_type,
-            ref many_to_many,
-        } = assoc;
-        let get_id = format_ident!("{}s", assoc_snake);
-        match on_delete {
-            OnDelete::Cascade => {
-                on_delete_expr.push(parse_quote! {
-                    self.#get_id(db, None)
-                        .and_then(|objs| {
-                            for mut obj in objs {
-                                obj.delete(db)?;
-                            }
-                            Ok(())
-                        })?
-                });
-            }
-            OnDelete::Forget => {
-                use ::case::CaseExt;
-                let forget_id =
-                    format_ident!("forget_{}", remote_assoc.to_snake(),);
-                on_delete_expr.push(parse_quote! {
-                    {
-                        use ::vicocomo::Save;
-                        self.#get_id(db, None)
-                            .and_then(|objs| {
-                                for mut obj in objs {
-                                    obj.#forget_id()?;
-                                    obj.save(db)?;
-                                }
-                                Ok(())
-                            })?
-                    }
-                });
-            }
-            OnDelete::Restrict => {
-                let assoc_snake_str =
-                    LitStr::new(assoc_snake, Span::call_site());
-                restrict_expr.push(parse_quote! {
-                    if self.#get_id(db, None)
-                        .map(|objs| !objs.is_empty())?
-                    {
-                        errors.push(format!(
-                            "the HasMany association {} is not empty",
-                            #assoc_snake_str,
-                        ));
-                    }
-                });
-                on_delete_expr.push(parse_quote! {
-                    self.#get_id(db, None)
-                        .and_then(|objs| {
-                            if objs.is_empty() {
-                                Ok(())
-                            } else {
-                                Err(::vicocomo::Error::database(
-                                    "there are associated objects",
-                                ))
-                            }
-                        })?
-                });
-            }
-        }
-    }
     let gen = quote! {
         impl ::vicocomo::Delete<#pk_type> for #struct_id {
             fn delete(
                 self,
                 db: &impl ::vicocomo::DbConn
             ) -> Result<usize, ::vicocomo::Error> {
-                let mut errors: Vec<String> = #delete_errors_expr;
-            #(  #restrict_expr; )*
-                if !errors.is_empty() {
-                    return Err(::vicocomo::Error::delete(&errors.join("\n")));
-                }
-            #(  #on_delete_expr; )*
-                let deleted = db.exec(
+                #before_delete_expr;
+                let deleted_count = db.exec(
                     #self_sql,
                     &[ #( self.#pk_ids.into() ),* ],
                 )?;
-                if 1 != deleted {
-                    return Err(::vicocomo::Error::database(&format!(
-                        #row_count_err,
-                        deleted,
-                        1,
-                    )));
-                }
-                Ok(deleted)
+                #check_delete_count
+                Ok(deleted_count)
             }
 
             fn delete_batch(
                 db: &impl ::vicocomo::DbConn,
                 batch: &[#pk_type],
             ) -> Result<usize, ::vicocomo::Error> {
-                /*
-                #batch_delete_expr
-                check row count
-                */
-                Ok(db.exec(
+                let deleted_count = db.exec(
                     &format!(#batch_sql_format, #batch_placeholders),
                     #batch_expr,
-                )?)
+                )?;
+                #check_batch_count
+                Ok(deleted_count)
             }
         }
     };

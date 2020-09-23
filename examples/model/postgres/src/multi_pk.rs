@@ -14,7 +14,7 @@ pub fn test_multi_pk(db: &::vicocomo_postgres::PgConn) {
 
     // - - inserting, finding, and updating  - - - - - - - - - - - - - - - - -
 
-    println!("inserting {} .. ", m.ids());
+    println!("inserting {} .. ", m.pk());
     assert!(m.insert(db).is_ok());
     assert!(
         format!("{:?}", m)
@@ -28,7 +28,7 @@ pub fn test_multi_pk(db: &::vicocomo_postgres::PgConn) {
     );
     println!("    OK");
     m.id2 = 42;
-    println!("not finding non-existing {} ..", m.ids());
+    println!("not finding non-existing {} ..", m.pk());
     assert!(MultiPk::find(db, &(42, 17)).is_none());
     assert!(m.find_equal(db).is_none());
     assert!(

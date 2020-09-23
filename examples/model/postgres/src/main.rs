@@ -8,8 +8,6 @@ mod multi_pk;
 mod one_to_many;
 mod single_pk;
 
-use ::vicocomo_postgres::PgConn;
-
 #[tokio::main]
 async fn main() {
     dotenv::dotenv().ok();
@@ -24,7 +22,7 @@ async fn main() {
             eprintln!("connection error: {}", e);
         }
     });
-    let db = PgConn::new(pg_client);
+    let db = ::vicocomo_postgres::PgConn::new(pg_client);
 
     belongs_to::test_belongs_to(&db);
     delete::test_delete(&db);

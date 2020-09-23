@@ -66,12 +66,10 @@ mod save;
 ///
 /// See this [example](../vicocomo_model_derive/index.html).
 ///
-/// `vicocomo_column = "`*column name*`"` - The database column storing the
-/// field.  Default the snake cased field name.
-///
 /// `vicocomo_belongs_to(` ... `)` - The field is a foreign key to a model
-/// object on the remote side of the relationship.  The following name-value
-/// pairs are optional:
+/// object on the remote side of the relationship.
+///
+/// The following name-value pairs are optional:
 ///
 /// - `name = "`*a camel case name*`"`:  If there are more than one
 ///   `BelongsTo` implementation for this type with *the same* `remote_type`,
@@ -92,6 +90,9 @@ mod save;
 ///   If the field identifier ends in `_id` the default path is
 ///   `crate::models::`*rem*`::`*rem camel cased*, where *rem* is the field
 ///   identifier with `_id` stripped.  If not, `remote_type` is mandatory.
+///
+/// `vicocomo_column = "`*column name*`"` - The database column storing the
+/// field.  Default the snake cased field name.
 ///
 /// ## Generated code
 ///
@@ -145,9 +146,7 @@ mod save;
 ///
 /// The old reference is not removed from the database.
 ///
-/// The default function returns an `Error`.
-///
-/// Should be implemented if the association field is an `Option`.
+/// Should return `Err` if the association field is not an `Option`.
 ///
 /// ```text
 /// pub fn <name>_siblings(&self, db: &impl DbConn) -> Result<Vec<Self>, Error>
@@ -181,34 +180,29 @@ pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
 /// `vicocomo_table_name = "`*some table name*`"` - The database table storing
 /// the struct.  Default the snake cased struct name with a plural 's'.
 ///
-/// `vicocomo_delete_errors`: - See [`DeleteErrors`
-/// ](../vicocomo/model/trait.DeleteErrors.html).  If present, the generated
+/// `vicocomo_before_delete`: - See [`BeforeDelete`
+/// ](../vicocomo/model/trait.BeforeDelete.html).  If present, the generated
 /// [`Delete::delete()`](../vicocomo/model/trait.Delete.html#tymethod.delete)
-/// requires the model to implement [`DeleteErrors`
-/// ](../vicocomo/model/trait.DeleteErrors.html) and calls
-/// [`errors_preventing_delete()`
-/// ](../vicocomo/model/trait.DeleteErrors.html#tymethod.errors_preventing_delete).
+/// requires the model to implement [`BeforeDelete`
+/// ](../vicocomo/model/trait.BeforeDelete.html) and calls
+/// [`before_delete()`
+/// ](../vicocomo/model/trait.BeforeDelete.html#tymethod.before_delete).
 ///
-/// `vicocomo_has_many(` ... `)` - See [`HasMany`](derive.HasMany.html).  For
-/// `Delete`, we need this to handle the objects associated to this one by a
-/// `HasMany` association.
+/// `vicocomo_has_many(` ... `)` - See [`HasMany`](derive.HasMany.html).
+/// <b>At present, this attriubute has no effect when deleting!</b>
+/// Referential integrity should be handled by the database as follows.
 ///
-/// - #### One-to-many associations
+/// - <b>One-to-many associations:</b>  The table storing the `Remote` object
+///   should have a foreign key declaration corresponding to the
+///   `on_delete = "`*one of *`cascade`*, *`forget`*, or *`restrict"`
+///   name-value pair, in the obvious way.
 ///
-///   Depending on the value of the `on_delete = "`...`"` name-value pair
-///   - `cascade`:  The associated objects are deleted when `self` is.  Note
-///     that this requires that `Remote`, too, implements [`Delete`
-///     ](../vicocomo/model/trait.Delete.html).
-///   - `forget`:  The remote references are set to `None`.  Note that this
-///     requires that`Remote` object derives [`BelongsTo`
-///     ](derive.BelongsTo.html).
-///   - `restrict`:  Error return, `self` cannot be deleted as long as there
-///     are associatied objects.  This is the default.
+/// - <b>Many-to-many associations:</b>  The join table should have foreign
+///   key declarations referring to the primary keys of the tables storing the
+///   `Self` and `Remote` types that ensures cascading on-delete behavior.
 ///
-/// - #### Many-to-many associations
-///
-///   The remote object is never deleted, and all rows in the join table
-///   referring to `self` are always deleted when `self` is.
+/// The intention is to use the attribute to generate referential integrity
+/// tests in future releases.
 ///
 /// ## Field attributes
 ///
@@ -241,8 +235,8 @@ pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
     Delete,
     attributes(
         vicocomo_column,
-        vicocomo_delete_errors,
-        vicocomo_has_many,  // we must know what to do on delete
+        vicocomo_before_delete,
+        vicocomo_has_many,
         vicocomo_optional,
         vicocomo_primary,
         vicocomo_table_name,
@@ -318,7 +312,6 @@ pub fn delete_derive(input: TokenStream) -> TokenStream {
 ///     un2: i32,
 /// ) -> Option<Self>
 /// ```
-///
 /// Find an object in the database by the unique fields.
 ///
 /// `db` is the database connection object.
@@ -332,7 +325,6 @@ pub fn delete_derive(input: TokenStream) -> TokenStream {
 ///     db: &mut impl ::vicocomo::DbConn
 /// ) -> Option<Self>
 /// ```
-///
 /// Find an object in the database that has the same values for the unique
 /// fields as `self`.  If a unique field in `self` is `vicocomo_optional` and
 /// `None`, error return.
@@ -346,6 +338,8 @@ pub fn delete_derive(input: TokenStream) -> TokenStream {
 ///     un2: i32,
 ///     msg: &str,
 /// ) -> Result<(), ::vicocomo::Error> {
+/// ```
+/// Return `Err` if no row exists with those values for the unique columns.
 ///
 #[proc_macro_derive(
     Find,
@@ -394,35 +388,29 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 ///
 /// - `name = "`*a camel case name*`"`:  If there are more than one
 ///   `HasMany` implementation for this type with *the same* `remote_type`,
-///   all except one of them must have a `name`.
+///   all except possibly one of them must have a `name`.
 ///
 /// - `remote_fk_col = "`*a database column name*`"`:  If one-to-many, the
-///   column in the remote model, if many-to-many in the join table, that
-///   refers to `self`.  Default *snake case last identifier in `Self`*`_id`.
+///   column in the remote model's table, if many-to-many in the join table,
+///   that refers to `self`.  Default *snake case last identifier in
+///   `Self`*`_id`.
 ///
-///   Note that a model with a composite primary key cannot have any `HasMany`
-///   associations.
+///   Note that a model with a composite primary key cannot derive `HasMany`.
 ///
 /// - <b>Only if one-to-many</b>
 ///
-///   - `on_delete = "`*one of `cascade`, `forget`, or `restrict`*`"`:  See
-///     [`Delete`](derive.Delete.html).  Defines the beavior when `self` is
-///     deleted.  Optional, with default `restrict`.
+///   - `on_delete = "`*one of `cascade`, `forget`, or `restrict`*`"`:
+///     Actually not used by `derive(HasMany)`, the database is required to
+///     handle referential integrity.  Still needed for tests generated by
+///     [`Delete`](derive.Delete.html).
 ///
-///   - <b>Only if `on_delete = "forget"`</b>
-///
-///     - `remote_assoc = "`*a `BelongsTo` association name*`"`: To call
-///       *remote object*`.belongs_to_no_`*snaked value of `remote_assoc`*.
-///       Optional, default *last identifier in `Self`*.
+///     Optional, with default `restrict`.
 ///
 /// - <b>Only if many-to-many</b>
 ///
 ///   A many-to-many association is realized by way of a "join table", having
 ///   exactly one row for each associations instance, with foreign keys to the
 ///   rows representing the associated objects.
-///
-///   When `self` is deleted, all join table rows associated to `self` are
-///   deleted, but no rows representing `Remote` objects.
 ///
 ///   - `join_table = "`*a database table name*`"`:  The name of a join table,
 ///     making the association many-to-many.
@@ -512,6 +500,11 @@ pub fn has_many_derive(input: TokenStream) -> TokenStream {
 /// ## Field attributes
 ///
 /// See this [example](../vicocomo_model_derive/index.html).
+///
+/// `vicocomo_belongs_to(` ... `)` - See [`BelongsTo`](derive.BelongsTo.html).
+/// <b>At present, this attriubute has no effect when saving!</b>  Referential
+/// integrity should be handled by the database.  However, the intention is to
+/// use the attribute to generate referential integrity tests in the future.
 ///
 /// `vicocomo_column = "`*column name*`"` - The database column storing the
 /// field.  Default the snake cased field name.

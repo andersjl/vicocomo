@@ -1,9 +1,8 @@
 use ::vicocomo_derive_utils::*;
 use proc_macro::TokenStream;
-use quote::format_ident;
 use syn::{
     export::Span, parse_quote, punctuated::Punctuated, AttrStyle, Attribute,
-    Expr, Ident, ItemStruct, Lit, LitStr, Meta, NestedMeta, Type,
+    Expr, Ident, Lit, LitStr, Meta, NestedMeta, Type,
 };
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -48,10 +47,12 @@ pub(crate) struct Field {
     pub(crate) id: Ident,
     pub(crate) ty: Type,
     pub(crate) col: LitStr,
+    // .1 indicates whether the column is nullable, i.e. a Nul... DbType
     pub(crate) dbt: Option<(Expr, bool)>,
     pub(crate) pri: bool,
     pub(crate) uni: Option<String>,
     pub(crate) ord: Option<Order>,
+    // indicates whether the field is optional. It may be nullable regardless.
     pub(crate) opt: bool,
     pub(crate) fk: Option<ForKey>,
 }
@@ -103,10 +104,10 @@ pub(crate) struct Model {
     // Database table name
     pub(crate) table_name: String,
     pub(crate) has_many: Vec<HasMany>,
-    // indicates presence of the vicocomo_delete_errors attribute
-    pub(crate) delete_errors: bool,
-    // indicates presence of the vicocomo_save_errors attribute
-    pub(crate) save_errors: bool,
+    // indicates presence of the vicocomo_before_delete attribute
+    pub(crate) before_delete: bool,
+    // indicates presence of the vicocomo_before_save attribute
+    pub(crate) before_save: bool,
     pub(crate) fields: Vec<Field>,
 }
 
@@ -152,12 +153,12 @@ impl Model {
             get_string_from_attr(&attrs, "table_name", &struct_id, |id| {
                 format!("{}s", id).to_snake()
             });
-        let delete_errors: bool = attrs
+        let before_delete: bool = attrs
             .iter()
-            .any(|a| a.path.is_ident("vicocomo_delete_errors"));
-        let save_errors: bool = attrs
+            .any(|a| a.path.is_ident("vicocomo_before_delete"));
+        let before_save: bool = attrs
             .iter()
-            .any(|a| a.path.is_ident("vicocomo_save_errors"));
+            .any(|a| a.path.is_ident("vicocomo_before_save"));
         let has_many: Vec<HasMany> =
             if compute.contains(&ExtraInfo::HasManyData) {
                 Self::get_has_many(attrs, &struct_id.to_string())
@@ -419,8 +420,8 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             struct_id,
             table_name,
             has_many,
-            delete_errors,
-            save_errors,
+            before_delete,
+            before_save,
             fields,
         }
     }
@@ -446,10 +447,23 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    pub(crate) fn row_count_err(query: &str) -> LitStr {
-        LitStr::new(
+    pub(crate) fn check_row_count_expr(
+        query: &str,
+        actual: Expr,
+        expected: Expr,
+    ) -> Expr {
+        let error_msg = LitStr::new(
             format!("{} {{}} records, expected {{}}", query).as_str(),
             Span::call_site(),
+        );
+        parse_quote!(
+            if #actual != #expected {
+                return Err(::vicocomo::Error::database(&format!(
+                    #error_msg,
+                    #actual,
+                    #expected,
+                )));
+            }
         )
     }
 
@@ -537,16 +551,6 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    pub(crate) fn name_type_item(name: &str) -> ItemStruct {
-        let name = format_ident!("{}", name);
-        parse_quote! {
-            /// This is a generated type. Its only purpose is to
-            /// distinguish different implementations of an association trait
-            /// with the same `remote`.
-            pub struct #name;
-        }
-    }
-
     pub(crate) fn order_fields(&self) -> Vec<&Field> {
         let mut result = self
             .fields
@@ -563,7 +567,10 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         match pk_len {
             0 => panic!("missing primary key field"),
             1 => parse_quote!(
-                &#batch.iter().map(|foo| (*foo).clone().into()).collect::<Vec<_>>()[..]
+                &#batch
+                    .iter()
+                    .map(|foo| (*foo).clone().into())
+                    .collect::<Vec<_>>()[..]
             ),
             _ => {
                 let ixs = (0..pk_len).map(|i| {

@@ -10,8 +10,8 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
         ref struct_id,
         ref table_name,
         ref has_many,
-        delete_errors,
-        save_errors,
+        before_delete,
+        before_save,
         ref fields,
     } = model;
     let db_types = model.db_types();
@@ -119,24 +119,18 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
             }
         })
         .collect();
-    let update_err = Model::row_count_err("update");
-    let insert_batch_errors_expr: Expr = if *save_errors {
-        parse_quote!({
-            let errors: Vec<String> = data_itm.errors_preventing_save(db);
-            if !errors.is_empty() {
-                return Err(::vicocomo::Error::save(&errors.join("\n")));
-            }
-        })
+    let check_update_expr = Model::check_row_count_expr(
+        "update()",
+        parse_quote!(updated.len()),
+        parse_quote!(1),
+    );
+    let before_insert_expr: Expr = if *before_save {
+        parse_quote!(data_itm.before_save(db)?)
     } else {
         parse_quote!(())
     };
-    let update_self_errors_expr: Expr = if *save_errors {
-        parse_quote!({
-            let errors: Vec<String> = data_itm.errors_preventing_save(db);
-            if !errors.is_empty() {
-                return Err(::vicocomo::Error::save(&errors.join("\n")));
-            }
-        })
+    let before_update_expr: Expr = if *before_save {
+        parse_quote!(self.before_save(db)?)
     } else {
         parse_quote!(())
     };
@@ -154,7 +148,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
                 for data_itm in data {
                     let mut insert_cols = Vec::new();
                     let mut pars: Vec<::vicocomo::DbValue> = Vec::new();
-                    #insert_batch_errors_expr;
+                    #before_insert_expr;
                     #( #insert_push_expr )*
                     match inserts.get_mut(&insert_cols) {
                         Some(ins_pars) => ins_pars.push(pars),
@@ -180,7 +174,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
                 let mut params = #pk_values;
                 let mut par_ix = params.len();
                 let mut update_cols: Vec<String> = Vec::new();
-                #update_self_errors_expr;
+                #before_update_expr;
                 #( #update_input_expr )*
                 let mut updated = db
                     .query(
@@ -192,11 +186,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
                         &params,
                         &[ #( #upd_db_types ),* ],
                     )?;
-                if updated.is_empty() {
-                   return Err(::vicocomo::Error::database(
-                        &format!(#update_err, 0, 1)
-                    ));
-                }
+                #check_update_expr
                 let mut output = updated
                     .drain(..1)
                     .next()

@@ -22,13 +22,6 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
             remote_pk_mand,
             remote_type,
         } = fk;
-        if assoc_name.is_some() {
-            let name_type =
-                Model::name_type_item(assoc_name.as_ref().unwrap());
-            gen.extend(quote! {
-                #name_type
-            });
-        }
         let fk_is_none = LitStr::new(
             &format!(
                 "{}.{} is None",

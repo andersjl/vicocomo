@@ -31,22 +31,77 @@ pub fn multi_pk_templ() -> MultiPk {
     }
 }
 
-/*
-pub fn default_parent(
-    db: &::vicocomo_postgres::PgConn
-) -> (multi_pk::MultiPk, multi_pk::MultiPk, default_parent::DefaultParent) {
-    use ::vicocomo::{Find, Save};
-    let dp = default_parent::DefaultParent::find(db, &2).unwrap();
-    let mut m = multi_pk_templ();
-    let mut m2 = m.clone();
-    m2.id2 = 2;
-    m.set_default_parent(&dp).unwrap();
-    m2.set_default_parent(&dp).unwrap();
-    m.save(db).unwrap();
-    m2.save(db).unwrap();
-    (m, m2, dp)
+pub fn setup_many_to_many(
+    db: &::vicocomo_postgres::PgConn,
+) -> (
+    default_parent::DefaultParent,
+    default_parent::DefaultParent,
+    single_pk::SinglePk,
+    single_pk::SinglePk,
+) {
+    use ::vicocomo::Save;
+    let mut pa = DefaultParent {
+        id: None,
+        name: "parent-a".to_string(),
+    };
+    pa.save(db).unwrap();
+    let mut pb = DefaultParent {
+        id: None,
+        name: "parent-b".to_string(),
+    };
+    pb.save(db).unwrap();
+    let mut sa = single_pk::SinglePk {
+        id: None,
+        name: Some("child-a".to_string()),
+        data: None,
+        un1: None,
+        un2: 101,
+    };
+    sa.save(db).unwrap();
+    let mut sb = single_pk::SinglePk {
+        id: None,
+        name: Some("child-b".to_string()),
+        data: None,
+        un1: None,
+        un2: 102,
+    };
+    sb.save(db).unwrap();
+    (pa, pb, sa, sb)
 }
-*/
+
+// belongs-to associations:
+//     MultiPk -> BonusParent
+//     MultiPk -> DefaultParent
+//     MultiPk -> NonstandardParent
+//     NonstandardParent -> NonstandardParent
+//
+// one-to-many associations:
+//     BonusChild        <- MultiPk            restrict
+//     DefaultParent     <- MultiPk            cascade
+//     NonstandardParent <- MultiPk            forget
+//     NonstandardParent <- NonstandardParent  restrict
+//
+// many-to-many associations:
+//     DefaultParent <- joins -> SinglePk
+
+pub mod default_parent {
+    #[derive(
+        Clone,
+        Debug,
+        vicocomo::Delete,
+        vicocomo::Find,
+        vicocomo::HasMany,
+        vicocomo::Save,
+    )]
+    #[vicocomo_has_many(remote_type = "MultiPk", on_delete = "cascade")]
+    #[vicocomo_has_many(remote_type = "SinglePk", join_table = "joins")]
+    pub struct DefaultParent {
+        #[vicocomo_optional]
+        #[vicocomo_primary]
+        pub id: Option<i64>,
+        pub name: String,
+    }
+}
 
 pub mod multi_pk {
     use chrono::{NaiveDate, NaiveDateTime};
@@ -99,7 +154,7 @@ pub mod multi_pk {
     }
 
     impl MultiPk {
-        pub fn ids(&self) -> String {
+        pub fn pk(&self) -> String {
             format!(
                 "{:?}",
                 (
@@ -111,53 +166,9 @@ pub mod multi_pk {
                 )
             )
         }
-        pub fn idss(selves: &Vec<Self>) -> String {
-            format!("{:?}", selves.iter().map(|m| m.ids()).collect::<Vec<_>>())
+        pub fn pks(selves: &Vec<Self>) -> String {
+            format!("{:?}", selves.iter().map(|m| m.pk()).collect::<Vec<_>>())
         }
-    }
-}
-
-pub mod single_pk {
-    #[derive(
-        Clone,
-        Debug,
-        ::vicocomo::Delete,
-        ::vicocomo::Find,
-        ::vicocomo::Save,
-    )]
-    pub struct SinglePk {
-        #[vicocomo_optional]
-        #[vicocomo_primary]
-        pub id: Option<u32>,
-        #[vicocomo_order_by(2, "asc")]
-        #[vicocomo_optional]
-        pub name: Option<String>,
-        pub data: Option<f32>,
-        #[vicocomo_optional]
-        #[vicocomo_unique = "uni-lbl"]
-        pub un1: Option<i32>,
-        #[vicocomo_unique = "uni-lbl"]
-        #[vicocomo_order_by(1, "desc")]
-        pub un2: i32,
-    }
-}
-
-pub mod default_parent {
-    #[derive(
-        Clone,
-        Debug,
-        vicocomo::Delete,
-        vicocomo::Find,
-        vicocomo::HasMany,
-        vicocomo::Save,
-    )]
-    #[vicocomo_has_many(on_delete = "cascade", remote_type = "MultiPk")]
-    #[vicocomo_has_many(remote_type = "SinglePk", join_table = "joins")]
-    pub struct DefaultParent {
-        #[vicocomo_optional]
-        #[vicocomo_primary]
-        pub id: Option<i64>,
-        pub name: String,
     }
 }
 
@@ -195,6 +206,31 @@ pub mod other_parent {
     }
 }
 
+pub mod single_pk {
+    #[derive(
+        Clone,
+        Debug,
+        ::vicocomo::Delete,
+        ::vicocomo::Find,
+        ::vicocomo::Save,
+    )]
+    pub struct SinglePk {
+        #[vicocomo_optional]
+        #[vicocomo_primary]
+        pub id: Option<u32>,
+        #[vicocomo_order_by(2, "asc")]
+        #[vicocomo_optional]
+        pub name: Option<String>,
+        pub data: Option<f32>,
+        #[vicocomo_optional]
+        #[vicocomo_unique = "uni-lbl"]
+        pub un1: Option<i32>,
+        #[vicocomo_unique = "uni-lbl"]
+        #[vicocomo_order_by(1, "desc")]
+        pub un2: i32,
+    }
+}
+
 pub fn setup(
     db: &::vicocomo_postgres::PgConn
 ) -> (MultiPk, MultiPk, DefaultParent, NonstandardParent, NonstandardParent) {
@@ -207,14 +243,6 @@ pub fn setup(
     db.exec("DROP TABLE IF EXISTS default_parents", &[]).unwrap();
     db.exec("DROP TABLE IF EXISTS nonstandard_parents", &[]).unwrap();
     db.exec("
-        CREATE TABLE joins
-        ( default_parent_id  BIGINT NOT NULL
-        , single_pk_id       BIGINT NOT NULL
-        , PRIMARY KEY(default_parent_id, single_pk_id)
-        )",
-        &[],
-    ).unwrap();
-    db.exec("
         CREATE TABLE default_parents
         (   id    BIGSERIAL PRIMARY KEY
         ,   name  TEXT NOT NULL
@@ -222,9 +250,31 @@ pub fn setup(
         &[],
     ).unwrap();
     db.exec("
+        CREATE TABLE single_pks
+        (   id    BIGSERIAL PRIMARY KEY
+        ,   name  TEXT NOT NULL DEFAULT 'default'
+        ,   data  FLOAT(53)
+        ,   un1   BIGINT DEFAULT 4711
+        ,   un2   BIGINT NOT NULL
+        ,   UNIQUE(un1, un2)
+        )",
+        &[],
+    ).unwrap();
+    db.exec("
+        CREATE TABLE joins
+        (   default_parent_id  BIGINT NOT NULL
+                REFERENCES default_parents ON DELETE CASCADE
+        ,   single_pk_id       BIGINT NOT NULL
+                REFERENCES single_pks ON DELETE CASCADE
+        ,   PRIMARY KEY(default_parent_id, single_pk_id)
+        )",
+        &[],
+    ).unwrap();
+    db.exec("
         CREATE TABLE nonstandard_parents
         (   pk                     TEXT PRIMARY KEY
         ,   nonstandard_parent_id  TEXT
+                REFERENCES nonstandard_parents ON DELETE RESTRICT
         )",
         &[],
     ).unwrap();
@@ -241,9 +291,10 @@ pub fn setup(
         ,   i32_mand           BIGINT NOT NULL
         ,   i32_opt_nul        BIGINT DEFAULT 1
         ,   default_parent_id  BIGINT NOT NULL
+                REFERENCES default_parents ON DELETE CASCADE
         ,   other_parent_id    TEXT
-        ,   bonus_parent       TEXT NOT NULL
-                REFERENCES nonstandard_parents(pk) ON DELETE RESTRICT
+                REFERENCES nonstandard_parents ON DELETE SET NULL
+        ,   bonus_parent       TEXT NOT NULL REFERENCES nonstandard_parents
         ,   date_mand          BIGINT NOT NULL
         ,   date_time_mand     BIGINT NOT NULL
         ,   string_mand        TEXT NOT NULL
@@ -251,17 +302,6 @@ pub fn setup(
         ,   u64_mand           BIGINT NOT NULL
         ,   usize_mand         BIGINT NOT NULL
         ,   PRIMARY KEY(id, id2)
-        )",
-        &[],
-    ).unwrap();
-    db.exec("
-        CREATE TABLE single_pks
-        (   id    BIGSERIAL PRIMARY KEY
-        ,   name  TEXT NOT NULL DEFAULT 'default'
-        ,   data  FLOAT(53)
-        ,   un1   BIGINT DEFAULT 4711
-        ,   un2   BIGINT NOT NULL
-        ,   UNIQUE(un1, un2)
         )",
         &[],
     ).unwrap();

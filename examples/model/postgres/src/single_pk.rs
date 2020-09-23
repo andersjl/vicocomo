@@ -6,8 +6,7 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
 
     println!("\nsimple primary key --------------------------------------\n");
 
-    // - - inserting - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-    println!("\ninserting - - - - - - - - - - - - - - - - - - - - - - - -\n");
+    println!("inserting - - - - - - - - - - - - - - - - - - - - - - - -\n");
 
     let mut s = SinglePk {
         id: None,
@@ -57,7 +56,6 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
         un2: 42,
     };
 
-    // - - not finding or updating non-existing  - - - - - - - - - - - - - - -
     println!("\nnot finding or updating non-existing  - - - - - - - - - -\n");
 
     println!("not finding non-existing {:?} ..", s);
@@ -88,9 +86,7 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
     assert!(res.is_err());
     println!("    OK");
 
-    // - - commit transaction  - - - - - - - - - - - - - - - - - - - - - - - -
-
-    println!(",- transaction begin  - - - - - - - - - - - - - - - - - -");
+    println!("\n,- transaction begin  - - - - - - - - - - - - - - - - - -");
     db.begin().unwrap();
     println!("| inserting non-existing ..");
     let res = s.insert(db);
@@ -129,7 +125,6 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
     assert!(res.is_err());
     println!("    OK");
 
-    // - - finding existing  - - - - - - - - - - - - - - - - - - - - - - - - -
     println!("\nfinding existing  - - - - - - - - - - - - - - - - - - - -\n");
 
     println!("finding existing ..");
@@ -168,7 +163,6 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
     );
     println!("    OK");
 
-    // - - query() - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     println!("\nquery() - - - - - - - - - - - - - - - - - - - - - - - - -\n");
 
     let query = QueryBld::new()
@@ -360,24 +354,19 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
     );
     println!("    OK");
 
-    // - - roll back transaction - - - - - - - - - - - - - - - - - - - - - - -
-    println!("\nroll back transaction - - - - - - - - - - - - - - - - - -\n");
-
-    {
-        println!(",- transaction begin  - - - - - - - - - - - - - - - - - -");
-        db.begin().unwrap();
-        println!("| deleting existing {:?} ..", s);
-        let res = s.clone().delete(db);
-        assert!(res.is_ok());
-        assert!(res.unwrap() == 1);
-        println!("|   OK");
-        println!("| error deleting non-existing {:?}", s);
-        let res = s.clone().delete(db);
-        assert!(res.is_err());
-        println!("|   OK");
-        db.rollback().unwrap();
-        assert!(s.find_equal(db).is_some());
-        println!("'- transaction rollback - - - - - - - - - - - - - - - - -");
-        println!("    OK");
-    }
+    println!(",- transaction begin  - - - - - - - - - - - - - - - - - -");
+    db.begin().unwrap();
+    println!("| deleting existing {:?} ..", s);
+    let res = s.clone().delete(db);
+    assert!(res.is_ok());
+    assert!(res.unwrap() == 1);
+    println!("|   OK");
+    println!("| error deleting non-existing {:?}", s);
+    let res = s.clone().delete(db);
+    assert!(res.is_err());
+    println!("|   OK");
+    db.rollback().unwrap();
+    assert!(s.find_equal(db).is_some());
+    println!("'- transaction rollback - - - - - - - - - - - - - - - - -");
+    println!("    OK");
 }

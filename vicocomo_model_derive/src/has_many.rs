@@ -39,13 +39,6 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
             }
             None => (),
         };
-        if assoc_name.is_some() {
-            let name_type =
-                Model::name_type_item(assoc_name.as_ref().unwrap());
-            gen.extend(quote! {
-                #name_type
-            });
-        }
         let mut select: String;
         let filter_assoc = LitStr::new(
             &if many_to_many.is_some() {
