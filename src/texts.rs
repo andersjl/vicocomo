@@ -1,97 +1,77 @@
-//! Macros to simplify translating texts
+//! Simplify translating texts
+//!
+//! # Raison d'être
+//!
+//! Dead simple.  Of course, if you need to serve different languages without
+//! recompiling, this is of no use.  Try [`fluent`
+//! ](https://crates.io/crates/fluent).
+//!
+//! # Defining texts
+//!
+//! The texts are defined in the file `config/texts.cfg" as a number of
+//! comma-separated key-value pairs optionally defining parameterized
+//! substitution, see the example below.
+//!
+//! # Example
+//! ```
+//! use ::vicocomo::t;
+//!
+//! ::std::fs::write(
+//!     "config/texts.cfg",
+//!     r#"
+//!     "simple"           => "some text without parameters",
+//!     "parameterized"    => "some text with <p1> two <p2> parameters",
+//!     "beginning-w-par"  => "<par> before text",
+//!     "literal-angles"   => "some text containing \< with <par> \>",
+//!     "#,
+//! );
+//! assert_eq!(
+//!     t!("simple"),
+//!     "some text without parameters",
+//! );
+//! assert_eq!(
+//!     t!("parameterized", "p2": "(second)", "p1": "(first)"),
+//!     "some text with (first) two (second) parameters",
+//! );
+//! assert_eq!(
+//!     t!("beginning-w-par", "par": "parameter"),
+//!     "parameter before text",
+//! );
+//! assert_eq!(
+//!     t!("literal-angles", "par": "parameter"),
+//!     "some text containing < with parameter >",
+//! );
+//! assert_eq!(
+//!     t!("unregistered", "p1": "of", "p2": "parameterized"),
+//!     "unregistered, p1: of, p2: parameterized",
+//! );
+//! ```
 
-/// Register texts for access with the [`t`](macro.t.html) macro.
-///
-/// # Raison d'être
-///
-/// Dead simple.  Of course, if you need to serve different languages without
-/// recompiling, this is of no use.  Try [`fluent`
-/// ](https://crates.io/crates/fluent).
-///
-/// # Usage
-///
-/// ### Note on namespacing
-///
-/// `register_texts` creates a module `vicocomo_text` in the module where it
-/// is invoked.  [`t`](macro.t.html) expects this module to be
-/// `crate::vicocomo_text`.  So, unless you invoke `register_texts` in your
-/// `main.rs` or `lib.rs`, you must put a line
-/// ```text
-/// pub use the::module::you::invoke::register_texts::in::vicocomo_text
-/// ```
-/// in `main.rs` or `lib.rs`.
-///
-/// ### Macro input
-///
-/// The macro input is a number of comma-separated key-value pairs optionally
-/// defining parameterized substitution like so:
-/// ```text
-/// register_texts! {
-///     "simple"         => "some text without parameters",
-///     "parameterized"  => "some text with <p1> two <p2> parameters",
-///     "literal_angles" => "some text containing \"\\<\" with <par> \\>",
-/// }
-/// ```
-///
-#[macro_export]
-macro_rules! register_texts {
-    ( $( $key: literal => $text: literal ),* $( , )? ) => {
-        pub mod vicocomo_text {
-            use ::lazy_static::lazy_static;
-            use ::std::collections::HashMap;
-            lazy_static! {
-                pub static ref TEXTS: HashMap <
-                    &'static str, (
-                        Vec<(&'static str, &'static str)>,
-                        &'static str,
-                    )
-                > = {
-                    let mut map = HashMap::new();
-                $(  map.insert($key, find_params($text)); )*
-                    map
-                };
-            }
-
-            fn find_params(text: &'static str)
-                -> (Vec<(&'static str, &'static str)>, &'static str)
-            {
-                use ::regex::Regex;
-                lazy_static! {
-                    static ref ANGLES: Regex =
-                        Regex::new(r"[^\\]?<([^>]*[^\\])>").unwrap();
-                }
-                let mut befores_names = Vec::new();
-                let mut last = 0;
-                for captures in ANGLES.captures_iter(&text) {
-                    let par = captures.get(1).unwrap();
-                    befores_names.push(
-                        (&text[last..(par.start() - 1)], par.as_str())
-                    );
-                    last = par.end() + 1;
-                }
-                (befores_names, &text[last..])
-            }
-        }
-    }
-}
-
-/// Access a text defined by [`register_texts`](macro.register_texts.html) as
-/// a `String`.
+/// Access a text defined in [`config/texts.cfb`](module.texts.html) as a
+/// `String`.
 ///
 /// The first parameter is the key as defined in [`register_texts`
 /// ](macro.register_texts.html).
 ///
 /// If the text is parameterized, name-value pairs follow, like so:
-/// ```text
-/// register_texts! {
-///     /* ... */
-///     "example" => "example <p1> a <p2> text",
-///     /* ... */
-/// }
 ///
+/// If `config/texts.cfg` contains
+/// ```text
+///     "example" => "example <p1> a <p2> text",
+/// ```
+/// The following assertion should hold:
+/// ```text
 /// assert_eq!(
-///     t!("example", "p1": "of", "p2": "parameterized"),
+///     t!("example", "p2": "parameterized", "p1": "of"),
 ///     "example of a parameterized text",
+/// );
+/// ```
+/// If the `$key` is not in `config/texts.cfg`, the output is the key and the
+/// parameters:
+/// ```text
+/// assert_eq!(
+///     t!("unregistered", "p1": "of", "p2": "parameterized"),
+///     "unregistered, p1: of, p2: parameterized",
 /// );
 /// ```
 ///
@@ -102,22 +82,90 @@ macro_rules! t {
     };
     ($key: literal, $( $name: literal : $value: expr ),* ) => {
         {
-            let entry = &crate::vicocomo_text::TEXTS.get($key).unwrap();
-            let mut result = String::new();
-            if entry.0.len() > 0 {
-            $(
-                result.extend(
-                    entry.0.iter()
-                        .find(|(_, name)| name == &$name)
-                        .unwrap()
-                        .0
-                        .chars(),
-                );
-                result.extend($value.to_string().chars());
-            )*
-            }
-            result.extend((entry.1).chars());
-            result.replace("\\<", "<").replace("\\>", ">")
+            let texts = &$crate::texts::TEXTS;
+            let mut params: Vec<(&str, &str)> = Vec::new();
+        $(
+            let val = $value.to_string();
+            params.push(($name, &val));
+        )*
+            $crate::texts::get_text($key, params.as_slice())
+
         }
     };
+}
+use ::lazy_static::lazy_static;
+use ::regex::Regex;
+use ::std::collections::HashMap;
+
+lazy_static! {
+    pub static ref DEFS: String =
+        ::std::fs::read_to_string("config/texts.cfg")
+            .unwrap_or_else(|_| String::new());
+}
+
+lazy_static! {
+    pub static ref TEXTS: HashMap<&'static str, (Vec<(&'static str, &'static str)>, &'static str,)> = {
+        lazy_static! {
+            static ref KEY_VAL_PAIR: Regex = Regex::new(
+                r#""((?:[^"]|\\")*)"\s*=>\s*"((?:[^"]|\\")*)"(?:,|$)"#,
+            )
+            .unwrap();
+        }
+        let mut map = HashMap::new();
+        for key_vals in KEY_VAL_PAIR.captures_iter(DEFS.as_str()) {
+            map.insert(
+                key_vals.get(1).unwrap().as_str(),
+                find_params(key_vals.get(2).unwrap().as_str()),
+            );
+        }
+        map
+    };
+}
+
+#[doc(hidden)]
+pub fn find_params(
+    text: &'static str,
+) -> (Vec<(&'static str, &'static str)>, &'static str) {
+    lazy_static! {
+        static ref PARAM: Regex =
+            Regex::new(r"((?:[^\\<]|\\<)*)<((?:[^>]|\\>)*)>").unwrap();
+    }
+    let mut befores_names = Vec::new();
+    let mut last = 0;
+    for captures in PARAM.captures_iter(&text) {
+        let par = captures.get(2).unwrap();
+        befores_names.push((&text[last..(par.start() - 1)], par.as_str()));
+        last = par.end() + 1;
+    }
+    (befores_names, &text[last..])
+}
+
+#[doc(hidden)]
+pub fn get_text(key: &str, params: &[(&str, &str)]) -> String {
+    let mut result = String::new();
+    match TEXTS.get(key) {
+        Some(entry) => {
+            for (piece, par) in &entry.0 {
+                result += piece;
+                match params.iter().find(|(name, _)| name == par) {
+                    Some((_, value)) => result += value,
+                    None => {
+                        result += par;
+                        result += ": ?";
+                    }
+                }
+            }
+            result.extend((entry.1).chars());
+        }
+        None => {
+            result += key;
+            for (name, value) in params {
+                result += ", ";
+                result += name;
+                result += ": ";
+                result.extend(value.to_string().chars());
+            }
+        }
+    }
+    result.replace("\\<", "<").replace("\\>", ">")
 }

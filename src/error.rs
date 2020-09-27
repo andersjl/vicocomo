@@ -47,15 +47,18 @@ impl std::error::Error for Error {}
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        use crate::texts::get_text;
         use ::v_htmlescape::escape;
 
         let (kind, txt) = match self {
-            Self::Database(s) => ("Database error", s),
-            Self::Delete(s) => ("Errors preventing delete", s),
-            Self::InvalidInput(s) => ("Invalid input", s),
-            Self::Other(s) => ("Error", s),
-            Self::Render(s) => ("Cannot render", s),
-            Self::Save(s) => ("Errors preventing save", s),
+            Self::Database(s) => (get_text("error--database", &[]), s),
+            Self::Delete(s) => (get_text("error--delete", &[]), s),
+            Self::InvalidInput(s) => {
+                (get_text("error--invalid-input", &[]), s)
+            }
+            Self::Other(s) => (get_text("error--other", &[]), s),
+            Self::Render(s) => (get_text("error--render", &[]), s),
+            Self::Save(s) => (get_text("error--save", &[]), s),
         };
         write!(f, "{}\n{}", kind, escape(txt))
     }

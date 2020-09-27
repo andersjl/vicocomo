@@ -179,6 +179,7 @@ pub trait Request {
         path: &str,
         params: Option<&[&str]>,
     ) -> Result<String, Error> {
+        use crate::texts::get_text;
         let (http_path, expected_count) = normalize_http_path(path);
         let param_count = match params {
             Some(p) => p.len(),
@@ -194,9 +195,12 @@ pub trait Request {
                 },
             )
         } else {
-            Err(Error::invalid_input(&format!(
-                "Expected {} parameters, got {}",
-                expected_count, param_count,
+            Err(Error::invalid_input(&get_text(
+                "error--parameter-count",
+                &[
+                    ("expected", &expected_count.to_string()),
+                    ("actual", &param_count.to_string()),
+                ],
             )))
         }
     }
