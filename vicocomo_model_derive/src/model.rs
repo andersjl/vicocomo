@@ -376,7 +376,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                         (parse_quote!(::vicocomo::DbType::Float), false)
                     }
                     "bool" | "i32" | "i64" | "u32" | "u64" | "usize"
-                    | "NaiveDate" | "NaiveDateTime" => {
+                    | "NaiveDate" | "NaiveDateTime" | "NaiveTime" => {
                         (parse_quote!(::vicocomo::DbType::Int), false)
                     }
                     "String" => {
@@ -391,7 +391,9 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                     | "Option < u32 >"
                     | "Option < u64 >"
                     | "Option < usize >"
-                    | "Option < NaiveDate >" => {
+                    | "Option < NaiveDate >"
+                    | "Option < NaiveDateTime"
+                    | "Option < NaiveTime >" => {
                         (parse_quote!(::vicocomo::DbType::NulInt), true)
                     }
                     "Option < String >" => {

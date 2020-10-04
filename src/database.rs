@@ -1,7 +1,7 @@
 //! Trait and helper types to abstract an SQL database.
 //!
 use crate::{db_value_convert, Error};
-use chrono::{Datelike, NaiveDate, NaiveDateTime};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use std::fmt;
 
 /// An SQL abstraction trait for use by other `vicocomo` modules as well as
@@ -101,8 +101,8 @@ impl From<DbValue> for DbType {
 /// [`DbConn`](trait.DbConn.html) implementation.
 ///
 /// Implements conversions to and from many Rust types.  The macro
-/// [`db_value_convert`](../macro.db_value_convert.html) can be used to implement
-/// more conversions.
+/// [`db_value_convert`](../macro.db_value_convert.html) can be used to
+/// implement more conversions.
 ///
 #[derive(Clone, Debug)]
 pub enum DbValue {
@@ -152,6 +152,12 @@ db_value_convert! {
     Int,
     NaiveDateTime::from_timestamp(value, 0),
     other.timestamp(),
+}
+db_value_convert! {
+    NaiveTime,
+    Int,
+    NaiveTime::from_num_seconds_from_midnight(value as u32, 0),
+    other.num_seconds_from_midnight() as i64,
 }
 db_value_convert! { String, Text }
 db_value_convert! { u32, Int }
