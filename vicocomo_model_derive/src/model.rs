@@ -366,44 +366,89 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                 }
             }
             if compute.contains(&ExtraInfo::DatabaseTypes) {
+                use ::lazy_static::lazy_static;
+                use ::quote::format_ident;
+                use ::std::{fs::read_to_string, collections::HashMap};
+                lazy_static! {
+                    pub static ref DB_TYPES: HashMap<String, (String, bool)> =
+                    {
+                        let mut map = HashMap::new();
+                        let mut db_types = "
+                            f32 => Float,
+                            f64 => Float,
+                            bool => Int,
+                            i32 => Int,
+                            i64 => Int,
+                            u32 => Int,
+                            u64 => Int,
+                            usize => Int,
+                            NaiveDate => Int,
+                            NaiveDateTime => Int,
+                            NaiveTime => Int,
+                            String => Text,
+                            "
+                            .to_string();
+                        db_types.extend(
+                            read_to_string("config/db-types.cfg")
+                                .unwrap_or_else(|_| String::new())
+                                .chars(),
+                        );
+                        for defs in db_types
+                            .split(',')
+                            .map(|typ_var| {
+                                let mut typ_var = typ_var.split("=>");
+                                let typ_str = typ_var.next().unwrap().trim();
+                                typ_var.next().map(|s| {
+                                    let var_str = s.trim();
+                                    (
+                                        format_ident!("{}", typ_str),
+                                        format!(
+                                            "::vicocomo::DbType::{}",
+                                            var_str,
+                                        ),
+                                        format!(
+                                            "::vicocomo::DbType::Nul{}",
+                                            var_str,
+                                        ),
+                                    )
+                                })
+                            })
+                        {
+                            defs.map(|(typ_id, var_str, nul_str)| {
+                                let typ: Type = parse_quote!(#typ_id);
+                                let opt: Type = parse_quote!(Option<#typ_id>);
+                                map.insert(
+                                    tokens_to_string(&typ), (var_str, false),
+                                );
+                                map.insert(
+                                    tokens_to_string(&opt), (nul_str, true)
+                                );
+                            });
+                        }
+                        map
+                    };
+                }
                 let type_string = tokens_to_string(if opt {
                     Self::strip_option(&field.ty)
                 } else {
                     &field.ty
                 });
-                dbt = Some(match type_string.as_str() {
-                    "f32" | "f64" => {
-                        (parse_quote!(::vicocomo::DbType::Float), false)
+                let db_type = DB_TYPES.get(&type_string);
+                dbt = db_type.map(
+                    |(dbt_str, nullable)| {
+                        let parsed = ::syn::parse_macro_input::parse::<Expr>(
+                            dbt_str.parse::<TokenStream>().unwrap(),
+                        );
+                        (
+                            parsed.unwrap(),
+                            *nullable,
+                        )
                     }
-                    "bool" | "i32" | "i64" | "u32" | "u64" | "usize"
-                    | "NaiveDate" | "NaiveDateTime" | "NaiveTime" => {
-                        (parse_quote!(::vicocomo::DbType::Int), false)
-                    }
-                    "String" => {
-                        (parse_quote!(::vicocomo::DbType::Text), false)
-                    }
-                    "Option < f32 >" | "Option < f64 >" => {
-                        (parse_quote!(::vicocomo::DbType::NulFloat), true)
-                    }
-                    "Option < bool >"
-                    | "Option < i32 >"
-                    | "Option < i64 >"
-                    | "Option < u32 >"
-                    | "Option < u64 >"
-                    | "Option < usize >"
-                    | "Option < NaiveDate >"
-                    | "Option < NaiveDateTime"
-                    | "Option < NaiveTime >" => {
-                        (parse_quote!(::vicocomo::DbType::NulInt), true)
-                    }
-                    "Option < String >" => {
-                        (parse_quote!(::vicocomo::DbType::NulText), true)
-                    }
-                    _ => panic!(
-                        "Type {} currently not allowed in a vicocomo model",
-                        type_string,
-                    ),
-                });
+                )
+                .or_else(|| panic!(
+                    "Type {} currently not allowed in a vicocomo model",
+                    type_string,
+                ));
             }
             fields.push(Field {
                 id,

@@ -9,6 +9,7 @@ proc-macro = true
 
 [dependencies]
 case = "*"
+lazy_static = "*"
 proc-macro2 = "*"
 quote = "*"
 regex = "*"

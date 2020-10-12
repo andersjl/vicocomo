@@ -102,7 +102,7 @@ impl From<DbValue> for DbType {
 ///
 /// Implements conversions to and from many Rust types.  The macro
 /// [`db_value_convert`](../macro.db_value_convert.html) can be used to
-/// implement more conversions.
+/// implement more conversions, here or in application code.
 ///
 #[derive(Clone, Debug)]
 pub enum DbValue {
@@ -136,30 +136,33 @@ impl fmt::Display for DbValue {
     }
 }
 
-db_value_convert! { bool, Int, value != 0 }
-db_value_convert! { f32, Float }
-db_value_convert! { f64, Float }
-db_value_convert! { i32, Int }
-db_value_convert! { i64, Int }
+db_value_convert! { no_option_type, bool, Int, value != 0 }
+db_value_convert! { no_option_type, f32, Float }
+db_value_convert! { no_option_type, f64, Float }
+db_value_convert! { no_option_type, i32, Int }
+db_value_convert! { no_option_type, i64, Int }
 db_value_convert! {
+    no_option_type, 
     NaiveDate,
     Int,
     NaiveDate::from_num_days_from_ce(value as i32),
     other.num_days_from_ce() as i64,
 }
 db_value_convert! {
+    no_option_type, 
     NaiveDateTime,
     Int,
     NaiveDateTime::from_timestamp(value, 0),
     other.timestamp(),
 }
 db_value_convert! {
+    no_option_type, 
     NaiveTime,
     Int,
     NaiveTime::from_num_seconds_from_midnight(value as u32, 0),
     other.num_seconds_from_midnight() as i64,
 }
-db_value_convert! { String, Text }
-db_value_convert! { u32, Int }
-db_value_convert! { u64, Int }
-db_value_convert! { usize, Int }
+db_value_convert! { no_option_type, String, Text }
+db_value_convert! { no_option_type, u32, Int }
+db_value_convert! { no_option_type, u64, Int }
+db_value_convert! { no_option_type, usize, Int }
