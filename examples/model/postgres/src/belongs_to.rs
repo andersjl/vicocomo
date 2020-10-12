@@ -1,6 +1,5 @@
 use super::models::{
-    default_parent::DefaultParent,
-    multi_pk::MultiPk,
+    default_parent::DefaultParent, multi_pk::MultiPk,
     other_parent::NonstandardParent,
 };
 use ::vicocomo::{Find, Save};
@@ -44,14 +43,12 @@ pub fn test_belongs_to(db: &::vicocomo_postgres::PgConn) {
     assert!(m.save(db).is_err());
     m.default_parent_id = 2;
     assert!(m == MultiPk::find(db, &(1, 1)).unwrap());
-    assert!(
-        m.set_default_parent(
-            &DefaultParent {
-                id: Some(4711),
-                name: "not saved".to_string(),
-            },
-        ).is_ok()
-    );
+    assert!(m
+        .set_default_parent(&DefaultParent {
+            id: Some(4711),
+            name: "not saved".to_string(),
+        },)
+        .is_ok());
     assert!(m.save(db).is_err());
     m.default_parent_id = 2;
     assert!(m == MultiPk::find(db, &(1, 1)).unwrap());

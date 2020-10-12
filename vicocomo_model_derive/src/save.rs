@@ -43,7 +43,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
             let col = &f.col;
             if f.opt {
                 parse_quote!(
-                    match &data_itm.#id {
+                    match data_itm.#id.as_ref() {
                         Some(val) => {
                             insert_cols.push(#col.to_string());
                             pars.push(val.clone().into());
@@ -79,7 +79,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
             let col = &f.col;
             if f.opt {
                 parse_quote!(
-                    match &self.#id {
+                    match self.#id.as_ref() {
                         Some(val) => {
                             par_ix += 1;
                             update_cols.push(
@@ -125,12 +125,18 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
         parse_quote!(1),
     );
     let before_insert_expr: Expr = if *before_save {
-        parse_quote!(data_itm.before_save(db)?)
+        parse_quote!({
+            use ::vicocomo::BeforeSave;
+            data_itm.before_save(db)?
+        })
     } else {
         parse_quote!(())
     };
     let before_update_expr: Expr = if *before_save {
-        parse_quote!(self.before_save(db)?)
+        parse_quote!({
+            use ::vicocomo::BeforeSave;
+            self.before_save(db)?
+        })
     } else {
         parse_quote!(())
     };
@@ -139,13 +145,13 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
         impl ::vicocomo::Save for #struct_id {
             fn insert_batch(
                 db: &impl ::vicocomo::DbConn,
-                data: &[Self],
+                data: &mut [Self],
             ) -> Result<Vec<Self>, ::vicocomo::Error> {
                 let mut inserts: std::collections::HashMap<
                     Vec<String>,
                     Vec<Vec<::vicocomo::DbValue>>,
                 > = std::collections::HashMap::new();
-                for data_itm in data {
+                for mut data_itm in data {
                     let mut insert_cols = Vec::new();
                     let mut pars: Vec<::vicocomo::DbValue> = Vec::new();
                     #before_insert_expr;

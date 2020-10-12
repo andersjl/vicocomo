@@ -1,7 +1,6 @@
 use ::chrono::{NaiveDate, NaiveDateTime};
 use {
-    multi_pk::MultiPk,
-    default_parent::DefaultParent,
+    default_parent::DefaultParent, multi_pk::MultiPk,
     other_parent::NonstandardParent,
 };
 
@@ -208,48 +207,68 @@ pub mod other_parent {
 
 pub mod single_pk {
     #[derive(
-        Clone,
-        Debug,
-        ::vicocomo::Delete,
-        ::vicocomo::Find,
-        ::vicocomo::Save,
+        Clone, Debug, ::vicocomo::Delete, ::vicocomo::Find, ::vicocomo::Save,
     )]
+    #[vicocomo_before_save]
     pub struct SinglePk {
         #[vicocomo_optional]
         #[vicocomo_primary]
         pub id: Option<u32>,
         #[vicocomo_order_by(2, "asc")]
         #[vicocomo_optional]
+        #[vicocomo_unique = "uni-lbl"]
         pub name: Option<String>,
         pub data: Option<f32>,
         #[vicocomo_optional]
-        #[vicocomo_unique = "uni-lbl"]
         pub un1: Option<i32>,
         #[vicocomo_unique = "uni-lbl"]
         #[vicocomo_order_by(1, "desc")]
         pub un2: i32,
     }
+
+    impl ::vicocomo::BeforeSave for SinglePk {
+        fn before_save(
+            &mut self, _db: &impl ::vicocomo::DbConn
+        ) -> Result<(), ::vicocomo::Error> {
+            if self.name.as_ref().map(|n| n.is_empty()).unwrap_or(false) {
+                Err(::vicocomo::Error::invalid_input("name empty"))
+            } else {
+                Ok(())
+            }
+        }
+    }
 }
 
 pub fn setup(
-    db: &::vicocomo_postgres::PgConn
-) -> (MultiPk, MultiPk, DefaultParent, NonstandardParent, NonstandardParent) {
+    db: &::vicocomo_postgres::PgConn,
+) -> (
+    MultiPk,
+    MultiPk,
+    DefaultParent,
+    NonstandardParent,
+    NonstandardParent,
+) {
     use ::vicocomo::{DbConn, Find, Save};
 
     db.exec("DROP TABLE IF EXISTS joins", &[]).unwrap();
     db.exec("DROP TABLE IF EXISTS multi_pks", &[]).unwrap();
     db.exec("DROP TABLE IF EXISTS joins", &[]).unwrap();
     db.exec("DROP TABLE IF EXISTS single_pks", &[]).unwrap();
-    db.exec("DROP TABLE IF EXISTS default_parents", &[]).unwrap();
-    db.exec("DROP TABLE IF EXISTS nonstandard_parents", &[]).unwrap();
-    db.exec("
+    db.exec("DROP TABLE IF EXISTS default_parents", &[])
+        .unwrap();
+    db.exec("DROP TABLE IF EXISTS nonstandard_parents", &[])
+        .unwrap();
+    db.exec(
+        "
         CREATE TABLE default_parents
         (   id    BIGSERIAL PRIMARY KEY
         ,   name  TEXT NOT NULL
         )",
         &[],
-    ).unwrap();
-    db.exec("
+    )
+    .unwrap();
+    db.exec(
+        "
         CREATE TABLE single_pks
         (   id    BIGSERIAL PRIMARY KEY
         ,   name  TEXT NOT NULL DEFAULT 'default'
@@ -259,8 +278,10 @@ pub fn setup(
         ,   UNIQUE(un1, un2)
         )",
         &[],
-    ).unwrap();
-    db.exec("
+    )
+    .unwrap();
+    db.exec(
+        "
         CREATE TABLE joins
         (   default_parent_id  BIGINT NOT NULL
                 REFERENCES default_parents ON DELETE CASCADE
@@ -269,16 +290,20 @@ pub fn setup(
         ,   PRIMARY KEY(default_parent_id, single_pk_id)
         )",
         &[],
-    ).unwrap();
-    db.exec("
+    )
+    .unwrap();
+    db.exec(
+        "
         CREATE TABLE nonstandard_parents
         (   pk                     TEXT PRIMARY KEY
         ,   nonstandard_parent_id  TEXT
                 REFERENCES nonstandard_parents ON DELETE RESTRICT
         )",
         &[],
-    ).unwrap();
-    db.exec("
+    )
+    .unwrap();
+    db.exec(
+        "
         CREATE TABLE multi_pks
         (   id                 BIGINT NOT NULL DEFAULT 1
         ,   id2                BIGINT
@@ -304,19 +329,24 @@ pub fn setup(
         ,   PRIMARY KEY(id, id2)
         )",
         &[],
-    ).unwrap();
-    db.exec("
+    )
+    .unwrap();
+    db.exec(
+        "
         INSERT INTO default_parents (name)
             VALUES ('default filler'), ('used default')
         ",
         &[],
-    ).unwrap();
-    db.exec("
+    )
+    .unwrap();
+    db.exec(
+        "
         INSERT INTO nonstandard_parents (pk, nonstandard_parent_id)
             VALUES ('nonstandard', NULL) , ('bonus nonstandard', NULL)
         ",
         &[],
-    ).unwrap();
+    )
+    .unwrap();
     let dp = DefaultParent::find(db, &2).unwrap();
     let mut m = multi_pk_templ();
     let mut m2 = m.clone();
@@ -325,11 +355,8 @@ pub fn setup(
     m2.set_default_parent(&dp).unwrap();
     m.save(db).unwrap();
     m2.save(db).unwrap();
-    let bp =
-        NonstandardParent::find(db, &"bonus nonstandard".to_string())
-            .unwrap();
-    let np =
-        NonstandardParent::find(db, &"nonstandard".to_string()).unwrap();
+    let bp = NonstandardParent::find(db, &"bonus nonstandard".to_string())
+        .unwrap();
+    let np = NonstandardParent::find(db, &"nonstandard".to_string()).unwrap();
     (m, m2, dp, bp, np)
 }
-

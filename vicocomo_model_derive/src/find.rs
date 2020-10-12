@@ -173,13 +173,13 @@ pub(crate) fn find_impl(model: &Model) -> TokenStream {
             } else {
                 &field.ty
             };
-            find_pars.push(parse_quote!(#par_id: #par_ty));
+            find_pars.push(parse_quote!(#par_id: &#par_ty));
             find_args.push(parse_quote!(#par_id));
-            par_vals.push(parse_quote!(#par_id.into()));
+            par_vals.push(parse_quote!(#par_id.clone().into()));
             self_args.push(if field.opt {
-                parse_quote!(self.#fld_id.unwrap())
+                parse_quote!(self.#fld_id.as_ref().unwrap())
             } else {
-                parse_quote!(self.#fld_id)
+                parse_quote!(&self.#fld_id)
             });
             uni_cols.push(field.col.value());
         }

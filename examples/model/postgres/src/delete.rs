@@ -5,7 +5,6 @@ use super::models::{
 use ::vicocomo::{DbConn, DbValue, Delete, Find, Save};
 
 pub fn test_delete(db: &::vicocomo_postgres::PgConn) {
-
     let (m, _m2, dp, bp, np) = super::models::setup(db);
     let s = single_pk(db, 1);
 
@@ -103,7 +102,8 @@ pub fn test_delete(db: &::vicocomo_postgres::PgConn) {
     pa.clone().delete(db).unwrap();
     print!(" .. deletes connection rows ..");
     assert!(
-        db.exec("
+        db.exec(
+            "
             SELECT * FROM joins
                 WHERE default_parent_id = $1 AND single_pk_id in ($2, $3)",
             &[
@@ -111,7 +111,9 @@ pub fn test_delete(db: &::vicocomo_postgres::PgConn) {
                 DbValue::Int(sa.id.unwrap().into()),
                 DbValue::Int(sb.id.unwrap().into()),
             ],
-        ).unwrap() == 0,
+        )
+        .unwrap()
+            == 0,
     );
     println!(" OK");
     print!(" .. leaves remote objects untouched ..");
@@ -129,14 +131,17 @@ pub fn test_delete(db: &::vicocomo_postgres::PgConn) {
     sa.clone().delete(db).unwrap();
     print!(" .. deletes connection rows ..");
     assert!(
-        db.exec("
+        db.exec(
+            "
             SELECT * FROM joins
                 WHERE default_parent_id = $1 AND single_pk_id = $2",
             &[
                 DbValue::Int(pb.id.unwrap().into()),
                 DbValue::Int(sa.id.unwrap().into()),
             ],
-        ).unwrap() == 0,
+        )
+        .unwrap()
+            == 0,
     );
     println!(" OK");
     println!("    OK");
@@ -153,4 +158,3 @@ fn single_pk(db: &::vicocomo_postgres::PgConn, un2: i32) -> SinglePk {
     result.save(db).unwrap();
     result
 }
-

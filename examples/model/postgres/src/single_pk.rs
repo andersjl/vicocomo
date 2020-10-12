@@ -22,7 +22,7 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
             un1: Some(2), un2: 1 }",
     );
     println!("    OK");
-    let ss = vec![
+    let mut ss = vec![
         SinglePk {
             id: None,
             name: Some(String::from("hej")),
@@ -39,7 +39,7 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
         },
     ];
     println!("inserting batch {:?} ..", ss);
-    let res = SinglePk::insert_batch(db, &ss[..]);
+    let res = SinglePk::insert_batch(db, &mut ss[..]);
     assert!(res.is_ok());
     assert!(format!("{:?}", res) ==
         "Ok([SinglePk { id: Some(2), name: Some(\"hej\"), data: None, \
@@ -63,23 +63,26 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
     assert!(res.is_none());
     println!("    OK");
     println!("not finding non-existing by unique fields ..");
+    assert!(SinglePk::find_by_name_and_un2(
+        db,
+        s.name.as_ref().unwrap(),
+        &s.un2
+    )
+    .is_none());
+    assert!(s.find_equal_name_and_un2(db).is_none());
     assert!(
-        SinglePk::find_by_un1_and_un2(db, s.un1.unwrap(), s.un2).is_none()
-    );
-    assert!(s.find_equal_un1_and_un2(db).is_none());
-    assert!(
-        SinglePk::validate_exists_un1_and_un2(
+        SinglePk::validate_exists_name_and_un2(
             db,
-            s.un1.unwrap(),
-            s.un2,
+            s.name.as_ref().unwrap(),
+            &s.un2,
             "message"
         )
         .err()
         .unwrap()
         .to_string()
-            == "Database error\nmessage: 1, 42"
+            == "Database error\nmessage: &quot;hej&quot;, 42"
     );
-    assert!(s.validate_unique_un1_and_un2(db, "message").is_ok());
+    assert!(s.validate_unique_name_and_un2(db, "message").is_ok());
     println!("    OK");
     println!("error updating non-existing ..");
     let res = s.update(db);
@@ -136,7 +139,8 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
     );
     println!("    OK");
     println!("finding existing by unique fields ..");
-    let res = SinglePk::find_by_un1_and_un2(db, s.un1.unwrap(), s.un2);
+    let res =
+        SinglePk::find_by_name_and_un2(db, s.name.as_ref().unwrap(), &s.un2);
     assert!(res.is_some());
     let res = res.unwrap();
     assert!(format!("{:?}", &res) ==
@@ -145,21 +149,21 @@ pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
     );
     assert!(
         format!("{:?}", &res)
-            == format!("{:?}", &s.find_equal_un1_and_un2(db).unwrap())
+            == format!("{:?}", &s.find_equal_name_and_un2(db).unwrap())
     );
-    assert!(SinglePk::validate_exists_un1_and_un2(
+    assert!(SinglePk::validate_exists_name_and_un2(
         db,
-        s.un1.unwrap(),
-        s.un2,
+        s.name.as_ref().unwrap(),
+        &s.un2,
         "message"
     )
     .is_ok());
     assert!(
-        s.validate_unique_un1_and_un2(db, "message")
+        s.validate_unique_name_and_un2(db, "message")
             .err()
             .unwrap()
             .to_string()
-            == "Database error\nmessage: Some(1), 42"
+            == "Database error\nmessage: Some(&quot;nytt namn&quot;), 42"
     );
     println!("    OK");
 

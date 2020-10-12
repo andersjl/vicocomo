@@ -339,7 +339,17 @@ pub fn delete_derive(input: TokenStream) -> TokenStream {
 ///     msg: &str,
 /// ) -> Result<(), ::vicocomo::Error> {
 /// ```
-/// Return `Err` if no row exists with those values for the unique columns.
+/// Return `Err` with `msg` if no row exists with those values for the unique
+/// columns.
+///
+/// ```text
+/// pub fn validate_unique_un1_and_un2(
+///     &self,
+///     db: &impl ::vicocomo::DbConn,
+///     msg: &str
+/// ) -> Result<(), ::vicocomo::Error> {
+/// ```
+/// Return `Err` with `msg` if `find_equal_un1_and_un2()` returns `Some()`.
 ///
 #[proc_macro_derive(
     Find,
@@ -476,7 +486,7 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 /// Delete the join table row connecting `self` to `remote`.  *Returns `Ok(0)`
 /// if they are not connected*.
 ///
-#[proc_macro_derive(HasMany, attributes(vicocomo_hasmany))]
+#[proc_macro_derive(HasMany, attributes(vicocomo_has_many))]
 pub fn has_many_derive(input: TokenStream) -> TokenStream {
     has_many::has_many_impl(&model::Model::new(
         input,
@@ -493,6 +503,15 @@ pub fn has_many_derive(input: TokenStream) -> TokenStream {
 /// ## Struct attributes
 ///
 /// See this [example](../vicocomo_model_derive/index.html).
+///
+/// `vicocomo_before_save`: - See [`BeforeSave`
+/// ](../vicocomo/model/trait.BeforeSave.html).  If present, the generated
+/// [`Save::insert()`](../vicocomo/model/trait.Save.html#tymethod.insert),
+/// [`Save::save()`](../vicocomo/model/trait.Save.html#tymethod.save), and
+/// [`Save::update()`](../vicocomo/model/trait.Save.html#tymethod.update)
+/// methods require the model to implement [`BeforeSave`
+/// ](../vicocomo/model/trait.BeforeSave.html) and calls [`before_save()`
+/// ](../vicocomo/model/trait.BeforeSave.html#tymethod.before_save).
 ///
 /// `vicocomo_table_name = "`*some table name*`"` - The database table storing
 /// the struct.  Default the snake cased struct name with a plural 's'.
@@ -523,6 +542,7 @@ pub fn has_many_derive(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(
     Save,
     attributes(
+        vicocomo_before_save,
         vicocomo_column,
         vicocomo_optional,
         vicocomo_primary,

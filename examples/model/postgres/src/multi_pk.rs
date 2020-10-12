@@ -1,10 +1,10 @@
-use ::chrono::NaiveDate;
 use super::models::{multi_pk::MultiPk, multi_pk_templ};
+use ::chrono::NaiveDate;
 use ::vicocomo::{Delete, Find, Save};
 
 pub fn test_multi_pk(db: &::vicocomo_postgres::PgConn) {
     let (m, m2, _dp, _bp, _np) = super::models::setup(db);
-    m.delete(db).unwrap();  // want to test insertion!
+    m.delete(db).unwrap(); // want to test insertion!
     m2.delete(db).unwrap();
 
     // --- MultiPk -----------------------------------------------------------
@@ -51,12 +51,10 @@ pub fn test_multi_pk(db: &::vicocomo_postgres::PgConn) {
     println!("finding existing ..");
     assert!(m == MultiPk::find(db, &(m.id.unwrap(), m.id2)).unwrap());
     assert!(m == m.find_equal(db).unwrap());
-    assert!(MultiPk::validate_exists(
-        db,
-        &(m.id.unwrap(), m.id2),
-        "message"
-    )
-    .is_ok());
+    assert!(
+        MultiPk::validate_exists(db, &(m.id.unwrap(), m.id2), "message")
+            .is_ok()
+    );
     assert!(
         m.validate_unique(db, "message").err().unwrap().to_string()
             == "Database error\nmessage"
@@ -111,4 +109,3 @@ pub fn test_multi_pk(db: &::vicocomo_postgres::PgConn) {
     assert!(m2.find_equal(db).unwrap() == m2);
     println!("    OK");
 }
-

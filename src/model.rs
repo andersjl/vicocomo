@@ -209,7 +209,7 @@ pub trait Save: Sized {
     /// reference, e.g. relying on the database's referential integrity.
     ///
     fn insert(&mut self, db: &impl DbConn) -> Result<(), Error> {
-        *self = Self::insert_batch(db, std::slice::from_ref(self))?
+        *self = Self::insert_batch(db, std::slice::from_mut(self))?
             .pop()
             .unwrap();
         Ok(())
@@ -231,7 +231,7 @@ pub trait Save: Sized {
     ///
     fn insert_batch(
         db: &impl DbConn,
-        data: &[Self],
+        data: &mut [Self],
     ) -> Result<Vec<Self>, Error>;
 
     /// Save the object's data to the database.

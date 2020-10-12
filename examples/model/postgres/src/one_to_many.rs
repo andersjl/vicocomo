@@ -12,7 +12,7 @@ pub fn test_one_to_many(db: &::vicocomo_postgres::PgConn) {
     let dp_chn = dp_chn.unwrap();
     assert!(
         format!("{:?}", dp_chn)
-        == format!("{:?}", m.default_parent_siblings(db).unwrap()),
+            == format!("{:?}", m.default_parent_siblings(db).unwrap()),
     );
     let bp_chn = bp.bonus_childs(db, None);
     assert!(bp_chn.is_ok());
@@ -26,12 +26,13 @@ pub fn test_one_to_many(db: &::vicocomo_postgres::PgConn) {
     let grown_chn = grown_chn.unwrap();
     assert!(
         format!("{:?}", grown_chn)
-        == format!(
-            "{:?}",
-            NonstandardParent::all_belonging_to_nonstandard_parent(db, &np)
-            .unwrap(),
-        )
+            == format!(
+                "{:?}",
+                NonstandardParent::all_belonging_to_nonstandard_parent(
+                    db, &np
+                )
+                .unwrap(),
+            )
     );
     println!("    OK");
 }
-

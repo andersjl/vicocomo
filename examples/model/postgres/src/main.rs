@@ -16,7 +16,7 @@ async fn main() {
             &std::env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
             tokio_postgres::NoTls,
         ))
-    .expect("cannot connect");
+        .expect("cannot connect");
     tokio::spawn(async move {
         if let Err(e) = pg_conn.await {
             eprintln!("connection error: {}", e);
@@ -31,4 +31,3 @@ async fn main() {
     one_to_many::test_one_to_many(&db);
     single_pk::test_single_pk(&db);
 }
-

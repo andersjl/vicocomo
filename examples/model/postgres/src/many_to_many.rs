@@ -2,8 +2,8 @@ use super::models::setup_many_to_many;
 use ::vicocomo::{DbValue, QueryBld};
 
 pub fn test_many_to_many(db: &::vicocomo_postgres::PgConn) {
-
-    /*let (m, _m2, _dp, bp, np) =*/ super::models::setup(db);
+    /*let (m, _m2, _dp, bp, np) =*/
+    super::models::setup(db);
     //let s = single_pk(db, 1);
 
     println!("\nmany-to-many associations -------------------------------\n");
