@@ -26,6 +26,8 @@ use syn::{
 /// # Code example:
 ///
 /// ```text
+/// // Controller module prefix, default "crate::controllers", must be first!
+/// controller_prefix: my_crate::controllers,
 /// // Route config, see below for the meaning of "Control" in route(Control)
 ///                        // HTTP | Actix URL            | ctrl | method
 ///                        // =====+======================+======+==========
@@ -81,8 +83,8 @@ use syn::{
 /// `notfnd(Controller)`:
 ///
 /// The controller is given as `some::path::to::Controller`.  If the path is a
-/// single identifier, as in the examples, `crate::controllers::` is
-/// prepended.
+/// single identifier, as in the examples, the controller prefix (default
+/// `crate::controllers::`) is prepended.
 ///
 /// The handling method is called as
 /// `some::path::to::Controller::handler(...)`.  So the controller may be a
@@ -416,6 +418,20 @@ impl Parse for Config {
         use syn::{parse_quote, token};
         let mut routes: HashMap<Path, Vec<Handler>> = HashMap::new();
         let mut not_found: Option<(Path, Handler)> = None;
+        let fork = input.fork();
+        if fork.parse::<Ident>()
+            .map(|id| &id.to_string() == "controller_prefix")
+            .unwrap_or(false)
+            && fork.parse::<token::Colon>().is_ok()
+            && fork.parse::<Path>().is_ok()
+            && fork.parse::<token::Comma>().is_ok()
+        {
+            input.parse::<Ident>().unwrap();
+            input.parse::<token::Colon>().unwrap();
+            let cp: Path = input.parse().unwrap();
+            input.parse::<token::Comma>().unwrap();
+            ControllerPrefix::set(cp);
+        }
         for item in input
             .parse_terminated::<ConfigItem, token::Comma>(ConfigItem::parse)?
         {
@@ -432,10 +448,11 @@ impl Parse for Config {
                 } => {
                     let segments = &controller.segments;
                     if 1 == segments.len() {
+                        let prefix = ControllerPrefix::get();
                         let contr_id =
                             &segments.last().unwrap().ident.clone();
                         controller.segments =
-                            parse_quote!(crate::controllers::#contr_id);
+                            parse_quote!(#prefix::#contr_id);
                     }
                     match routes.get_mut(&controller) {
                         Some(hands) => hands.extend(handlers.drain(..)),
@@ -449,6 +466,25 @@ impl Parse for Config {
         Ok(Self { routes, not_found })
     }
 }
+
+::lazy_static::lazy_static! {
+    static ref CONTROLLER_PREFIX: ::std::sync::Mutex<String> =
+        ::std::sync::Mutex::new("crate::controllers".to_string());
+}
+struct ControllerPrefix;
+impl ControllerPrefix {
+    fn get() -> Path {
+        ::syn::parse_str(&CONTROLLER_PREFIX.lock().unwrap()).unwrap()
+    }
+    fn set(prefix: Path) {
+        use ::quote::ToTokens;
+        let mut ps = CONTROLLER_PREFIX.lock().unwrap();
+        let len = ps.len();
+        let mut ts = ::proc_macro2::TokenStream::new();
+        prefix.to_tokens(&mut ts);
+        ps.replace_range(..len, &ts.to_string());
+    }
+ }
 
 impl Parse for ConfigItem {
     fn parse(input: ParseStream) -> syn::Result<Self> {
@@ -481,7 +517,8 @@ fn get_handlers(input: ParseStream) -> syn::Result<(Path, Vec<Handler>)> {
     let segments = &controller.segments;
     let contr_id = &segments.last().unwrap().ident.clone();
     if 1 == segments.len() {
-        controller.segments = parse_quote!(crate::controllers::#contr_id);
+        let prefix = ControllerPrefix::get();
+        controller.segments = parse_quote!(#prefix::#contr_id);
     }
     let contr_id_snake = contr_id.to_string().to_snake();
     let content;
@@ -510,6 +547,7 @@ fn get_handlers(input: ParseStream) -> syn::Result<(Path, Vec<Handler>)> {
 impl Parse for Handler {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         use syn::{braced, token, LitStr};
+
         let contr_method: Ident = input.parse()?;
         let mut http_method: Option<HttpMethod> = None;
         let mut path_str: Option<&str> = None;
@@ -624,10 +662,9 @@ where
 /// `( String::from("/a/<p1>/b/<p2>/c"), 2 /* the number of params */ )`
 ///
 fn normalize_http_path(http_path: &str) -> (String, usize) {
-    use lazy_static::lazy_static;
-    use regex::Regex;
-    lazy_static! {
-        static ref ANGLES: Regex = Regex::new(r"<[^>]*>").unwrap();
+    ::lazy_static::lazy_static! {
+        static ref ANGLES: ::regex::Regex = 
+            ::regex::Regex::new(r"<[^>]*>").unwrap();
     }
     let mut result: (String, usize) = (String::new(), 0);
     let mut last = 0;
@@ -721,11 +758,9 @@ impl FormData {
     */
 
     fn parse(vals: Vec<(String, String)>) -> Result<Self, Error> {
-        use lazy_static::lazy_static;
-        use regex::Regex;
-
-        lazy_static! {
-            static ref BRACKETS: Regex = Regex::new(r"\[([^]]*)\]").unwrap();
+        ::lazy_static::lazy_static! {
+            static ref BRACKETS: ::regex::Regex = 
+                ::regex::Regex::new(r"\[([^]]*)\]").unwrap();
         }
         let mut result = FormData::new();
         for (raw_key, raw_val) in vals {

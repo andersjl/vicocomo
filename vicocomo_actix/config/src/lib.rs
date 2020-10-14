@@ -73,7 +73,7 @@ pub fn config(input: TokenStream) -> TokenStream {
 
         #[actix_rt::main]
         async fn main() -> std::io::Result<()> {
-            dotenv::dotenv().ok();
+            ::dotenv::dotenv().ok();
             let (client, connection) = tokio_postgres::connect(
                 &std::env::var("DATABASE_URL")
                     .expect("DATABASE_URL must be set"),
