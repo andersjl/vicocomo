@@ -248,7 +248,7 @@ pub trait Save: Sized {
     }
 
     /// Try to UPDATE a row in the database from `self` and update self from
-    /// the updated row after insert.
+    /// the updated row after update.
     ///
     /// It is an error if `self` lacks a primary key or has one that does not
     /// exist in the database.
@@ -258,6 +258,22 @@ pub trait Save: Sized {
     /// [`insert()`](#tymethod.insert.html).
     ///
     fn update(&mut self, db: &impl DbConn) -> Result<(), Error>;
+
+    /// Try to UPDATE the row in the database corresponding to `self`.  Each
+    /// pair in `cols` is the name of a database column and the new value.
+    ///
+    /// On successful return `self` is updated from the database.  On error,
+    /// `self` is unchanged.
+    ///
+    /// <b>Note</b> that this function updates directly to the database and
+    /// should ignore the visibility of the fields in `self` corresponding to
+    /// the `cols`.
+    ///
+    fn update_columns(
+        &mut self,
+        db: &impl DbConn,
+        cols: &[(&str, DbValue)],
+    ) -> Result<(), Error>;
 }
 
 /// A hook called by functions implemented by the [`Save`

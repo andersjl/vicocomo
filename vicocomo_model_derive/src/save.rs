@@ -176,12 +176,44 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
             fn update(&mut self, db: &impl ::vicocomo::DbConn)
                 -> Result<(), ::vicocomo::Error>
             {
-                use std::convert::TryInto;
+                use ::std::convert::TryInto;
                 let mut params = #pk_values;
                 let mut par_ix = params.len();
                 let mut update_cols: Vec<String> = Vec::new();
                 #before_update_expr;
                 #( #update_input_expr )*
+                let mut updated = db
+                    .query(
+                        &format!(
+                            #update_fmt,
+                            &update_cols.join(", "),
+                            #pk_select,
+                        ),
+                        &params,
+                        &[ #( #upd_db_types ),* ],
+                    )?;
+                #check_update_expr
+                let mut output = updated
+                    .drain(..1)
+                    .next()
+                    .unwrap();
+                #( #update_output_expr; )*
+                Ok(())
+            }
+            fn update_columns(
+                &mut self,
+                db: &impl ::vicocomo::DbConn,
+                cols: &[(&str, ::vicocomo::DbValue)],
+            ) -> Result<(), ::vicocomo::Error> {
+                use ::std::convert::TryInto;
+                let mut params = #pk_values;
+                let mut par_ix = params.len();
+                let mut update_cols: Vec<String> = Vec::new();
+                for (col, dbv) in cols {
+                    par_ix += 1;
+                    update_cols.push(format!("{} = ${}", col, par_ix));
+                    params.push(dbv.clone());
+                };
                 let mut updated = db
                     .query(
                         &format!(
