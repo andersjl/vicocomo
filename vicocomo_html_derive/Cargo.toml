@@ -1,6 +1,6 @@
 [package]
 name = "vicocomo_html_derive"
-version = "0.1.15"
+version = "0.1.16"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 
