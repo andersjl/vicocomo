@@ -439,12 +439,11 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                         );
                         (parsed.unwrap(), *nullable)
                     })
-                    .or_else(|| {
-                        panic!(
-                            "Type {} not allowed in a vicocomo model",
-                            type_string,
-                        )
-                    });
+                    .or_else(|| panic!(
+                        "Type {} currently not allowed in a vicocomo Active \
+                            Record model",
+                        type_string,
+                    ));
             }
             fields.push(Field {
                 id,

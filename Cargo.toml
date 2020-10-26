@@ -19,4 +19,4 @@ v_htmlescape = "*"
 vicocomo_db_macro = { path = "vicocomo_db_macro" }
 vicocomo_derive_utils = { path = "vicocomo_derive_utils" }
 vicocomo_html_derive = { path = "vicocomo_html_derive" }
-vicocomo_model_derive = { path = "vicocomo_model_derive" }
+vicocomo_active_record = { path = "vicocomo_active_record" }

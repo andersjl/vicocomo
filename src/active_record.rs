@@ -1,13 +1,13 @@
 //! Traits implemented by model objects and some helper types.
 //!
 //! All of the traits have [derive macros
-//! ](../../vicocomo_model_derive/index.html) with the same name.
+//! ](../../vicocomo_active_record/index.html) with the same name.
 //!
 //! ## Pseudo traits
 //!
 //! "Pseudo" because there are derive macros, [`BelongsTo`
-//! ](../../vicocomo_model_derive/derive.BelongsTo.html) and [`HasMany`
-//! ](../../vicocomo_model_derive/derive.HasMany.html), that actually do not
+//! ](../../vicocomo_active_record/derive.BelongsTo.html) and [`HasMany`
+//! ](../../vicocomo_active_record/derive.HasMany.html), that actually do not
 //! implement traits.
 //!
 //! ### BelongsTo
@@ -16,7 +16,7 @@
 //! one-to-many relationship to another (or the same) type.
 //!
 //! For functions, see the [`BelongsTo`
-//! ](../../vicocomo_model_derive/derive.BelongsTo.html) derive macro.
+//! ](../../vicocomo_active_record/derive.BelongsTo.html) derive macro.
 //!
 //! ### HasMany
 //!
@@ -24,7 +24,7 @@
 //! and another (or the same) type.
 //!
 //! For functions, see the [`HasMany`
-//! ](../../vicocomo_model_derive/derive.HasMany.html) derive macro.
+//! ](../../vicocomo_active_record/derive.HasMany.html) derive macro.
 //!
 //  ### Motivation for not declaring those traits
 //
@@ -670,7 +670,7 @@ pub enum Order {
     Custom(String),
 
     /// Use the models default order as defined by the [`vicocomo_order_by`
-    /// ](../vicocomo_model_derive/index.html) attribute on one or more model
+    /// ](../vicocomo_active_record/index.html) attribute on one or more model
     /// struct fields.
     Dflt,
 
