@@ -1,19 +1,35 @@
 //! W.I.P.  Help to implement the Controller part of the
 //! View-Controller-Context-Model pattern.
 
-use crate::{DbConn, Error, Request, Response, Session, TemplEng};
+/// Forward the request to `crate::views::$views::$handler()` with the same
+/// signature as the controller method.
+///
+#[macro_export]
+macro_rules! delegate_to_view {
+    ( $handler: ident, $views: ident $( , )? ) => {
+        fn $handler(
+            req: &impl $crate::Request,
+            teng: &impl $crate::TemplEng,
+            db: &impl $crate::DbConn,
+            sess: $crate::Session,
+            resp: &mut impl $crate::Response,
+        ) {
+            crate::views::$views::$handler(req, teng, db, sess, resp);
+        }
+    };
+}
 
 macro_rules! controller_nyi {
     ( $id:ident , $txt:literal $( , )? ) => {
         #[allow(unused_variables)]
         fn $id(
-            req: &impl Request,
-            tmpl: &impl TemplEng,
-            db: &impl DbConn,
-            sess: Session,
-            resp: &mut impl Response,
+            req: &impl $crate::Request,
+            tmpl: &impl $crate::TemplEng,
+            db: &impl $crate::DbConn,
+            sess: $crate::Session,
+            resp: &mut impl $crate::Response,
         ) {
-            resp.internal_server_error(Some(&Error::other(
+            resp.internal_server_error(Some(&$crate::Error::other(
                 &(String::from($txt) + " not implemented"),
             )))
         }
