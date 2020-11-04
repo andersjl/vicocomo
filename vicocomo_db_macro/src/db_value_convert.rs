@@ -138,7 +138,8 @@ struct ConvertDef {
 impl Parse for ConvertDef {
     fn parse(input: ParseStream) -> parse::Result<Self> {
         use syn::token;
-        let no_option_type = input.fork()
+        let no_option_type = input
+            .fork()
             .parse::<Ident>()
             .map(|id| &id.to_string() == "no_option_type")
             .unwrap_or(false);

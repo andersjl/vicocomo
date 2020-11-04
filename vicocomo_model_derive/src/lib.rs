@@ -59,8 +59,8 @@ mod save;
 /// trait turned out rather unhelpful.
 ///
 /// Note that the `Remote` struct must have exactly one `vicocomo_primary`
-/// field.  The generated code also requires the `Remote` type to implement
-/// [`Find<_>`](derive.Find.html).
+/// field.  The generated code also requires the `Remote` type to derive
+/// [`Find`](derive.Find.html).
 ///
 /// ## Field attributes
 ///
@@ -381,7 +381,7 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 /// trait turned out rather unhelpful.
 ///
 /// Note that `Self` must have exactly one `vicocomo_primary` field.  The
-/// generated code also requires `Remote` to implement [`Find<_>`
+/// generated code also requires `Remote` to derive [`Find`
 /// ](derive.Find.html).
 ///
 /// ## Struct attributes
@@ -459,8 +459,8 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 ///```
 /// Find items related to `self` by the association, filtered by `filter`.
 ///
-/// `filter`, see [`QueryBld`](struct.QueryBld.html).  A condition to select
-/// only among the associated objects is automatically added.
+/// `filter`, see [`QueryBld`](model/struct.QueryBld.html).  A condition to
+/// select only among the associated objects is automatically added.
 ///
 /// #### Functions only for many-to-many associations
 ///
@@ -506,7 +506,7 @@ pub fn has_many_derive(input: TokenStream) -> TokenStream {
 ///
 /// `vicocomo_before_save`: - See [`BeforeSave`
 /// ](../vicocomo/model/trait.BeforeSave.html).  If present, the generated
-/// [`Save::insert()`](../vicocomo/model/trait.Save.html#tymethod.insert),
+/// [`Save::insert()`](../vicocomo/model/trait.Save.html#method.insert),
 /// [`Save::save()`](../vicocomo/model/trait.Save.html#tymethod.save), and
 /// [`Save::update()`](../vicocomo/model/trait.Save.html#tymethod.update)
 /// methods require the model to implement [`BeforeSave`

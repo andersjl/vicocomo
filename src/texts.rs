@@ -47,11 +47,9 @@
 //! );
 //! ```
 
-/// Access a text defined in [`config/texts.cfb`](module.texts.html) as a
-/// `String`.
+/// Access a text defined in [`config/texts.cfg`](texts/index.html) as a `String`.
 ///
-/// The first parameter is the key as defined in [`register_texts`
-/// ](macro.register_texts.html).
+/// The first parameter is the key as defined in `config/texts.cfg`.
 ///
 /// If the text is parameterized, name-value pairs follow, like so:
 ///

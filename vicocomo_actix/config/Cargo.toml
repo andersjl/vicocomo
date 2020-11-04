@@ -14,4 +14,5 @@ quote = "*"
 regex = "*"
 syn = { version = "*", features = ["full", "extra-traits", "clone-impls"] }
 vicocomo = { version = "*", path = "../.." }
+vicocomo_derive_utils = { version = "*", path = "../../vicocomo_derive_utils" }
 

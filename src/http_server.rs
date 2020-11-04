@@ -1,16 +1,18 @@
 //! Traits and structs implemented by an HTTP server and used by applications.
 //!
 use crate::Error;
-use core::{
+use ::core::{
     convert::TryFrom,
     fmt::{self, Display, Formatter},
 };
-use serde::{de::DeserializeOwned, Serialize};
-use std::{collections::HashMap, slice::Iter};
-use syn::{
+use ::serde::{de::DeserializeOwned, Serialize};
+use ::std::{collections::HashMap, slice::Iter};
+use ::syn::{
+    braced, parenthesized,
     parse::{Parse, ParseStream},
-    Ident, Path,
+    parse_quote, token, Expr, Ident, Lit, LitStr, Path, Type,
 };
+use ::vicocomo_derive_utils::*;
 
 /// A custom syntax tree node for configuring an HTTP server.  Intended for
 /// use in a server specific `config` macro.
@@ -19,16 +21,70 @@ use syn::{
 /// ](https://crates.io/crates/actix-web) [here.
 /// ](../../vicocomo_actix/macro.config.html)
 ///
-// TODO: a new field and config item templ_eng, probably a a struct.
 // TODO: a new route attribute 'name' for use in Request::url_for.
 // TODO: implement not_found.
-///
-/// # Code example:
-///
+/// The `Parse::parse()` method expects tokens of the form
 /// ```text
-/// // Controller module prefix, default "crate::controllers", must be first!
-/// controller_prefix: my_crate::controllers,
-/// // Route config, see below for the meaning of "Control" in route(Control)
+/// level_1(level_2) { level_3 { level_4: value, ... }, ... }, ...
+/// ```
+/// where `level_1`, `level_3`, and `level_4` are identifiers while `level_2`
+/// is a Rust path.  `level_2` and its parentheses are optional as well as the
+/// braced groups and braces if empty.  `level_4` may be present without any
+/// `level_3`, the colon disambiguates this.
+///
+/// The combination of `level_1` and `level_2` should be globally unique.
+/// `level_3` and `level_4` should be unique within their brace group.
+/// "Unique" means that a later entry will replace an earlier.
+///
+/// At present, the `value` of a level 4 attribute may be
+/// - an identifier, or
+/// - a literal (`bool`, `char`, `f64`, `i64`, or `&'static str`), or
+/// - `(`*a type*`, `*an expression evaluating to the type*`)`.
+///
+/// # Currently recognized arguments
+///
+/// ## Level 1 `plug_in`
+///
+/// Plug in an object implementing a `vicocomo` trait. Recognized level 2
+/// identifiers (no double colons allowed here) are
+/// - `DbConn`: The plug in implements [`DbConn`
+///   ](../database/trait.DbConn.html). Optional, default [`NullConn`
+///   ](../database/struct.NullConn.html).
+/// - `SessionStore`: The plug in implements [`SessionStore`
+///   ](trait.SessionStore.html). Optional, default [`::vicocomo::NullStore`
+///   ](struct.NullStore.html). (Note the leading double colon!)
+/// - `TemplEng`: The plug in mplements [`TemplEng`
+///   ](trait.TemplEng.html). Optional, default [`NullEng`
+///   ](struct.NullEng.html).
+///
+/// All require no level 3 and one typed level 4 arg `def`:
+/// ```text
+/// plug_in(SomeTrait) {
+///     def: (
+///         <a type implementing vicocomo::SomeTrait>,
+///         <an expression evaluating to an instance of the type>,
+///     ),
+/// },
+/// ```
+///
+/// ## Level 1 `app_config`
+///
+/// Various attributes configuring the generated application code. No level 2
+/// or 3 identifiers. Globally recognized level 4 identifiers are
+/// - `controller_prefix`: The value should be a string literal that will be
+///   interpreded as a Rust Path that is the controllers module prefix, see
+///   [`route`](#controller-path-and-handling-methods) below. Optional,
+///   default `crate::controllers`.
+///
+/// An HTTP server specific `config` macro may use other `app_config`
+/// attributes as needed.
+///
+/// ## Level 1 `route` and `not_found`
+///
+/// Route configuration. At least one route must obviously be defined.
+/// Example follows.  See below for the meaning of "*Control*" in
+/// `route(`*Control*`)`.
+/// ```text
 ///                        // HTTP | Actix URL            | ctrl | method
 ///                        // =====+======================+======+==========
 /// route(Rsrc) {          // CRUD requests, only those given are generated
@@ -71,23 +127,22 @@ use syn::{
 ///     "some/<param>",    // get  | "/some/<p0>"         | Othr | parm_req
 ///   },                   // -----+----------------------+------+----------
 ///   post_req {           //   Except for the standardized CRUD requests
-///     http_method: post, // above get is the default HTTP method
+///     http_method: post, // above, get is the default HTTP method
 ///     path: "postpth",   // post | "/postpth"           | Othr | post_req
 /// }},                    // =====+======================+======+==========
 /// // Not Found handler   //      |                      |      |
-/// notfnd(Hand) { func }, // all not handled elsewhere   | Hand | func
-///                        // default a simple 404 with text body
+/// not_found(Hand) {func} // all not handled elsewhere   | Hand | func
+///                        // no default provided by parse()
 /// ```
 ///
-/// Definition of "Controller" in `route(Controller)` and
-/// `notfnd(Controller)`:
+/// ### Controller path and handling method
 ///
-/// The controller is given as `some::path::to::Controller`.  If the path is a
-/// single identifier, as in the examples, the controller prefix (default
-/// `crate::controllers::`) is prepended.
+/// The controller is given as `some::path::to::Controller`. If the path is a
+/// single identifier, as in the examples, the controller prefix attribute
+/// value (default `crate::controllers::`) is prepended.
 ///
-/// The handling method is called as
-/// `some::path::to::Controller::handler(...)`.  So the controller may be a
+/// The handling methods are called as
+/// `some::path::to::Controller::handler(...)`. So the controller may be a
 /// module, struct, or enum as long as the handling method does not have a
 /// receiver.
 ///
@@ -104,13 +159,41 @@ use syn::{
 ///
 #[derive(Clone, Debug)]
 pub struct Config {
+    /// The `Type` implements a trait `vicocomo::`*the `String`*.
+    ///
+    /// The `Expr` evaluates to the `Type`.
+    ///
+    pub plug_ins: HashMap<String, (Type, Expr)>,
+
+    /// This will always contain the predefined entry
+    /// <br>`"controller_prefix" => (::syn::Path, `*`Path`-valued
+    /// expression*`)`. (note the leading double colon!)
+    /// <br>An implementation is free to add HTTP server specific attributes.
+    ///
+    pub app_config: HashMap<String, (Type, Expr)>,
+
     /// The routing targets, mapping a controller to its route handlers.
     ///
     pub routes: HashMap<Path, Vec<Handler>>,
 
     /// Optional custom handler for failed routes.
     ///
-    pub not_found: Option<(Path, Handler)>,
+    pub not_found: Option<(Path, Ident)>,
+}
+
+/// Information needed for implementing an HTTP server configuration macro
+/// using [`Config`](struct.Config.html).
+#[derive(Clone, Debug)]
+pub struct Handler {
+    /// only tested for Get and Post.
+    pub http_method: HttpMethod,
+    /// HTTP path, possibly with path parameters in angle brackets, normalized
+    /// to `path/<p1>/with/<p2>/two/parameters`.
+    pub http_path: String,
+    /// number of path parameters.
+    pub path_par_count: usize,
+    /// controller method name.
+    pub contr_method: Ident,
 }
 
 /// Methods for getting information about and from the request.
@@ -211,9 +294,9 @@ pub trait Request {
     /// ](tymethod.url_for.html), but:
     ///
     /// - `path` parameter names are normalized to
-    /// `path/<p1>/with/<p2>/two/parameters`.
+    ///   `path/<p1>/with/<p2>/two/parameters`, and
     ///
-    /// - the numer of `params` is verified on entry.
+    /// - the number of `params` is verified on entry.
     ///
     fn url_for_impl(
         &self,
@@ -242,18 +325,7 @@ pub trait Response {
     fn redirect(&mut self, url: &str);
 }
 
-/// Methods to render via a template engine.
-///
-pub trait TemplEng {
-    fn render(
-        &self,
-        tmpl: &str,
-        data: &impl Serialize,
-    ) -> Result<String, Error>;
-}
-
-/// Methods to store a cookie session.  Should be implemented by an HTTP
-/// server.  Applications should use [`Session`](struct.Session.html)
+/// Methods to store a session.
 ///
 pub trait SessionStore {
     /// Clear the entire session.
@@ -273,8 +345,56 @@ pub trait SessionStore {
     fn set(&self, key: &str, value: &str) -> Result<(), Error>;
 }
 
+/// An implementation of [`SessionStore`](trait.SessionStore.html) that does
+/// nothing and returns `()`, `None`, or [`Error`](../error/enum.Error.html).
+///
+#[derive(Clone, Copy, Debug)]
+pub struct NullStore;
+
+impl SessionStore for NullStore {
+    fn clear(&self) {
+        ()
+    }
+    fn get(&self, _key: &str) -> Option<String> {
+        None
+    }
+    fn remove(&self, _key: &str) {
+        ()
+    }
+    fn set(&self, _key: &str, _value: &str) -> Result<(), Error> {
+        Err(Error::other("no session store defined"))
+    }
+}
+
+/// Methods to render via a template engine.
+///
+pub trait TemplEng {
+    fn render(
+        &self,
+        tmpl: &str,
+        data: &impl Serialize,
+    ) -> Result<String, Error>;
+}
+
+/// An implementation of [`TemplEng`](trait.TemplEng.html) that does nothing
+/// and returns [`Error`](../error/enum.Error.html).
+///
+#[derive(Clone, Copy, Debug)]
+pub struct NullEng;
+
+impl TemplEng for NullEng {
+    fn render(
+        &self,
+        _tmpl: &str,
+        _data: &impl ::serde::Serialize,
+    ) -> Result<String, Error> {
+        Err(Error::render("no template engine"))
+    }
+}
+
 /// A cookie session.
 ///
+#[derive(Clone)]
 pub struct Session<'a>(&'a dyn SessionStore);
 
 impl<'a> Session<'a> {
@@ -385,277 +505,474 @@ impl TryFrom<&str> for HttpMethod {
     }
 }
 
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-enum ConfigItem {
-    NotFnd {
-        controller: Path,
-        handlers: Vec<Handler>,
-    },
-    Route {
-        controller: Path,
-        handlers: Vec<Handler>,
-    },
-}
-
-/// Information needed for implementing an HTTP server configuration macro
-/// using [`Config`](struct.Config.html).
-#[derive(Clone, Debug)]
-pub struct Handler {
-    /// only tested for Get and Post.
-    pub http_method: HttpMethod,
-    /// HTTP path, possibly with path parameters in angle brackets, normalized
-    /// to `path/<p1>/with/<p2>/two/parameters`.
-    pub http_path: String,
-    /// number of path parameters.
-    pub path_par_count: usize,
-    /// controller method name.
-    pub contr_method: Ident,
-}
+// --- private --------------------------------------------------------------
 
 impl Parse for Config {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        use syn::{parse_quote, token};
-        let mut routes: HashMap<Path, Vec<Handler>> = HashMap::new();
-        let mut not_found: Option<(Path, Handler)> = None;
-        let fork = input.fork();
-        if fork.parse::<Ident>()
-            .map(|id| &id.to_string() == "controller_prefix")
-            .unwrap_or(false)
-            && fork.parse::<token::Colon>().is_ok()
-            && fork.parse::<Path>().is_ok()
-            && fork.parse::<token::Comma>().is_ok()
-        {
-            input.parse::<Ident>().unwrap();
-            input.parse::<token::Colon>().unwrap();
-            let cp: Path = input.parse().unwrap();
-            input.parse::<token::Comma>().unwrap();
-            ControllerPrefix::set(cp);
-        }
-        for item in input
+    fn parse(stream: ParseStream) -> ::syn::Result<Self> {
+        let mut plug_ins = HashMap::new();
+        let mut app_config = HashMap::new();
+        let mut parsed_routes = Vec::new();
+        let mut not_found = None;
+        for item in stream
             .parse_terminated::<ConfigItem, token::Comma>(ConfigItem::parse)?
         {
-            match item {
-                ConfigItem::NotFnd {
-                    controller,
-                    mut handlers,
-                } => {
-                    not_found = Some((controller, handlers.pop().unwrap()));
+            match item.level_1 {
+                ConfigItemId::AppConfig => {
+                    item.get_app_conf(&mut app_config)?
                 }
-                ConfigItem::Route {
-                    mut controller,
-                    mut handlers,
-                } => {
-                    let segments = &controller.segments;
-                    if 1 == segments.len() {
-                        let prefix = ControllerPrefix::get();
-                        let contr_id =
-                            &segments.last().unwrap().ident.clone();
-                        controller.segments =
-                            parse_quote!(#prefix::#contr_id);
-                    }
-                    match routes.get_mut(&controller) {
-                        Some(hands) => hands.extend(handlers.drain(..)),
-                        None => {
-                            routes.insert(controller, handlers);
+                ConfigItemId::NotFound => {
+                    item.get_not_found(&mut not_found)?
+                }
+                ConfigItemId::PlugIn => item.get_plug_in(&mut plug_ins)?,
+                ConfigItemId::Routes => {
+                    item.get_routes(&mut parsed_routes)?
+                }
+            }
+        }
+        if !plug_ins.contains_key("DbConn") {
+            plug_ins.insert(
+                "DbConn".to_string(),
+                (
+                    parse_quote!(::vicocomo::NullConn),
+                    parse_quote!(::vicocomo::NullConn),
+                ),
+            );
+        }
+        if !plug_ins.contains_key("SessionStore") {
+            plug_ins.insert(
+                "SessionStore".to_string(),
+                (
+                    parse_quote!(::vicocomo::NullStore),
+                    parse_quote!(::vicocomo::NullStore),
+                ),
+            );
+        }
+        if !plug_ins.contains_key("TemplEng") {
+            plug_ins.insert(
+                "TemplEng".to_string(),
+                (
+                    parse_quote!(::vicocomo::NullEng),
+                    parse_quote!(::vicocomo::NullEng),
+                ),
+            );
+        }
+        let contr_prefix = {
+            let expr: Expr = app_config
+                .get("controller_prefix")
+                .and_then(|(t, e)| {
+                    if t == &static_str_type() {
+                        let s: LitStr = parse_quote!(#e);
+                        match s.parse::<Path>() {
+                            Ok(p) => Some(parse_quote!(#p)),
+                            Err(_) => None,
                         }
+                    } else {
+                        None
                     }
-                }
-            }
-        }
-        Ok(Self { routes, not_found })
-    }
-}
-
-::lazy_static::lazy_static! {
-    static ref CONTROLLER_PREFIX: ::std::sync::Mutex<String> =
-        ::std::sync::Mutex::new("crate::controllers".to_string());
-}
-struct ControllerPrefix;
-impl ControllerPrefix {
-    fn get() -> Path {
-        ::syn::parse_str(&CONTROLLER_PREFIX.lock().unwrap()).unwrap()
-    }
-    fn set(prefix: Path) {
-        use ::quote::ToTokens;
-        let mut ps = CONTROLLER_PREFIX.lock().unwrap();
-        let len = ps.len();
-        let mut ts = ::proc_macro2::TokenStream::new();
-        prefix.to_tokens(&mut ts);
-        ps.replace_range(..len, &ts.to_string());
-    }
- }
-
-impl Parse for ConfigItem {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        match input.parse::<Ident>()?.to_string().as_str() {
-            "notfnd" => {
-                let (controller, handlers) = get_handlers(input)?;
-                Ok(Self::NotFnd {
-                    controller,
-                    handlers,
                 })
-            }
-            "route" => {
-                let (controller, handlers) = get_handlers(input)?;
-                Ok(Self::Route {
-                    controller,
-                    handlers,
-                })
-            }
-            _ => Err(input.error("expected `route( ... ) { ... }`")),
-        }
-    }
-}
-
-fn get_handlers(input: ParseStream) -> syn::Result<(Path, Vec<Handler>)> {
-    use case::CaseExt;
-    use syn::{braced, parenthesized, parse_quote, token};
-    let content;
-    parenthesized!(content in input);
-    let mut controller: Path = content.parse()?;
-    let segments = &controller.segments;
-    let contr_id = &segments.last().unwrap().ident.clone();
-    if 1 == segments.len() {
-        let prefix = ControllerPrefix::get();
-        controller.segments = parse_quote!(#prefix::#contr_id);
-    }
-    let contr_id_snake = contr_id.to_string().to_snake();
-    let content;
-    braced!(content in input);
-    let mut handlers: Vec<Handler> = content
-        .parse_terminated::<Handler, token::Comma>(Handler::parse)?
-        .into_iter()
-        .collect();
-    if handlers.len() > 0 {
-        for handler in &mut handlers {
-            let http_path = &mut handler.http_path;
-            if http_path.chars().nth(0) != Some('/') {
-                if !http_path.is_empty() {
-                    http_path.insert(0, '/');
-                }
-                http_path.insert_str(0, &contr_id_snake);
-                http_path.insert(0, '/');
-            }
-        }
-        Ok((controller, handlers))
-    } else {
-        Err(input.error("missing handler"))
-    }
-}
-
-impl Parse for Handler {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        use syn::{braced, token, LitStr};
-
-        let contr_method: Ident = input.parse()?;
-        let mut http_method: Option<HttpMethod> = None;
-        let mut path_str: Option<&str> = None;
-        match contr_method.to_string().as_str() {
-            "new_form" => {
-                http_method = Some(HttpMethod::Get);
-                path_str = Some("new");
-            }
-            "copy_form" => {
-                http_method = Some(HttpMethod::Get);
-                path_str = Some("<id>/copy");
-            }
-            "create" => {
-                http_method = Some(HttpMethod::Post);
-                path_str = Some("");
-            }
-            "ensure" => {
-                http_method = Some(HttpMethod::Post);
-                path_str = Some("ensure");
-            }
-            "index" => {
-                http_method = Some(HttpMethod::Get);
-                path_str = Some("");
-            }
-            "show" => {
-                http_method = Some(HttpMethod::Get);
-                path_str = Some("<id>");
-            }
-            "edit_form" => {
-                http_method = Some(HttpMethod::Get);
-                path_str = Some("<id>/edit");
-            }
-            "patch" => {
-                http_method = Some(HttpMethod::Post);
-                path_str = Some("<id>");
-            }
-            "replace" => {
-                http_method = Some(HttpMethod::Post);
-                path_str = Some("<id>/replace");
-            }
-            "delete" => {
-                http_method = Some(HttpMethod::Post);
-                path_str = Some("<id>/delete");
-            }
-            _ => (),
-        }
-        let mut path_string;
-        if input.peek(token::Brace) {
-            let content;
-            braced!(content in input);
-            match parse_entry::<Ident>(&content, "http_method")? {
-                Some(val) => {
-                    http_method = Some(
-                        HttpMethod::try_from(val.to_string().as_str())
-                            .map_err(|e| input.error(e.to_string()))?,
-                    );
+                .unwrap_or_else(|| parse_quote!(crate::controllers));
+            app_config.insert(
+                "controller_prefix".to_string(),
+                (parse_quote!(Path), expr.clone()),
+            );
+            expr
+        };
+        let mut routes: HashMap<Path, Vec<Handler>> = HashMap::new();
+        for (mut contr_path, handler) in parsed_routes.drain(..) {
+            match contr_path.get_ident() {
+                Some(id) => {
+                    contr_path.segments = parse_quote!(#contr_prefix::#id);
                 }
                 None => (),
             }
-            match parse_entry::<LitStr>(&content, "path")? {
-                Some(val) => {
-                    path_string = val.value();
-                    if 1 < path_string.len()
-                        && path_string.chars().last() == Some('/')
-                    {
-                        path_string.remove(path_string.len() - 1);
-                    }
-                    path_str = Some(&path_string);
+            match routes.get_mut(&contr_path) {
+                Some(hands) => hands.push(handler),
+                None => {
+                    routes.insert(contr_path, vec![handler]);
                 }
-                None => (),
             }
         }
-        if http_method.is_none() {
-            return Err(input.error("missing http_method"));
-        }
-        let http_method = http_method.unwrap();
-        if path_str.is_none() {
-            return Err(input.error("missing path"));
-        }
-        let (http_path, path_par_count) =
-            normalize_http_path(&path_str.unwrap());
         Ok(Self {
-            http_method,
-            http_path,
-            path_par_count,
-            contr_method,
+            plug_ins,
+            app_config,
+            routes,
+            not_found,
         })
     }
 }
 
-fn parse_entry<T>(input: ParseStream, nam: &str) -> syn::Result<Option<T>>
-where
-    T: Parse,
-{
-    use syn::token;
-    if !input.is_empty() {
-        let nam_id: Ident = input.fork().parse()?;
-        if &nam_id.to_string() == nam {
-            input.parse::<Ident>()?;
-            input.parse::<token::Colon>()?;
-            let value: T = input.parse()?;
-            if !input.is_empty() {
-                input.parse::<token::Comma>()?;
+#[derive(Clone, Debug)]
+struct ConfigItem {
+    level_1: ConfigItemId,
+    level_2: Option<Path>,
+    // level_3.first().unwrap().id == None => level_3.len() == 1.
+    level_3: Vec<Level3>,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ConfigItemId {
+    AppConfig,
+    NotFound,
+    PlugIn,
+    Routes,
+}
+
+impl ConfigItem {
+    // expects level_1 to be AppConfig
+    fn get_app_conf(
+        &self,
+        app_config: &mut HashMap<String, (Type, Expr)>,
+    ) -> ::syn::Result<()> {
+        match self.level_3.first() {
+            Some(l3) => {
+                for attr in &l3.attrs {
+                    app_config.insert(
+                        attr.id.to_string(),
+                        (attr.ty.clone(), attr.expr.clone()),
+                    );
+                }
             }
-            return Ok(Some(value));
+            _ => (),
         }
+        Ok(())
     }
-    Ok(None)
+
+    // expects level_1 to be NotFound
+    fn get_not_found(
+        &self,
+        not_found: &mut Option<(Path, Ident)>,
+    ) -> ::syn::Result<()> {
+        let mut func = None;
+        match self.level_3.first() {
+            Some(l3) => func = l3.id.clone(),
+            _ => (),
+        }
+        Ok(*not_found = Some((
+            self.level_2.clone().ok_or_else(|| {
+                syn_error("missing not_found controller Path")
+            })?,
+            func.ok_or_else(|| {
+                syn_error("missing not_found function Ident")
+            })?,
+        )))
+    }
+
+    // expects level_1 to be PlugIn
+    fn get_plug_in(
+        &self,
+        plug_ins: &mut HashMap<String, (Type, Expr)>,
+    ) -> ::syn::Result<()> {
+        let id = self
+            .level_2
+            .as_ref()
+            .and_then(|path| path.get_ident().map(|id| id.to_string()))
+            .ok_or_else(|| syn_error("missing plug in identifier"))?;
+        let l3 = self
+            .level_3
+            .first()
+            .ok_or_else(|| syn_error("missing plug in attributes"))?;
+        plug_ins.insert(id, {
+            let attr = l3
+                .attrs
+                .iter()
+                .find(|ci| ci.id.to_string() == "def")
+                .ok_or_else(|| {
+                    syn_error("missing plug in attribute 'def'")
+                })?;
+            (attr.ty.clone(), attr.expr.clone())
+        });
+        Ok(())
+    }
+
+    // expects level_1 to be Routes
+    fn get_routes(
+        &self,
+        routes: &mut Vec<(Path, Handler)>,
+    ) -> ::syn::Result<()> {
+        use ::case::CaseExt;
+        let contr_path = self
+            .level_2
+            .clone()
+            .ok_or_else(|| syn_error("missing route controller path"))?;
+        let contr_id = &contr_path.segments.last().unwrap().ident.clone();
+        let contr_id_snake = contr_id.to_string().to_snake();
+        for l3 in &self.level_3 {
+            let contr_method: Ident = l3
+                .id
+                .clone()
+                .ok_or_else(|| syn_error("missing route handler function"))?;
+            let mut http_method = HttpMethod::Get;
+            let mut path_str: Option<&str> = None;
+            match contr_method.to_string().as_str() {
+                "new_form" => path_str = Some("new"),
+                "copy_form" => path_str = Some("<id>/copy"),
+                "create" => {
+                    http_method = HttpMethod::Post;
+                    path_str = Some("");
+                }
+                "ensure" => {
+                    http_method = HttpMethod::Post;
+                    path_str = Some("ensure");
+                }
+                "index" => path_str = Some(""),
+                "show" => path_str = Some("<id>"),
+                "edit_form" => path_str = Some("<id>/edit"),
+                "patch" => {
+                    http_method = HttpMethod::Post;
+                    path_str = Some("<id>");
+                }
+                "replace" => {
+                    http_method = HttpMethod::Post;
+                    path_str = Some("<id>/replace");
+                }
+                "delete" => {
+                    http_method = HttpMethod::Post;
+                    path_str = Some("<id>/delete");
+                }
+                _ => (),
+            }
+            let mut path_string = path_str.map(|s| s.to_string());
+            for attr in &l3.attrs {
+                match attr.id.to_string().as_str() {
+                    "http_method" => {
+                        let mut error = Some(syn_error(&format!(
+                            "{} is not an HTTP method",
+                            tokens_to_string(&attr.expr),
+                        )));
+                        match &attr.expr {
+                            Expr::Path(expr_path) => {
+                                match expr_path.path.get_ident() {
+                                    Some(i) => {
+                                        match HttpMethod::try_from(
+                                            i.to_string().as_str(),
+                                        ) {
+                                            Ok(meth) => {
+                                                http_method = meth;
+                                                error = None;
+                                            }
+                                            Err(e) => {
+                                                error = Some(syn_error(
+                                                    &e.to_string(),
+                                                ))
+                                            }
+                                        }
+                                    }
+                                    None => (),
+                                }
+                            }
+                            _ => (),
+                        }
+                        if error.is_some() {
+                            return Err(error.unwrap());
+                        }
+                    }
+                    "path" => {
+                        let mut error = Some(syn_error(&format!(
+                            "{} is not a valid path string",
+                            tokens_to_string(&attr.expr),
+                        )));
+                        match &attr.expr {
+                            Expr::Lit(lit) => match &lit.lit {
+                                Lit::Str(ls) => {
+                                    let mut s = ls.value();
+                                    if 1 < s.len()
+                                        && s.chars().last() == Some('/')
+                                    {
+                                        s.remove(s.len() - 1);
+                                    }
+                                    path_string = Some(s);
+                                    error = None;
+                                }
+                                _ => (),
+                            },
+                            _ => (),
+                        }
+                        if error.is_some() {
+                            return Err(error.unwrap());
+                        }
+                    }
+                    _ => {
+                        return Err(syn_error(&format!(
+                            "unknown handler attribute {}",
+                            tokens_to_string(&attr.id),
+                        )));
+                    }
+                }
+            }
+            match path_string {
+                Some(ref mut s) if s.chars().nth(0) != Some('/') => {
+                    if !s.is_empty() {
+                        s.insert(0, '/');
+                    }
+                    s.insert_str(0, &contr_id_snake);
+                    s.insert(0, '/');
+                }
+                Some(_) => (),
+                None => return Err(syn_error("missing path")),
+            }
+            let (http_path, path_par_count) =
+                normalize_http_path(path_string.as_ref().unwrap());
+            routes.push((
+                contr_path.clone(),
+                Handler {
+                    http_method,
+                    http_path,
+                    path_par_count,
+                    contr_method,
+                },
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl Parse for ConfigItem {
+    fn parse(stream: ParseStream) -> ::syn::Result<Self> {
+        let level_1: ConfigItemId = {
+            let id = stream.parse::<Ident>()?.to_string();
+            match id.as_str() {
+                "app_config" => ConfigItemId::AppConfig,
+                "not_found" => ConfigItemId::NotFound,
+                "plug_in" => ConfigItemId::PlugIn,
+                "route" => ConfigItemId::Routes,
+                _ => {
+                    return Err(syn_error(&format!(
+                        "'{}' cannot start a Config item",
+                        &id
+                    )));
+                }
+            }
+        };
+        let level_2: Option<Path> = if stream.peek(token::Paren) {
+            let content;
+            parenthesized!(content in stream);
+            if content.is_empty() {
+                None
+            } else {
+                Some(content.parse()?)
+            }
+        } else {
+            None
+        };
+        let mut level_3: Vec<Level3> = Vec::new();
+        if stream.peek(token::Brace) && {
+            let fork = stream.fork();
+            let content;
+            braced!(content in fork);
+            content.peek(Ident) && content.peek2(token::Colon)
+        } {
+            // only lev 4
+            level_3.push(Level3 {
+                id: None,
+                attrs: get_config_attrs(stream)?,
+            });
+        } else {
+            let content;
+            braced!(content in stream);
+            level_3 = content
+                .parse_terminated::<Level3, token::Comma>(Level3::parse)?
+                .into_iter()
+                .collect();
+        }
+        Ok(Self {
+            level_1,
+            level_2,
+            level_3,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Level3 {
+    id: Option<Ident>,
+    attrs: Vec<ConfigAttr>,
+}
+
+impl Parse for Level3 {
+    fn parse(stream: ParseStream) -> ::syn::Result<Self> {
+        Ok(Self {
+            id: stream.parse()?,
+            attrs: get_config_attrs(stream)?,
+        })
+    }
+}
+
+fn get_config_attrs(stream: ParseStream) -> ::syn::Result<Vec<ConfigAttr>> {
+    Ok(if stream.peek(token::Brace) {
+        let content;
+        braced!(content in stream);
+        content
+            .parse_terminated::<ConfigAttr, token::Comma>(ConfigAttr::parse)?
+            .into_iter()
+            .collect()
+    } else {
+        Vec::new()
+    })
+}
+
+#[derive(Clone, Debug)]
+struct ConfigAttr {
+    id: Ident,
+    ty: Type,
+    expr: Expr,
+}
+
+impl Parse for ConfigAttr {
+    fn parse(stream: ParseStream) -> ::syn::Result<Self> {
+        let id: Ident = stream.parse()?;
+        stream.parse::<token::Colon>()?;
+        let mut ty: Option<Type> = None;
+        let expr: Option<Expr>;
+        if stream.peek(token::Paren) {
+            let content;
+            parenthesized!(content in stream);
+            ty = Some(content.parse()?);
+            content.parse::<token::Comma>()?;
+            expr = Some(content.parse()?);
+            let _ = content.parse::<token::Comma>();
+        } else {
+            expr = Some(stream.parse()?);
+            let mut error = Some(syn_error(&format!(
+                "cannot handle attribute value '{}'",
+                tokens_to_string(&expr.clone().unwrap()),
+            )));
+            match expr.clone().unwrap() {
+                Expr::Lit(l) => {
+                    error = None;
+                    match l.lit {
+                        Lit::Bool(_) => ty = Some(parse_quote!(bool)),
+                        Lit::Char(_) => ty = Some(parse_quote!(char)),
+                        Lit::Float(_) => ty = Some(parse_quote!(f64)),
+                        Lit::Int(_) => ty = Some(parse_quote!(i64)),
+                        Lit::Str(_) => ty = Some(static_str_type()),
+                        _ => {
+                            error = Some(syn_error(&format!(
+                                "cannot handle literal '{}'",
+                                tokens_to_string(&l.lit),
+                            )));
+                        }
+                    }
+                }
+                Expr::Path(p) if p.path.get_ident().is_some() => {
+                    ty = Some(parse_quote!(()));
+                    error = None;
+                }
+                _ => (),
+            }
+            if error.is_some() {
+                return Err(error.unwrap());
+            }
+        }
+        Ok(Self {
+            id,
+            ty: ty.clone().unwrap(),
+            expr: expr.clone().unwrap(),
+        })
+    }
+}
+
+fn syn_error(e: &str) -> ::syn::Error {
+    ::syn::Error::new(::proc_macro2::Span::call_site(), e)
 }
 
 /// Normalize an HTTP path from e.g. `"/a/<`...`>/b/<`...`>/c"` to a pair <br>
@@ -663,7 +980,7 @@ where
 ///
 fn normalize_http_path(http_path: &str) -> (String, usize) {
     ::lazy_static::lazy_static! {
-        static ref ANGLES: ::regex::Regex = 
+        static ref ANGLES: ::regex::Regex =
             ::regex::Regex::new(r"<[^>]*>").unwrap();
     }
     let mut result: (String, usize) = (String::new(), 0);
@@ -747,19 +1064,9 @@ impl FormData {
         }
     }
 
-    /*
-    fn iter(&self) -> Option<Iter<Self>> {
-        if let FormData::Arr(arr) = self {
-            Some(arr.iter())
-        } else {
-            None
-        }
-    }
-    */
-
     fn parse(vals: Vec<(String, String)>) -> Result<Self, Error> {
         ::lazy_static::lazy_static! {
-            static ref BRACKETS: ::regex::Regex = 
+            static ref BRACKETS: ::regex::Regex =
                 ::regex::Regex::new(r"\[([^]]*)\]").unwrap();
         }
         let mut result = FormData::new();
@@ -843,4 +1150,8 @@ impl Serialize for FormData {
             Self::Leaf(l) => serializer.serialize_str(l),
         }
     }
+}
+
+fn static_str_type() -> Type {
+    parse_quote!(&'static str)
 }

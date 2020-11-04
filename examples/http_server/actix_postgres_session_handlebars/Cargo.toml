@@ -1,5 +1,5 @@
 [package]
-name = "vicocomo_example_actix"
+name = "vicocomo_example_actix_postgres_session_handlebars"
 version = "0.1.15"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
@@ -10,12 +10,11 @@ actix-rt = "*"
 actix-session = "*"
 actix-web = "*"
 dotenv = "*"
-lazy_static = "*"
-regex = "*"
 serde = { version = "*", features = ["derive"] }
 tokio = { version = "0.2.22", features = ["full"] }
 tokio-postgres = "0.5.5"
 vicocomo = { path = "../../.." }
 vicocomo_actix = { path = "../../../vicocomo_actix" }
 vicocomo_handlebars = { path = "../../../vicocomo_handlebars" }
+vicocomo_postgres = { path = "../../../vicocomo_postgres" }
 

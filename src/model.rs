@@ -105,8 +105,10 @@ pub trait BeforeDelete {
     /// An `Err` return value means that `self` cannot be deleted, and
     /// [`delete()`](trait.Delete.html#tymethod.delete) should return `Err`
     /// as well.  `before_delete()` should *not* handle objects related to
-    /// `self` by [`HasMany`](../derive.HasMany.html.html) associations.
-    /// Those should be handled by `delete()` directly.
+    /// `self` by [`HasMany`
+    /// ](../../vicocomo_model_derive/derive.HasMany.html.html) associations.
+    /// Those should be handled by [`delete()`
+    /// ](trait.Delete.html#tymethod.delete) directly.
     ///
     fn before_delete(&mut self, db: &impl DbConn) -> Result<(), Error>;
 }
@@ -227,7 +229,7 @@ pub trait Save: Sized {
     ///
     /// The implementation should ensure referential integrity if the
     /// implementor derives [`BelongsTo`](../derive.BelongsTo.html), see
-    /// [`insert()`](#tymethod.insert.html).
+    /// [`insert()`](#method.insert.html).
     ///
     fn insert_batch(
         db: &impl DbConn,
@@ -239,7 +241,7 @@ pub trait Save: Sized {
     /// If a row with the object's primary key exists in the database, this
     /// should be equivalent to [`update()`](trait.Save.html#tymethod.update).
     /// If not, this should be equivalent to [`insert()`
-    /// ](trait.Save.html#tymethod.insert).
+    /// ](trait.Save.html#method.insert).
     ///
     /// The default implementation tries first `update()`, then `insert()`.
     ///
@@ -255,7 +257,7 @@ pub trait Save: Sized {
     ///
     /// The implementation should ensure referential integrity if the
     /// implementor derives [`BelongsTo`](../derive.BelongsTo.html), see
-    /// [`insert()`](#tymethod.insert.html).
+    /// [`insert()`](#method.insert.html).
     ///
     fn update(&mut self, db: &impl DbConn) -> Result<(), Error>;
 
@@ -283,13 +285,14 @@ pub trait BeforeSave {
     /// Do whatever necessary before saving `self` to the database.
     ///
     /// An `Err` return value means that `self` cannot be saved, and
-    /// [`insert()`](trait.Save.html#tymethod.insert),
-    /// [`save()`](trait.Save.html#tymethod.save), and
+    /// [`insert()`](trait.Save.html#method.insert),
+    /// [`save()`](trait.Save.html#method.save), and
     /// [`update()`](trait.Save.html#tymethod.update) should return `Err` as
     /// well.  `before_save()` should *not* handle referential integrity for
     /// [`BelongsTo`](../derive.BelongsTo.html) associations.  Those should be
-    /// handled by [`insert()`](trait.Save.html#tymethod.insert), `save()`,
-    /// and `update()` directly.
+    /// handled by [`insert()`](trait.Save.html#method.insert), [`save()`
+    /// ](trait.Save.html#method.save), and [`update()`
+    /// ](trait.Save.html#tymethod.update) directly.
     ///
     fn before_save(&mut self, db: &impl DbConn) -> Result<(), Error>;
 }

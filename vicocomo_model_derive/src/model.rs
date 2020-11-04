@@ -368,10 +368,9 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             if compute.contains(&ExtraInfo::DatabaseTypes) {
                 use ::lazy_static::lazy_static;
                 use ::quote::format_ident;
-                use ::std::{fs::read_to_string, collections::HashMap};
+                use ::std::{collections::HashMap, fs::read_to_string};
                 lazy_static! {
-                    pub static ref DB_TYPES: HashMap<String, (String, bool)> =
-                    {
+                    pub static ref DB_TYPES: HashMap<String, (String, bool)> = {
                         let mut map = HashMap::new();
                         let mut db_types = "
                             f32 => Float,
@@ -387,41 +386,40 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                             NaiveTime => Int,
                             String => Text,
                             "
-                            .to_string();
+                        .to_string();
                         db_types.extend(
                             read_to_string("config/db-types.cfg")
                                 .unwrap_or_else(|_| String::new())
                                 .chars(),
                         );
-                        for defs in db_types
-                            .split(',')
-                            .map(|typ_var| {
-                                let mut typ_var = typ_var.split("=>");
-                                let typ_str = typ_var.next().unwrap().trim();
-                                typ_var.next().map(|s| {
-                                    let var_str = s.trim();
-                                    (
-                                        format_ident!("{}", typ_str),
-                                        format!(
-                                            "::vicocomo::DbType::{}",
-                                            var_str,
-                                        ),
-                                        format!(
-                                            "::vicocomo::DbType::Nul{}",
-                                            var_str,
-                                        ),
-                                    )
-                                })
+                        for defs in db_types.split(',').map(|typ_var| {
+                            let mut typ_var = typ_var.split("=>");
+                            let typ_str = typ_var.next().unwrap().trim();
+                            typ_var.next().map(|s| {
+                                let var_str = s.trim();
+                                (
+                                    format_ident!("{}", typ_str),
+                                    format!(
+                                        "::vicocomo::DbType::{}",
+                                        var_str,
+                                    ),
+                                    format!(
+                                        "::vicocomo::DbType::Nul{}",
+                                        var_str,
+                                    ),
+                                )
                             })
-                        {
+                        }) {
                             defs.map(|(typ_id, var_str, nul_str)| {
                                 let typ: Type = parse_quote!(#typ_id);
                                 let opt: Type = parse_quote!(Option<#typ_id>);
                                 map.insert(
-                                    tokens_to_string(&typ), (var_str, false),
+                                    tokens_to_string(&typ),
+                                    (var_str, false),
                                 );
                                 map.insert(
-                                    tokens_to_string(&opt), (nul_str, true)
+                                    tokens_to_string(&opt),
+                                    (nul_str, true),
                                 );
                             });
                         }
@@ -434,21 +432,19 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                     &field.ty
                 });
                 let db_type = DB_TYPES.get(&type_string);
-                dbt = db_type.map(
-                    |(dbt_str, nullable)| {
+                dbt = db_type
+                    .map(|(dbt_str, nullable)| {
                         let parsed = ::syn::parse_macro_input::parse::<Expr>(
                             dbt_str.parse::<TokenStream>().unwrap(),
                         );
-                        (
-                            parsed.unwrap(),
-                            *nullable,
+                        (parsed.unwrap(), *nullable)
+                    })
+                    .or_else(|| {
+                        panic!(
+                            "Type {} not allowed in a vicocomo model",
+                            type_string,
                         )
-                    }
-                )
-                .or_else(|| panic!(
-                    "Type {} currently not allowed in a vicocomo model",
-                    type_string,
-                ));
+                    });
             }
             fields.push(Field {
                 id,
@@ -834,8 +830,8 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                             for entry in list.nested.iter() {
                                 match entry {
                                     NestedMeta::Meta(nested) => match nested {
-Meta::NameValue(n_v) => {
-    match n_v.path.get_ident().unwrap().to_string().as_str() {
+                                        Meta::NameValue(n_v) => {
+                                            match n_v.path.get_ident().unwrap().to_string().as_str() {
         "join_fk_col" =>
         match &n_v.lit {
             Lit::Str(s) => join_fk_col = Some(s.value()),
@@ -907,8 +903,8 @@ Meta::NameValue(n_v) => {
         }
         _ => panic!(EXPECT_HAS_MANY_ERROR),
     }
-}
-_ => panic!(EXPECT_HAS_MANY_ERROR),
+                                        }
+                                        _ => panic!(EXPECT_HAS_MANY_ERROR),
                                     },
                                     _ => panic!(EXPECT_HAS_MANY_ERROR),
                                 }

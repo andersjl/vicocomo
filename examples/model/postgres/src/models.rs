@@ -228,7 +228,8 @@ pub mod single_pk {
 
     impl ::vicocomo::BeforeSave for SinglePk {
         fn before_save(
-            &mut self, _db: &impl ::vicocomo::DbConn
+            &mut self,
+            _db: &impl ::vicocomo::DbConn,
         ) -> Result<(), ::vicocomo::Error> {
             if self.name.as_ref().map(|n| n.is_empty()).unwrap_or(false) {
                 Err(::vicocomo::Error::invalid_input("name empty"))

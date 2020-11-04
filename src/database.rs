@@ -142,21 +142,21 @@ db_value_convert! { no_option_type, f64, Float }
 db_value_convert! { no_option_type, i32, Int }
 db_value_convert! { no_option_type, i64, Int }
 db_value_convert! {
-    no_option_type, 
+    no_option_type,
     NaiveDate,
     Int,
     NaiveDate::from_num_days_from_ce(value as i32),
     other.num_days_from_ce() as i64,
 }
 db_value_convert! {
-    no_option_type, 
+    no_option_type,
     NaiveDateTime,
     Int,
     NaiveDateTime::from_timestamp(value, 0),
     other.timestamp(),
 }
 db_value_convert! {
-    no_option_type, 
+    no_option_type,
     NaiveTime,
     Int,
     NaiveTime::from_num_seconds_from_midnight(value as u32, 0),
@@ -166,3 +166,24 @@ db_value_convert! { no_option_type, String, Text }
 db_value_convert! { no_option_type, u32, Int }
 db_value_convert! { no_option_type, u64, Int }
 db_value_convert! { no_option_type, usize, Int }
+
+/// An implementation of [`DbConn`](trait.DbConn.html) that does nothing and
+/// returns [`Error`](../error/enum.Error.html).
+///
+#[derive(Clone, Debug)]
+pub struct NullConn;
+
+impl DbConn for NullConn {
+    fn exec(&self, _sql: &str, _vals: &[DbValue]) -> Result<usize, Error> {
+        Err(Error::database("no database"))
+    }
+
+    fn query(
+        &self,
+        _sql: &str,
+        _values: &[DbValue],
+        _types: &[DbType],
+    ) -> Result<Vec<Vec<DbValue>>, Error> {
+        Err(Error::database("no database"))
+    }
+}

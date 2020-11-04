@@ -8,8 +8,8 @@ edition = "2018"
 chrono = "*"
 dotenv = "*"
 futures = "*"
-tokio = { version = "*", features = ["macros", "rt-threaded"] }
-tokio-postgres = "*"
+tokio = { version = "0.2.22", features = ["full"] }
+tokio-postgres = "0.5.5"
 vicocomo = { path = "../../.." }
 vicocomo_postgres = { path = "../../../vicocomo_postgres" }
 

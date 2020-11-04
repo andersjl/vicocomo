@@ -2,17 +2,81 @@
 
 use proc_macro::TokenStream;
 
+/// A macro that uses [`vicocomo::http_server::Config`
+/// ](../vicocomo/http_server/struct.Config.html) to implement `actix_main()`.
+/// ```text
+/// pub fn actix_main() -> std::io::Result<()>
+/// ```
+/// # Usage
+/// ```text
+/// vicocomo_actix::config {
+///     plug_in(DbConn) {
+///         def: (
+///             vicocomo_postgres::PgConn,
+///             {
+///                 let (client, connection) = tokio_postgres::connect(
+///                         "postgres://my_usr:my_pwd@localhost/my_db,
+///                         tokio_postgres::NoTls,
+///                     )
+///                     .await
+///                     .expect("could not get connection");
+///                 tokio::spawn(async move {
+///                     if let Err(e) = connection.await {
+///                         eprintln!("could not init connection: {}", e);
+///                     }
+///                 });
+///                 vicocomo_postgres::PgConn::new(client)
+///             },
+///         ),
+///     },
+///     plug_in(SessionStore) {
+///         def: (
+///             // the type is ignored by vicocomo_actix but still required
+///             (),
+///             // for technical reasons this should evaluate to a
+///             // CookieSession rather than a vicocomo::SessionStore
+///             ::actix_session::CookieSession::signed(&[0; 32])
+///                 .secure(false),
+///         ),
+///     },
+///     plug_in(TemplEng) {
+///         def: (
+///             ::vicocomo_handlebars::HbTemplEng<'_>,
+///             ::vicocomo_handlebars::HbTemplEng::new(None),
+///         ),
+///     },
+///     route(static) { home { path: "/" },
+/// }
+///
+/// fn main() -> std::io::Result<()> {
+///     actix_main()
+/// }
+/// ```
+/// (see [`vicocomo::http_server::Config`
+/// ](../vicocomo/http_server/struct.Config.html)).
+///
 #[proc_macro]
 pub fn config(input: TokenStream) -> TokenStream {
-    use ::vicocomo::{Config, Handler};
-    use case::CaseExt;
-    use quote::{format_ident, quote};
-    use syn::{
+    use ::case::CaseExt;
+    use ::quote::{format_ident, quote};
+    use ::syn::{
         export::Span, parse_macro_input, parse_quote, punctuated::Punctuated,
         token, Expr, FnArg, Ident, LitStr, Path,
     };
+    use ::vicocomo::{Config, Handler};
 
-    let Config { routes, not_found } = parse_macro_input!(input as Config);
+    let Config {
+        plug_ins,
+        app_config,
+        routes,
+        not_found,
+    } = parse_macro_input!(input as Config);
+    let (db_type, db_init) = plug_ins.get("DbConn").unwrap();
+    let (sess_type, sess_init) = plug_ins.get("SessionStore").unwrap();
+    // below is because we want no session middleware for NullStore
+    let has_session_store =
+        !(sess_type == &parse_quote!(::vicocomo::NullStore));
+    let (templ_type, templ_init) = plug_ins.get("TemplEng").unwrap();
     let mut handler_fn_vec: Vec<Ident> = Vec::new();
     let mut http_meth_vec: Vec<Ident> = Vec::new();
     let mut http_path_vec: Vec<LitStr> = Vec::new();
@@ -21,13 +85,23 @@ pub fn config(input: TokenStream) -> TokenStream {
     let mut controller_vec: Vec<Path> = Vec::new();
     let mut contr_meth_vec: Vec<Ident> = Vec::new();
     let mut path_pars_expr_vec: Vec<Expr> = Vec::new();
-    let hndl_pars_min: Punctuated<FnArg, token::Comma> = parse_quote!(
-        db: actix_web::web::Data<::vicocomo_postgres::PgConn>,
-        sess: actix_session::Session,
-        hb: actix_web::web::Data<::vicocomo_handlebars::HbTemplEng<'_>>,
-        ax_req: actix_web::HttpRequest,
-        body: String,
+    let mut hndl_pars_min: Punctuated<FnArg, token::Comma> = parse_quote!(
+        db: actix_web::web::Data<#db_type>,
     );
+    if has_session_store {
+        hndl_pars_min.push(parse_quote!(sess: actix_session::Session));
+    }
+    hndl_pars_min.push(parse_quote!(hb: actix_web::web::Data<#templ_type>));
+    hndl_pars_min.push(parse_quote!(ax_req: actix_web::HttpRequest));
+    hndl_pars_min.push(parse_quote!(body: String));
+    let mut session_middleware: Vec<Expr> = Vec::new();
+    let mut session_store: Expr = sess_init.clone();
+    if has_session_store {
+        session_middleware.push(session_store);
+        session_store =
+            parse_quote!(vicocomo_actix::AxSessionStore::new(sess));
+    } else {
+    }
     for contr_path in routes.keys() {
         let contr_path_snake = contr_path
             .segments
@@ -72,33 +146,15 @@ pub fn config(input: TokenStream) -> TokenStream {
     TokenStream::from(quote! {
 
         #[actix_rt::main]
-        async fn main() -> std::io::Result<()> {
-            ::dotenv::dotenv().ok();
-            let (client, connection) = tokio_postgres::connect(
-                &std::env::var("DATABASE_URL")
-                    .expect("DATABASE_URL must be set"),
-                tokio_postgres::NoTls,
-            )
-            .await
-            .expect("could not get connection");
-            tokio::spawn(async move {
-                if let Err(e) = connection.await {
-                    eprintln!("could not init connection: {}", e);
-                }
-            });
-            let database_ref = actix_web::web::Data::new(
-                ::vicocomo_postgres::PgConn::new(client),
-            );
-            let handlebars = ::vicocomo_handlebars::HbTemplEng::new(None);
-            let handlebars_ref = actix_web::web::Data::new(handlebars);
+        pub async fn actix_main() -> std::io::Result<()> {
+            let database_ref = actix_web::web::Data::new(#db_init);
+            let handlebars_ref = actix_web::web::Data::new(#templ_init);
             let port_str = std::env::var("PORT").unwrap_or_default();
             actix_web::HttpServer::new(move || {
                 actix_web::App::new()
                     .app_data(database_ref.clone())
                     .app_data(handlebars_ref.clone())
-                    .wrap( actix_session::CookieSession::signed(&[0; 32])
-                        .secure(false)
-                    )
+                #(  .wrap(#session_middleware))*
                 #(
                     .service(
                         actix_web::web::resource(#http_path_vec)
@@ -148,9 +204,7 @@ pub fn config(input: TokenStream) -> TokenStream {
                         &vi_req,
                         hb.into_inner().as_ref(),
                         db.into_inner().as_ref(),
-                        ::vicocomo::Session::new(
-                            &vicocomo_actix::AxSessionStore::new(sess)
-                        ),
+                        ::vicocomo::Session::new(&#session_store),
                         &mut vi_resp,
                     );
                     vi_resp.response()
