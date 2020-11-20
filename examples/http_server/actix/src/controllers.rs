@@ -1,37 +1,33 @@
-use ::vicocomo::{
-    view::render_template, DbConn, Request, Response, Session, TemplEng,
-};
+use ::vicocomo::{view::render_template, DatabaseIf, HttpServerIf, TemplEngIf};
 use serde::Serialize;
 
 pub struct Static;
 
 impl Static {
     pub fn home(
-        req: &impl Request,
-        teng: &impl TemplEng,
-        _db: &impl DbConn,
-        _sess: Session,
-        resp: &mut impl Response,
+        _db: DatabaseIf,
+        srv: HttpServerIf,
+        teng: TemplEngIf,
     ) {
         use ::vicocomo::t;
         #[derive(Serialize)]
         struct Data {
             hej: &'static str,
-            i: &'static str,
+            path: String,
             more: Option<&'static str>,
             partial: String,
             root: String,
         }
         render_template(
-            resp,
+            srv,
             teng,
             "home",
             &Data {
                 hej: "hopp",
-                i: "lingonskogen",
+                path: srv.req_path(),
                 more: Some("mera"),
                 partial: format!("header-{}", t!("lang")),
-                root: match req.url_for("/", Some(&[""])) {
+                root: match srv.url_for("/<param>", Some(&["42"])) {
                     Ok(url) => url,
                     Err(e) => e.to_string(),
                 },

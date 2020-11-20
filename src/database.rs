@@ -4,8 +4,74 @@ use crate::{db_value_convert, Error};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use std::fmt;
 
-/// An SQL abstraction trait for use by other `vicocomo` modules as well as
+/// An SQL abstraction for use by other `vicocomo` modules as well as
 /// applications.
+///
+#[derive(Clone, Copy)]
+pub struct DatabaseIf<'a>(&'a dyn DbConn);
+
+impl<'a> DatabaseIf<'a> {
+    /// Create an interface to `client`.
+    ///
+    pub fn new(client: &'a impl DbConn) -> Self {
+        Self(client)
+    }
+
+    /// Begin a transaction.
+    ///
+    pub fn begin(&self) -> Result<(), Error> {
+        self.0.begin()
+    }
+
+    /// Commit the present transaction.
+    ///
+    pub fn commit(&self) -> Result<(), Error> {
+        self.0.commit()
+    }
+
+    /// Execute an SQL statement.
+    ///
+    /// `sql` is the statement, which may be parameterized using `$1`, `$2`,
+    /// ... to indicate the position of the parameter in `values`.
+    ///
+    /// `values` are the values for the parameters in `sql`.
+    ///
+    /// Returns the number of affected rows.
+    ///
+    pub fn exec(&self, sql: &str, values: &[DbValue]) -> Result<usize, Error> {
+        self.0.exec(sql, values)
+    }
+
+    /// Execute an SQL query and return the result.
+    ///
+    /// `sql` is the query, which may be parameterized using `$1`, `$2`, ...
+    /// to indicate the position of the parameter in `values`.
+    ///
+    /// `values` are the values for the parameters in `sql`.
+    ///
+    /// `types` indicates how the implementation should convert the result to
+    /// `DbValue` vectors.  `types.len()` must equal the length of each of the
+    /// returned `DbValue` vectors.
+    ///
+    /// Returns the result as a vector of vectors of `DbValue`.
+    ///
+    pub fn query(
+        &self,
+        sql: &str,
+        values: &[DbValue],
+        types: &[DbType],
+    ) -> Result<Vec<Vec<DbValue>>, Error> {
+        self.0.query(sql, values, types)
+    }
+
+    /// Rollback the present transaction.
+    ///
+    pub fn rollback(&self) -> Result<(), Error> {
+        self.0.rollback()
+    }
+}
+
+/// An SQL abstraction trait for database adapter developers.
 ///
 pub trait DbConn {
     /// Begin a transaction.  The default method simply uses `exec()` to send
@@ -22,29 +88,11 @@ pub trait DbConn {
         self.exec("COMMIT", &[]).map(|_| ())
     }
 
-    /// Execute an SQL statement.
-    ///
-    /// `sql` is the statement, which may be parameterized using `$1`, `$2`,
-    /// ... to indicate the position of the parameter in `values`.
-    ///
-    /// `values` are the values for the parameters in `sql`.
-    ///
-    /// Returns the number of affected rows.
+    /// See [`DatabaseIf::exec()`](struct.DatabaseIf.html#method.exec)
     ///
     fn exec(&self, sql: &str, values: &[DbValue]) -> Result<usize, Error>;
 
-    /// Execute an SQL query and return the result.
-    ///
-    /// `sql` is the query, which may be parameterized using `$1`, `$2`, ...
-    /// to indicate the position of the parameter in `values`.
-    ///
-    /// `values` are the values for the parameters in `sql`.
-    ///
-    /// `types` indicates how the implementation should convert the result to
-    /// `DbValue` vectors.  `types.len()` must equal the length of each of the
-    /// returned `DbValue` vectors.
-    ///
-    /// Returns the result as a vector of vectors of `DbValue`.
+    /// See [`DatabaseIf::query()`](struct.DatabaseIf.html#method.query)
     ///
     fn query(
         &self,

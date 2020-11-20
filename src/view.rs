@@ -1,20 +1,20 @@
 //! W.I.P.  Help to implement the View part of the
 //! View-Controller-Context-Model pattern.
 
-use crate::{Response, TemplEng};
+use crate::{HttpServerIf, TemplEngIf};
 use serde::Serialize;
 
 pub fn render_template(
-    resp: &mut impl Response,
-    tmpl: &impl TemplEng,
+    srv: HttpServerIf,
+    teng: TemplEngIf,
     template: &str,
     data: &impl Serialize,
 ) {
-    match tmpl.render(template, data) {
+    match teng.render(template, data) {
         Ok(s) => {
-            resp.resp_body(&s);
-            resp.ok();
+            srv.resp_body(&s);
+            srv.resp_ok();
         }
-        Err(e) => resp.internal_server_error(Some(&e)),
+        Err(e) => srv.resp_error(Some(&e)),
     }
 }

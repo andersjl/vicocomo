@@ -10,13 +10,13 @@ pub mod view;
 pub use ::vicocomo_db_macro::db_value_convert;
 pub use ::vicocomo_html_derive::PathTag;
 pub use ::vicocomo_active_record::{BelongsTo, Delete, Find, HasMany, Save};
-pub use controller::Controller;
-pub use database::{DbConn, DbType, DbValue, NullConn};
+pub use controller::{Controller/*, Dispatcher, NewHandler*/};
+pub use database::{DatabaseIf, DbConn, DbType, DbValue, NullConn};
 pub use error::Error;
 pub use html::*;
 pub use http_server::{
-    Config, Handler, HttpMethod, NullEng, NullStore, Request, Response,
-    Session, SessionStore, TemplEng,
+    Config, Handler, HttpMethod, HttpServer, HttpServerIf, NullSession,
+    Session, TemplEng, TemplEngIf,
 };
 pub use active_record::{
     BeforeDelete, BeforeSave, Delete, Find, Order, Query, QueryBld, Save,

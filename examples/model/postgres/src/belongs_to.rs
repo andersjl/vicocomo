@@ -2,9 +2,9 @@ use super::models::{
     default_parent::DefaultParent, multi_pk::MultiPk,
     other_parent::NonstandardParent,
 };
-use ::vicocomo::{Find, Save};
+use ::vicocomo::{DatabaseIf, Find, Save};
 
-pub fn test_belongs_to(db: &::vicocomo_postgres::PgConn) {
+pub fn test_belongs_to(db: DatabaseIf) {
     let (mut m, _m2, _dp, mut bp, np) = super::models::setup(db);
 
     println!("\nBelongsTo associations ----------------------------------\n");

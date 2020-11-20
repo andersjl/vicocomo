@@ -1,6 +1,7 @@
-pub fn test_single_pk(db: &::vicocomo_postgres::PgConn) {
+use ::vicocomo::DatabaseIf;
+pub fn test_single_pk(db: DatabaseIf) {
     use super::models::single_pk::SinglePk;
-    use ::vicocomo::{DbConn, DbValue, Delete, Find, QueryBld, Save};
+    use ::vicocomo::{DbValue, Delete, Find, QueryBld, Save};
 
     super::models::setup(db);
 

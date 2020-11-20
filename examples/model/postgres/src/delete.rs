@@ -2,9 +2,9 @@ use super::models::{
     multi_pk::MultiPk, multi_pk_templ, other_parent::NonstandardParent,
     setup_many_to_many, single_pk::SinglePk,
 };
-use ::vicocomo::{DbConn, DbValue, Delete, Find, Save};
+use ::vicocomo::{DatabaseIf, DbValue, Delete, Find, Save};
 
-pub fn test_delete(db: &::vicocomo_postgres::PgConn) {
+pub fn test_delete(db: DatabaseIf) {
     let (m, _m2, dp, bp, np) = super::models::setup(db);
     let s = single_pk(db, 1);
 
@@ -147,7 +147,7 @@ pub fn test_delete(db: &::vicocomo_postgres::PgConn) {
     println!("    OK");
 }
 
-fn single_pk(db: &::vicocomo_postgres::PgConn, un2: i32) -> SinglePk {
+fn single_pk(db: DatabaseIf, un2: i32) -> SinglePk {
     let mut result = SinglePk {
         id: None,
         name: None,

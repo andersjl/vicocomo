@@ -3,6 +3,7 @@ use {
     default_parent::DefaultParent, multi_pk::MultiPk,
     other_parent::NonstandardParent,
 };
+use ::vicocomo::DatabaseIf;
 
 pub fn multi_pk_templ() -> MultiPk {
     MultiPk {
@@ -31,7 +32,7 @@ pub fn multi_pk_templ() -> MultiPk {
 }
 
 pub fn setup_many_to_many(
-    db: &::vicocomo_postgres::PgConn,
+    db: DatabaseIf,
 ) -> (
     default_parent::DefaultParent,
     default_parent::DefaultParent,
@@ -229,7 +230,7 @@ pub mod single_pk {
     impl ::vicocomo::BeforeSave for SinglePk {
         fn before_save(
             &mut self,
-            _db: &impl ::vicocomo::DbConn,
+            _db: ::vicocomo::DatabaseIf,
         ) -> Result<(), ::vicocomo::Error> {
             if self.name.as_ref().map(|n| n.is_empty()).unwrap_or(false) {
                 Err(::vicocomo::Error::invalid_input("name empty"))
@@ -241,7 +242,7 @@ pub mod single_pk {
 }
 
 pub fn setup(
-    db: &::vicocomo_postgres::PgConn,
+    db: DatabaseIf,
 ) -> (
     MultiPk,
     MultiPk,
@@ -249,7 +250,7 @@ pub fn setup(
     NonstandardParent,
     NonstandardParent,
 ) {
-    use ::vicocomo::{DbConn, Find, Save};
+    use ::vicocomo::{Find, Save};
 
     db.exec("DROP TABLE IF EXISTS joins", &[]).unwrap();
     db.exec("DROP TABLE IF EXISTS multi_pks", &[]).unwrap();

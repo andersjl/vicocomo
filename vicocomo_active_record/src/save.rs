@@ -144,7 +144,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
     let gen = quote! {
         impl ::vicocomo::Save for #struct_id {
             fn insert_batch(
-                db: &impl ::vicocomo::DbConn,
+                db: ::vicocomo::DatabaseIf,
                 data: &mut [Self],
             ) -> Result<Vec<Self>, ::vicocomo::Error> {
                 let mut inserts: std::collections::HashMap<
@@ -173,7 +173,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
                 Ok(result)
             }
 
-            fn update(&mut self, db: &impl ::vicocomo::DbConn)
+            fn update(&mut self, db: ::vicocomo::DatabaseIf)
                 -> Result<(), ::vicocomo::Error>
             {
                 use ::std::convert::TryInto;
@@ -202,7 +202,7 @@ pub(crate) fn save_impl(model: &Model) -> TokenStream {
             }
             fn update_columns(
                 &mut self,
-                db: &impl ::vicocomo::DbConn,
+                db: ::vicocomo::DatabaseIf,
                 cols: &[(&str, ::vicocomo::DbValue)],
             ) -> Result<(), ::vicocomo::Error> {
                 use ::std::convert::TryInto;

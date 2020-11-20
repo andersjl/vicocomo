@@ -128,7 +128,7 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
                 impl #struct_id {
                     pub fn #connect_to_id(
                         &self,
-                        db: &impl ::vicocomo::DbConn,
+                        db: ::vicocomo::DatabaseIf,
                         remote: &#remote_type,
                     ) -> Result<usize, ::vicocomo::Error> {
                         db.exec(#connect_sql, #join_col_vals_expr)
@@ -136,7 +136,7 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
 
                     pub fn #disconnect_from_id(
                         &self,
-                        db: &impl ::vicocomo::DbConn,
+                        db: ::vicocomo::DatabaseIf,
                         remote: &#remote_type,
                     ) -> Result<usize, ::vicocomo::Error> {
                         db.exec(#disconnect_sql, #join_col_vals_expr)
@@ -149,7 +149,7 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
             impl #struct_id {
                 pub fn #get_id(
                     &self,
-                    db: &impl ::vicocomo::DbConn,
+                    db: ::vicocomo::DatabaseIf,
                     filter: Option<&::vicocomo::Query>,
                 ) -> Result<Vec<#remote_type>, ::vicocomo::Error> {
                     use ::vicocomo::Find;

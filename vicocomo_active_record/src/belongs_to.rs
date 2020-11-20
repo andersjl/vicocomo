@@ -113,7 +113,7 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
         gen.extend(quote! {
             impl #struct_id {
                 pub fn #all_belonging_to_id(
-                    db: &impl ::vicocomo::DbConn,
+                    db: ::vicocomo::DatabaseIf,
                     remote: &#remote_type
                 ) -> Result<Vec<Self>, ::vicocomo::Error> {
                     use ::vicocomo::Find;
@@ -125,7 +125,7 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
                             .unwrap(),
                     )
                 }
-                pub fn #get_id(&self, db: &impl ::vicocomo::DbConn)
+                pub fn #get_id(&self, db: ::vicocomo::DatabaseIf)
                     -> Option<#remote_type>
                 {
                     use ::vicocomo::Find;
@@ -139,7 +139,7 @@ pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
                 }
                 pub fn #siblings_id(
                     &mut self,
-                    db: &impl ::vicocomo::DbConn
+                    db: ::vicocomo::DatabaseIf
                 ) -> Result<Vec<Self>, ::vicocomo::Error> {
                     use ::vicocomo::Find;
                     Self::query(

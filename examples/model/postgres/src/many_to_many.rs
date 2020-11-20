@@ -1,7 +1,7 @@
 use super::models::setup_many_to_many;
-use ::vicocomo::{DbValue, QueryBld};
+use ::vicocomo::{DatabaseIf, DbValue, QueryBld};
 
-pub fn test_many_to_many(db: &::vicocomo_postgres::PgConn) {
+pub fn test_many_to_many(db: DatabaseIf) {
     /*let (m, _m2, _dp, bp, np) =*/
     super::models::setup(db);
     //let s = single_pk(db, 1);

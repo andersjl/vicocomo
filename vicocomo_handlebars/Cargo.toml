@@ -8,5 +8,6 @@ edition = "2018"
 futures = "*"
 handlebars = { version = "*", features = ["dir_source"] }
 serde = { version = "*", features = ["derive"] }
+serde_json = "*"
 vicocomo = { path = ".." }
 

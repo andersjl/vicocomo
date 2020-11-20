@@ -1,28 +1,28 @@
 //! (Ab)use `actix-web` as the web server for a vicocomo application.
 //!
+//! Implements [`vicocomo::HttpServer`](../../vicocomo/trait.HttpServer.html)
+//! for [`actix-web`](../../actix-web/index.html).
+//!
 
-use ::vicocomo::{Error, Request, Response, SessionStore};
+use ::vicocomo::{Error, HttpServer};
 pub use ::vicocomo_actix_config::config;
-use actix_web;
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
-/// Implements [`vicocomo::HttpServer`](../../vicocomo/module.HttpServer.html)
-/// traits for [`actix-web`](../../actix-web/index.html).
-///
-pub struct AxRequest<'a> {
-    request: &'a actix_web::HttpRequest,
-    body: String,
-    uri: String,
+pub struct AxServer<'a> {
+    request: &'a ::actix_web::HttpRequest,
+    req_body: String,
     path_vals: Vec<String>,
     param_vals: HashMap<String, Vec<String>>,
+    response: RefCell<Response>,
+    session: Option<::actix_session::Session>,
 }
 
-impl<'a> AxRequest<'a> {
+impl<'a> AxServer<'a> {
     pub fn new(
-        request: &'a actix_web::HttpRequest,
-        body: &str,
-        uri: &actix_web::http::Uri,
+        request: &'a ::actix_web::HttpRequest,
+        req_body: &str,
         path_vals: &[String],
+        sess: Option<::actix_session::Session>,
     ) -> Self {
         use lazy_static::lazy_static;
         use regex::Regex;
@@ -32,9 +32,9 @@ impl<'a> AxRequest<'a> {
                 Regex::new(r"([^&=]+=[^&=]+&)*[^&=]+=[^&=]+").unwrap();
         }
         let mut param_vals: HashMap<String, Vec<String>> = HashMap::new();
-        let uri_vals = uri.query().and_then(|q| decode(q).ok());
+        let uri_vals = request.uri().query().and_then(|q| decode(q).ok());
         let body_vals = QUERY
-            .captures(&body)
+            .captures(&req_body)
             .and_then(|c| c.get(0))
             .and_then(|m| decode(m.as_str()).ok());
         for key_value in match uri_vals {
@@ -61,15 +61,20 @@ impl<'a> AxRequest<'a> {
         }
         Self {
             request,
-            body: body.to_string(),
-            uri: uri.to_string(),
+            req_body: req_body.to_string(),
             path_vals: path_vals.to_vec(),
             param_vals,
+            response: RefCell::new(Response::new()),
+            session: sess,
         }
+    }
+
+    pub fn response(self) -> ::actix_web::HttpResponse {
+        self.response.borrow().get()
     }
 }
 
-impl Request for AxRequest<'_> {
+impl HttpServer for AxServer<'_> {
     fn param_val(&self, name: &str) -> Option<String> {
         self.param_vals.get(name).map(|v| v[0].clone())
     }
@@ -84,19 +89,23 @@ impl Request for AxRequest<'_> {
         result
     }
 
-    fn path_vals(&self) -> std::slice::Iter<String> {
+    fn req_path(&self) -> String {
+        self.request.uri().path().to_string()
+    }
+
+    fn req_path_vals(&self) -> std::slice::Iter<String> {
         self.path_vals.iter()
     }
 
     fn req_body(&self) -> String {
-        self.body.clone()
+        self.req_body.clone()
     }
 
-    fn uri(&self) -> String {
-        self.uri.clone()
+    fn req_uri(&self) -> String {
+        self.request.uri().to_string()
     }
 
-    fn url_for_impl(
+    fn url_for(
         &self,
         path: &str,
         params: &[&str],
@@ -106,89 +115,115 @@ impl Request for AxRequest<'_> {
             .map(|u| u.to_string())
             .map_err(|e| Error::invalid_input(&e.to_string()))
     }
+
+    fn resp_body(&self, txt: &str) {
+        self.response.borrow_mut().body(txt);
+    }
+
+    fn resp_error(&self, err: Option<&::vicocomo::Error>) {
+        self.response.borrow_mut().internal_server_error(err);
+    }
+
+    fn resp_ok(&self) {
+        self.response.borrow_mut().ok();
+    }
+
+    fn resp_redirect(&self, url: &str) {
+        self.response.borrow_mut().redirect(url);
+    }
+
+    fn session_clear(&self) {
+        self.session.as_ref().map(|s| s.clear()).unwrap_or(());
+    }
+
+    fn session_get(&self, key: &str) -> Option<String> {
+        self.session.as_ref().and_then(|s| s.get(key).unwrap_or(None))
+    }
+
+    fn session_remove(&self, key: &str) {
+        self.session.as_ref().map(|s| s.remove(key)).unwrap_or(())
+    }
+
+    fn session_set(
+        &self,
+        key: &str,
+        value: &str,
+    ) -> Result<(), ::vicocomo::Error> {
+        self.session.as_ref()
+            .map(|s| {
+                s.set(key, value)
+                    .map_err(|e| ::vicocomo::Error::other(&e.to_string()))
+            })
+            .unwrap_or_else(|| Err(Error::other("no session store defined")))
+    }
 }
 
-pub struct AxResponse {
-    body: String,
-    response: Option<actix_web::HttpResponse>,
+enum ResponseStatus {
+    InternalServerError,
+    NoResponse,
+    Ok,
+    Redirect,
 }
 
-impl AxResponse {
-    pub fn new() -> Self {
+struct Response {
+    status: ResponseStatus,
+    text: String,
+}
+
+impl Response {
+    fn new() -> Self {
         Self {
-            body: String::new(),
-            response: None,
+            status: ResponseStatus::NoResponse,
+            text: String::new(),
         }
     }
 
-    pub fn response(self) -> actix_web::HttpResponse {
-        self.response.unwrap_or_else(|| {
-            actix_web::HttpResponse::InternalServerError()
-                .body("Internal server error: No response")
-        })
-    }
-}
-
-impl Response for AxResponse {
-    fn resp_body(&mut self, txt: &str) {
-        self.body = txt.to_string();
+    fn body(&mut self, text: &str) {
+        self.text = text.to_string();
     }
 
-    fn internal_server_error(&mut self, err: Option<&vicocomo::Error>) {
-        self.response = Some(
-            actix_web::HttpResponse::InternalServerError().body(format!(
-                "Internal server error: {}",
-                match err {
-                    Some(e) => e.to_string(),
-                    None => "Unknown".to_string(),
-                }
-            )),
+    fn get(&self) -> ::actix_web::HttpResponse {
+        use ::actix_web::{http::header, HttpResponse};
+        match self.status {
+            ResponseStatus::InternalServerError => {
+                HttpResponse::InternalServerError().body(&self.text)
+            }
+            ResponseStatus::NoResponse => {
+                HttpResponse::InternalServerError().body(
+                    "Internal server error: No response"
+                )
+            }
+            ResponseStatus::Ok => {
+                HttpResponse::Ok()
+                    .content_type("text/html; charset=utf-8")
+                    .body(&self.text)
+            }
+            ResponseStatus::Redirect => {
+                HttpResponse::Found()
+                    .header(header::LOCATION, self.text.clone())
+                    .finish()
+                    .into_body()
+            }
+        }
+    }
+
+    fn internal_server_error(&mut self, err: Option<&::vicocomo::Error>) {
+        self.status = ResponseStatus::InternalServerError;
+        self.text = format!(
+            "Internal server error: {}",
+            match err {
+                Some(e) => e.to_string(),
+                None => "Unknown".to_string(),
+            }
         );
     }
 
     fn ok(&mut self) {
-        self.response = Some(
-            actix_web::HttpResponse::Ok()
-                .content_type("text/html; charset=utf-8")
-                .body(self.body.clone()),
-        );
+        self.status = ResponseStatus::Ok;
     }
 
     fn redirect(&mut self, url: &str) {
-        use actix_web::http::header;
-        self.response = Some(
-            actix_web::HttpResponse::Found()
-                .header(header::LOCATION, url)
-                .finish()
-                .into_body(),
-        );
-    }
-}
-
-pub struct AxSessionStore(actix_session::Session);
-
-impl AxSessionStore {
-    pub fn new(sess: actix_session::Session) -> Self {
-        Self(sess)
-    }
-}
-
-impl SessionStore for AxSessionStore {
-    fn clear(&self) {
-        self.0.clear();
-    }
-
-    fn get(&self, key: &str) -> Option<String> {
-        self.0.get(key).unwrap_or(None)
-    }
-
-    fn remove(&self, key: &str) {
-        self.0.remove(key)
-    }
-
-    fn set(&self, key: &str, value: &str) -> Result<(), ::vicocomo::Error> {
-        self.0
-            .set(key, value)
-            .map_err(|e| ::vicocomo::Error::other(&e.to_string()))
+        self.status = ResponseStatus::Redirect;
+        self.text = url.to_string();
     }
 }

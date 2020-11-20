@@ -72,7 +72,7 @@ pub(crate) fn delete_impl(model: &Model) -> TokenStream {
         impl ::vicocomo::Delete<#pk_type> for #struct_id {
             fn delete(
                 self,
-                db: &impl ::vicocomo::DbConn
+                db: ::vicocomo::DatabaseIf
             ) -> Result<usize, ::vicocomo::Error> {
                 #before_delete_expr;
                 let deleted_count = db.exec(
@@ -84,7 +84,7 @@ pub(crate) fn delete_impl(model: &Model) -> TokenStream {
             }
 
             fn delete_batch(
-                db: &impl ::vicocomo::DbConn,
+                db: ::vicocomo::DatabaseIf,
                 batch: &[#pk_type],
             ) -> Result<usize, ::vicocomo::Error> {
                 let deleted_count = db.exec(

@@ -22,12 +22,13 @@ async fn main() {
             eprintln!("connection error: {}", e);
         }
     });
-    let db = ::vicocomo_postgres::PgConn::new(pg_client);
+    let pg_conn = ::vicocomo_postgres::PgConn::new(pg_client);
+    let db = ::vicocomo::DatabaseIf::new(&pg_conn);
 
-    belongs_to::test_belongs_to(&db);
-    delete::test_delete(&db);
-    many_to_many::test_many_to_many(&db);
-    multi_pk::test_multi_pk(&db);
-    one_to_many::test_one_to_many(&db);
-    single_pk::test_single_pk(&db);
+    belongs_to::test_belongs_to(db);
+    delete::test_delete(db);
+    many_to_many::test_many_to_many(db);
+    multi_pk::test_multi_pk(db);
+    one_to_many::test_one_to_many(db);
+    single_pk::test_single_pk(db);
 }

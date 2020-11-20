@@ -29,12 +29,14 @@ use proc_macro::TokenStream;
 ///             },
 ///         ),
 ///     },
-///     plug_in(SessionStore) {
+///     plug_in(Session) {
 ///         def: (
-///             // the type is ignored by vicocomo_actix but still required
+///             // If the type is not vicocomo::NullSession, it is ignored by
+///             // vicocomo_actix. But it is still required!
 ///             (),
-///             // for technical reasons this should evaluate to a
-///             // CookieSession rather than a vicocomo::SessionStore
+///             // If the type is not vicocomo::NullSession, vicocomo_actix
+///             // requires the initialization expression to evaluate to a
+///             // CookieSession rather than a vicocomo::Session.
 ///             ::actix_session::CookieSession::signed(&[0; 32])
 ///                 .secure(false),
 ///         ),
@@ -72,10 +74,10 @@ pub fn config(input: TokenStream) -> TokenStream {
         not_found,
     } = parse_macro_input!(input as Config);
     let (db_type, db_init) = plug_ins.get("DbConn").unwrap();
-    let (sess_type, sess_init) = plug_ins.get("SessionStore").unwrap();
-    // below is because we want no session middleware for NullStore
-    let has_session_store =
-        !(sess_type == &parse_quote!(::vicocomo::NullStore));
+    let (sess_type, sess_init) = plug_ins.get("Session").unwrap();
+    // below is because we want no session middleware for NullSession
+    let has_session =
+        !(sess_type == &parse_quote!(::vicocomo::NullSession));
     let (templ_type, templ_init) = plug_ins.get("TemplEng").unwrap();
     let mut handler_fn_vec: Vec<Ident> = Vec::new();
     let mut http_meth_vec: Vec<Ident> = Vec::new();
@@ -88,19 +90,19 @@ pub fn config(input: TokenStream) -> TokenStream {
     let mut hndl_pars_min: Punctuated<FnArg, token::Comma> = parse_quote!(
         db: actix_web::web::Data<#db_type>,
     );
-    if has_session_store {
+    if has_session {
         hndl_pars_min.push(parse_quote!(sess: actix_session::Session));
     }
-    hndl_pars_min.push(parse_quote!(hb: actix_web::web::Data<#templ_type>));
+    hndl_pars_min.push(parse_quote!(teng: actix_web::web::Data<#templ_type>));
     hndl_pars_min.push(parse_quote!(ax_req: actix_web::HttpRequest));
     hndl_pars_min.push(parse_quote!(body: String));
     let mut session_middleware: Vec<Expr> = Vec::new();
-    let mut session_store: Expr = sess_init.clone();
-    if has_session_store {
-        session_middleware.push(session_store);
-        session_store =
-            parse_quote!(vicocomo_actix::AxSessionStore::new(sess));
+    let session: Expr;
+    if has_session {
+        session_middleware.push(sess_init.clone());
+        session = parse_quote!(Some(sess));
     } else {
+        session = parse_quote!(None);
     }
     for contr_path in routes.keys() {
         let contr_path_snake = contr_path
@@ -193,21 +195,18 @@ pub fn config(input: TokenStream) -> TokenStream {
                 pub async fn #handler_fn_vec(
                     #hndl_pars_vec
                 ) -> actix_web::HttpResponse {
-                    let vi_req = ::vicocomo_actix::AxRequest::new(
+                    let server = ::vicocomo_actix::AxServer::new(
                         &ax_req,
                         body.as_str(),
-                        ax_req.uri(),
                         #path_pars_expr_vec,
+                        #session,
                     );
-                    let mut vi_resp = ::vicocomo_actix::AxResponse::new();
                     #controller_vec::#contr_meth_vec(
-                        &vi_req,
-                        hb.into_inner().as_ref(),
-                        db.into_inner().as_ref(),
-                        ::vicocomo::Session::new(&#session_store),
-                        &mut vi_resp,
+                        ::vicocomo::DatabaseIf::new(db.into_inner().as_ref()),
+                        ::vicocomo::HttpServerIf::new(&server),
+                        ::vicocomo::TemplEngIf::new(teng.into_inner().as_ref()),
                     );
-                    vi_resp.response()
+                    server.response()
                 }
             )*
 

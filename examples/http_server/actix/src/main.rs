@@ -7,7 +7,7 @@ mod controllers;
             ::vicocomo_handlebars::HbTemplEng::new(None),
         ),
     },
-    route(Static) { home { http_method: get, path: "/" } },
+    route(Static) { home { http_method: get, path: "/<parameter>" } },
 }
 
 fn main() -> std::io::Result<()> {

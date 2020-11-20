@@ -1,8 +1,8 @@
 use super::models::{multi_pk::MultiPk, multi_pk_templ};
 use ::chrono::NaiveDate;
-use ::vicocomo::{Delete, Find, Save};
+use ::vicocomo::{DatabaseIf, Delete, Find, Save};
 
-pub fn test_multi_pk(db: &::vicocomo_postgres::PgConn) {
+pub fn test_multi_pk(db: DatabaseIf) {
     let (m, m2, _dp, _bp, _np) = super::models::setup(db);
     m.delete(db).unwrap(); // want to test insertion!
     m2.delete(db).unwrap();

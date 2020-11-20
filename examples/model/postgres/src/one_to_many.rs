@@ -1,4 +1,5 @@
-pub fn test_one_to_many(db: &::vicocomo_postgres::PgConn) {
+use ::vicocomo::DatabaseIf;
+pub fn test_one_to_many(db: DatabaseIf) {
     use super::models::{multi_pk::MultiPk, other_parent::NonstandardParent};
     use ::vicocomo::Find;
 

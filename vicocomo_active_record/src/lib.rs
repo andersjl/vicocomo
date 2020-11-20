@@ -98,15 +98,11 @@ mod save;
 ///
 /// ### For each `vicocomo_belongs_to` attributed field
 ///
-/// Below, "`<name>`" means the `name` value if given, or the last segment of
+/// Below, "*name*" means the `name` value if given, or the last segment of
 /// `remote_type` if not, snake cased.
 ///
-/// ```text
-/// pub fn all_belonging_to_<name>(
-///     db: &impl ::vicocomo::DbConn,
-///     remote: &Remote,
-/// ) -> Result<Vec<Self>, Error>
-/// ```
+/// `pub fn all_belonging_to_`*name*`(db: DatabaseIf, remote: &Remote) -> Result<Vec<Self>, Error>`
+///
 /// Retrive all objects in the database belonging to an instance of
 /// `Remote`.
 ///
@@ -114,9 +110,8 @@ mod save;
 ///
 /// `remote` is the object on the remote side of the relationship.
 ///
-/// ```text
-/// pub fn <name>(&self, db: &impl DbConn) -> Option<Remote>
-/// ```
+/// `pub fn `*name*`(&self, db: DatabaseIf) -> Option<Remote>`
+///
 /// Retrive the object on the remote side of the relationship from the
 /// database.
 ///
@@ -129,18 +124,16 @@ mod save;
 ///   matching the field value, or
 /// - because of some other database error.
 ///
-/// ```text
-/// pub fn set_<name>(&mut self, remote: &Remote) -> Result<(), Error>
-/// ```
+/// `pub fn set_`*name*`(&mut self, remote: &Remote) -> Result<(), Error>`
+///
 /// Set the reference to an object on the remote side of the relationship.
 ///
 /// `remote` is the object on the remote side of the relationship.
 ///
 /// The new remote association is not saved to the database.
 ///
-/// ```text
-/// pub fn forget_<name>(&mut self) -> Result<(), Error>
-/// ```
+/// `pub fn forget_`*name*`(&mut self) -> Result<(), Error>`
+///
 /// Forget the reference to an object on the remote side of the
 /// relationship.
 ///
@@ -148,9 +141,8 @@ mod save;
 ///
 /// Should return `Err` if the association field is not an `Option`.
 ///
-/// ```text
-/// pub fn <name>_siblings(&self, db: &impl DbConn) -> Result<Vec<Self>, Error>
-/// ```
+/// `pub fn `*name*`_siblings(&self, db: DatabaseIf) -> Result<Vec<Self>, Error>`
+///
 /// Retrive all owned objects in the database (including `self`) that
 /// belong to the same object as `self`.
 ///
@@ -308,7 +300,7 @@ pub fn delete_derive(input: TokenStream) -> TokenStream {
 ///
 /// ```text
 /// pub fn find_by_un1_and_un2(
-///     db: &mut impl ::vicocomo::DbConn,
+///     db: DatabaseIf,
 ///     un1: i32,
 ///     un2: i32,
 /// ) -> Option<Self>
@@ -323,7 +315,7 @@ pub fn delete_derive(input: TokenStream) -> TokenStream {
 /// ```text
 /// pub fn find_equal_un1_and_un2(
 ///     &self,
-///     db: &mut impl ::vicocomo::DbConn
+///     db: DatabaseIf
 /// ) -> Option<Self>
 /// ```
 /// Find an object in the database that has the same values for the unique
@@ -334,7 +326,7 @@ pub fn delete_derive(input: TokenStream) -> TokenStream {
 ///
 /// ```text
 /// pub fn validate_exists_un1_and_un2(
-///     db: &mut impl ::vicocomo::DbConn,
+///     db: DatabaseIf,
 ///     un1: i32,
 ///     un2: i32,
 ///     msg: &str,
@@ -346,7 +338,7 @@ pub fn delete_derive(input: TokenStream) -> TokenStream {
 /// ```text
 /// pub fn validate_unique_un1_and_un2(
 ///     &self,
-///     db: &impl ::vicocomo::DbConn,
+///     db: DatabaseIf,
 ///     msg: &str
 /// ) -> Result<(), ::vicocomo::Error> {
 /// ```
@@ -448,16 +440,11 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 ///
 /// ### For each `vicocomo_has_many` struct attribute
 ///
-/// Below, "`<name>`" means the `name` value if given, or the last segment of
+/// Below, "*name*" means the `name` value if given, or the last segment of
 /// `remote_type` if not, snake cased.
 ///
-/// ```text
-/// pub fn <name>s(
-///     &self,
-///     db: &impl DbConn,
-///     filter: Option<&Query>,
-/// ) -> Result<Vec<Remote>, Error>;
-///```
+/// `pub fn `*name*`s(&self, db: DatabaseIf, filter: Option<&Query>) -> Result<Vec<Remote>, Error>`
+///
 /// Find items related to `self` by the association, filtered by `filter`.
 ///
 /// `filter`, see [`QueryBld`](model/struct.QueryBld.html).  A condition to
@@ -465,25 +452,15 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 ///
 /// #### Functions only for many-to-many associations
 ///
-/// ```text
-/// pub fn connect_to_<name>(
-///     &self,
-///     db: &impl DbConn,
-///     remote: &Remote,
-/// ) -> Result<usize, Error>;
-/// ```
+/// `pub fn connect_to_`*name*`(&self, db: DatabaseIf, remote: &Remote) -> Result<usize, Error>`
+///
 /// Insert a join table row connecting `self` to `remote`.  Returns `Ok(1)` on
 /// success.  Does *not* check that such a row did not exist previously!  It
 /// is strongly recommended to create a unique index in the database to
 /// prevent multiple connections between the same objects.
 ///
-/// ```text
-/// pub fn disconnect_from_<name>(
-///     &self,
-///     db: &impl DbConn,
-///     remote: &Remote,
-/// ) -> Result<usize, Error>;
-/// ```
+/// `pub fn disconnect_from_`*name*`(&self, db: DatabaseIf, remote: &Remote) -> Result<usize, Error>`
+///
 /// Delete the join table row connecting `self` to `remote`.  *Returns `Ok(0)`
 /// if they are not connected*.
 ///

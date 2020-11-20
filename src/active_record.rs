@@ -32,11 +32,11 @@
 //
 //      pub trait BelongsTo<Remote, Name = Remote>: Sized {
 //          fn all_belonging_to(
-//              db: &impl DbConn,
+//              db: DatabaseIf,
 //              remote: &Remote,
 //          ) -> Result<Vec<Self>, Error>;
 //
-//          fn get(&self, db: &impl DbConn) -> Option<Remote>;
+//          fn get(&self, db: DatabaseIf) -> Option<Remote>;
 //
 //          fn set(&mut self, remote: &Remote) -> Result<(), Error>;
 //      }
@@ -64,7 +64,7 @@
 //  Easier to write and (more important) read.
 
 use crate::Error;
-use crate::{DbConn, DbValue};
+use crate::{DatabaseIf, DbValue};
 
 /// Functions for deleting models from the database.
 ///
@@ -77,7 +77,7 @@ pub trait Delete<PkType> {
     /// the `on_delete` value in the attribute `vicocomo_has_many`, e.g.
     /// relying on the database's referential integrity.
     ///
-    fn delete(self, db: &impl DbConn) -> Result<usize, Error>;
+    fn delete(self, db: DatabaseIf) -> Result<usize, Error>;
 
     /// Return `Ok(batch.len())` iff each key in `batch` identifies a database
     /// row that is deleted.
@@ -90,10 +90,7 @@ pub trait Delete<PkType> {
     /// implementor derives [`HasMany`](../derive.HasMany.html), see
     /// [`delete()`](#tymethod.delete.html).
     ///
-    fn delete_batch(
-        db: &impl DbConn,
-        batch: &[PkType],
-    ) -> Result<usize, Error>;
+    fn delete_batch(db: DatabaseIf, batch: &[PkType]) -> Result<usize, Error>;
 }
 
 /// A hook called by the `delete()` function implemented by the [`Delete`
@@ -110,7 +107,7 @@ pub trait BeforeDelete {
     /// Those should be handled by [`delete()`
     /// ](trait.Delete.html#tymethod.delete) directly.
     ///
-    fn before_delete(&mut self, db: &impl DbConn) -> Result<(), Error>;
+    fn before_delete(&mut self, db: DatabaseIf) -> Result<(), Error>;
 }
 
 /// Functions for retrieving models from the database.
@@ -130,7 +127,7 @@ pub trait Find<PkType>: Sized {
     ///
     /// The default implementaion returns `None`.
     ///
-    fn find(db: &impl DbConn, pk: &PkType) -> Option<Self> {
+    fn find(db: DatabaseIf, pk: &PkType) -> Option<Self> {
         None
     }
 
@@ -140,7 +137,7 @@ pub trait Find<PkType>: Sized {
     ///
     /// The default implementaion returns `None`.
     ///
-    fn find_equal(&self, db: &impl DbConn) -> Option<Self> {
+    fn find_equal(&self, db: DatabaseIf) -> Option<Self> {
         None
     }
 
@@ -148,7 +145,7 @@ pub trait Find<PkType>: Sized {
     ///
     /// `db` is the database connection object.
     ///
-    fn load(db: &impl DbConn) -> Result<Vec<Self>, Error>;
+    fn load(db: DatabaseIf) -> Result<Vec<Self>, Error>;
 
     /// Return a vector with a possibly limited number of records that satisfy
     /// a condition possibly in a specified order.
@@ -156,7 +153,7 @@ pub trait Find<PkType>: Sized {
     /// `query` is a [`Query`](struct.Query.html), see that and
     /// [`QueryBld`](struct.QueryBld.html).
     ///
-    fn query(db: &impl DbConn, query: &Query) -> Result<Vec<Self>, Error>;
+    fn query(db: DatabaseIf, query: &Query) -> Result<Vec<Self>, Error>;
 
     /// Return an error if there is no object in the database whith the given
     /// primary key(s).  See [`find()`](trait.Find.html#tymethod.find).
@@ -164,7 +161,7 @@ pub trait Find<PkType>: Sized {
     /// The default implementaion uses `find()` in the obvious way.
     ///
     fn validate_exists(
-        db: &impl DbConn,
+        db: DatabaseIf,
         pk: &PkType,
         msg: &str,
     ) -> Result<(), Error> {
@@ -183,7 +180,7 @@ pub trait Find<PkType>: Sized {
     ///
     fn validate_unique(
         &self,
-        db: &impl DbConn,
+        db: DatabaseIf,
         msg: &str,
     ) -> Result<(), Error> {
         match self.find_equal(db) {
@@ -210,7 +207,7 @@ pub trait Save: Sized {
     /// [`BelongsTo`](../derive.BelongsTo.html) and there is an invalid remote
     /// reference, e.g. relying on the database's referential integrity.
     ///
-    fn insert(&mut self, db: &impl DbConn) -> Result<(), Error> {
+    fn insert(&mut self, db: DatabaseIf) -> Result<(), Error> {
         *self = Self::insert_batch(db, std::slice::from_mut(self))?
             .pop()
             .unwrap();
@@ -232,7 +229,7 @@ pub trait Save: Sized {
     /// [`insert()`](#method.insert.html).
     ///
     fn insert_batch(
-        db: &impl DbConn,
+        db: DatabaseIf,
         data: &mut [Self],
     ) -> Result<Vec<Self>, Error>;
 
@@ -245,7 +242,7 @@ pub trait Save: Sized {
     ///
     /// The default implementation tries first `update()`, then `insert()`.
     ///
-    fn save(&mut self, db: &impl DbConn) -> Result<(), Error> {
+    fn save(&mut self, db: DatabaseIf) -> Result<(), Error> {
         self.update(db).or_else(|_e| self.insert(db))
     }
 
@@ -259,7 +256,7 @@ pub trait Save: Sized {
     /// implementor derives [`BelongsTo`](../derive.BelongsTo.html), see
     /// [`insert()`](#method.insert.html).
     ///
-    fn update(&mut self, db: &impl DbConn) -> Result<(), Error>;
+    fn update(&mut self, db: DatabaseIf) -> Result<(), Error>;
 
     /// Try to UPDATE the row in the database corresponding to `self`.  Each
     /// pair in `cols` is the name of a database column and the new value.
@@ -273,7 +270,7 @@ pub trait Save: Sized {
     ///
     fn update_columns(
         &mut self,
-        db: &impl DbConn,
+        db: DatabaseIf,
         cols: &[(&str, DbValue)],
     ) -> Result<(), Error>;
 }
@@ -294,7 +291,7 @@ pub trait BeforeSave {
     /// ](trait.Save.html#method.save), and [`update()`
     /// ](trait.Save.html#tymethod.update) directly.
     ///
-    fn before_save(&mut self, db: &impl DbConn) -> Result<(), Error>;
+    fn before_save(&mut self, db: DatabaseIf) -> Result<(), Error>;
 }
 
 /// Builds a [`Query`](struct.Query.html) for [`Find::query()`
