@@ -1,14 +1,12 @@
-use ::vicocomo::{view::render_template, DatabaseIf, HttpServerIf, TemplEngIf};
+use ::vicocomo::{
+    view::render_template, DatabaseIf, HttpServerIf, TemplEngIf,
+};
 use serde::Serialize;
 
 pub struct Static;
 
 impl Static {
-    pub fn home(
-        _db: DatabaseIf,
-        srv: HttpServerIf,
-        teng: TemplEngIf,
-    ) {
+    pub fn home(_db: DatabaseIf, srv: HttpServerIf, teng: TemplEngIf) {
         use ::vicocomo::t;
         #[derive(Serialize)]
         struct Data {
@@ -16,7 +14,6 @@ impl Static {
             path: String,
             more: Option<&'static str>,
             partial: String,
-            root: String,
         }
         render_template(
             srv,
@@ -27,11 +24,13 @@ impl Static {
                 path: srv.req_path(),
                 more: Some("mera"),
                 partial: format!("header-{}", t!("lang")),
-                root: match srv.url_for("/<param>", Some(&["42"])) {
-                    Ok(url) => url,
-                    Err(e) => e.to_string(),
-                },
             },
         );
+        if !srv.req_path().starts_with("/redirect") {
+            srv.resp_redirect(&format!(
+                "/redirect-from-{}",
+                srv.req_path_val("p1").unwrap(),
+            ));
+        }
     }
 }

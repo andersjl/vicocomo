@@ -12,7 +12,7 @@ case = "*"
 proc-macro2 = "*"
 quote = "*"
 regex = "*"
-syn = { version = "*", features = ["full", "extra-traits", "clone-impls"] }
+syn = { version = "*", features = ["extra-traits"] }
 vicocomo = { version = "*", path = "../.." }
 vicocomo_derive_utils = { version = "*", path = "../../vicocomo_derive_utils" }
 

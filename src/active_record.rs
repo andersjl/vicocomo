@@ -88,9 +88,10 @@ pub trait Delete<PkType> {
     ///
     /// The implementation should ensure referential integrity if the
     /// implementor derives [`HasMany`](../derive.HasMany.html), see
-    /// [`delete()`](#tymethod.delete.html).
+    /// [`delete()`](#tymethod.delete).
     ///
-    fn delete_batch(db: DatabaseIf, batch: &[PkType]) -> Result<usize, Error>;
+    fn delete_batch(db: DatabaseIf, batch: &[PkType])
+        -> Result<usize, Error>;
 }
 
 /// A hook called by the `delete()` function implemented by the [`Delete`
@@ -103,7 +104,7 @@ pub trait BeforeDelete {
     /// [`delete()`](trait.Delete.html#tymethod.delete) should return `Err`
     /// as well.  `before_delete()` should *not* handle objects related to
     /// `self` by [`HasMany`
-    /// ](../../vicocomo_model_derive/derive.HasMany.html.html) associations.
+    /// ](../../vicocomo_active_record/derive.HasMany.html) associations.
     /// Those should be handled by [`delete()`
     /// ](trait.Delete.html#tymethod.delete) directly.
     ///
@@ -226,7 +227,7 @@ pub trait Save: Sized {
     ///
     /// The implementation should ensure referential integrity if the
     /// implementor derives [`BelongsTo`](../derive.BelongsTo.html), see
-    /// [`insert()`](#method.insert.html).
+    /// [`insert()`](#method.insert).
     ///
     fn insert_batch(
         db: DatabaseIf,
@@ -254,7 +255,7 @@ pub trait Save: Sized {
     ///
     /// The implementation should ensure referential integrity if the
     /// implementor derives [`BelongsTo`](../derive.BelongsTo.html), see
-    /// [`insert()`](#method.insert.html).
+    /// [`insert()`](#method.insert).
     ///
     fn update(&mut self, db: DatabaseIf) -> Result<(), Error>;
 
@@ -282,13 +283,13 @@ pub trait BeforeSave {
     /// Do whatever necessary before saving `self` to the database.
     ///
     /// An `Err` return value means that `self` cannot be saved, and
-    /// [`insert()`](trait.Save.html#method.insert),
-    /// [`save()`](trait.Save.html#method.save), and
+    /// [`insert()`](trait.Save.html#tymethod.insert),
+    /// [`save()`](trait.Save.html#tymethod.save), and
     /// [`update()`](trait.Save.html#tymethod.update) should return `Err` as
     /// well.  `before_save()` should *not* handle referential integrity for
     /// [`BelongsTo`](../derive.BelongsTo.html) associations.  Those should be
-    /// handled by [`insert()`](trait.Save.html#method.insert), [`save()`
-    /// ](trait.Save.html#method.save), and [`update()`
+    /// handled by [`insert()`](trait.Save.html#tymethod.insert), [`save()`
+    /// ](trait.Save.html#tymethod.save), and [`update()`
     /// ](trait.Save.html#tymethod.update) directly.
     ///
     fn before_save(&mut self, db: DatabaseIf) -> Result<(), Error>;

@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 futures = "*"
 tokio-postgres = "0.5.5"
-postgres-types = "*"
+postgres-types = "0.1.3"
 serde = { version = "*", features = ["derive"] }
 serde_json = "*"
 vicocomo = { path = ".." }

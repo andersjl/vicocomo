@@ -1,9 +1,9 @@
 use ::chrono::{NaiveDate, NaiveDateTime};
+use ::vicocomo::DatabaseIf;
 use {
     default_parent::DefaultParent, multi_pk::MultiPk,
     other_parent::NonstandardParent,
 };
-use ::vicocomo::DatabaseIf;
 
 pub fn multi_pk_templ() -> MultiPk {
     MultiPk {

@@ -14,7 +14,7 @@ proc-macro2 = "*"
 quote = "*"
 serde = { version = "*", features = ["derive"] }
 serde_json = "*"
-syn = { version = "*", features = ["full", "extra-traits", "clone-impls"] }
+syn = { version = "*", features = ["extra-traits"] }
 v_htmlescape = "*"
 vicocomo_db_macro = { path = "vicocomo_db_macro" }
 vicocomo_derive_utils = { path = "vicocomo_derive_utils" }

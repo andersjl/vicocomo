@@ -21,7 +21,7 @@ mod controllers;
             },
         ),
     },
-    plug_in(SessionStore) {
+    plug_in(Session) {
         def: (
             (),
             ::actix_session::CookieSession::signed(&[0; 32]).secure(false),

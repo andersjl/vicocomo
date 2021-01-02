@@ -1,7 +1,8 @@
 //! (Ab)use `actix-web` as the web server for a vicocomo application.
 //!
-//! Implements [`vicocomo::HttpServer`](../../vicocomo/trait.HttpServer.html)
-//! for [`actix-web`](../../actix-web/index.html).
+//! Implements [`vicocomo::HttpServer`
+//! ](../vicocomo/http_server/trait.HttpServer.html) for [`actix-web`
+//! ](https://crates.io/crates/actix-web).
 //!
 
 use ::vicocomo::{Error, HttpServer};
@@ -11,7 +12,7 @@ use std::{cell::RefCell, collections::HashMap};
 pub struct AxServer<'a> {
     request: &'a ::actix_web::HttpRequest,
     req_body: String,
-    path_vals: Vec<String>,
+    path_vals: HashMap<String, String>,
     param_vals: HashMap<String, Vec<String>>,
     response: RefCell<Response>,
     session: Option<::actix_session::Session>,
@@ -21,7 +22,7 @@ impl<'a> AxServer<'a> {
     pub fn new(
         request: &'a ::actix_web::HttpRequest,
         req_body: &str,
-        path_vals: &[String],
+        path_vals: &[(String, String)],
         sess: Option<::actix_session::Session>,
     ) -> Self {
         use lazy_static::lazy_static;
@@ -42,7 +43,7 @@ impl<'a> AxServer<'a> {
                 Some(b) => u + "&" + &b,
                 None => u,
             },
-            None => body_vals.unwrap_or("".to_string()),
+            None => body_vals.unwrap_or(String::new()),
         }
         .split('&')
         {
@@ -51,7 +52,7 @@ impl<'a> AxServer<'a> {
             }
             let mut k_v = key_value.split('=');
             let key = k_v.next().unwrap();
-            let val = k_v.next().unwrap();
+            let val = k_v.next().unwrap_or("");
             match param_vals.get_mut(key) {
                 Some(vals) => vals.push(val.to_string()),
                 None => {
@@ -62,7 +63,10 @@ impl<'a> AxServer<'a> {
         Self {
             request,
             req_body: req_body.to_string(),
-            path_vals: path_vals.to_vec(),
+            path_vals: path_vals
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
             param_vals,
             response: RefCell::new(Response::new()),
             session: sess,
@@ -93,8 +97,15 @@ impl HttpServer for AxServer<'_> {
         self.request.uri().path().to_string()
     }
 
-    fn req_path_vals(&self) -> std::slice::Iter<String> {
-        self.path_vals.iter()
+    fn req_path_val(&self, par: &str) -> Option<String> {
+        self.path_vals.get(par).map(|v| v.clone())
+    }
+
+    fn req_path_vals(&self) -> Vec<(String, String)> {
+        self.path_vals
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     fn req_body(&self) -> String {
@@ -103,17 +114,6 @@ impl HttpServer for AxServer<'_> {
 
     fn req_uri(&self) -> String {
         self.request.uri().to_string()
-    }
-
-    fn url_for(
-        &self,
-        path: &str,
-        params: &[&str],
-    ) -> Result<String, Error> {
-        self.request
-            .url_for(path, params) // we did set name = path
-            .map(|u| u.to_string())
-            .map_err(|e| Error::invalid_input(&e.to_string()))
     }
 
     fn resp_body(&self, txt: &str) {
@@ -137,7 +137,9 @@ impl HttpServer for AxServer<'_> {
     }
 
     fn session_get(&self, key: &str) -> Option<String> {
-        self.session.as_ref().and_then(|s| s.get(key).unwrap_or(None))
+        self.session
+            .as_ref()
+            .and_then(|s| s.get(key).unwrap_or(None))
     }
 
     fn session_remove(&self, key: &str) {
@@ -149,7 +151,8 @@ impl HttpServer for AxServer<'_> {
         key: &str,
         value: &str,
     ) -> Result<(), ::vicocomo::Error> {
-        self.session.as_ref()
+        self.session
+            .as_ref()
             .map(|s| {
                 s.set(key, value)
                     .map_err(|e| ::vicocomo::Error::other(&e.to_string()))
@@ -188,22 +191,15 @@ impl Response {
             ResponseStatus::InternalServerError => {
                 HttpResponse::InternalServerError().body(&self.text)
             }
-            ResponseStatus::NoResponse => {
-                HttpResponse::InternalServerError().body(
-                    "Internal server error: No response"
-                )
-            }
-            ResponseStatus::Ok => {
-                HttpResponse::Ok()
-                    .content_type("text/html; charset=utf-8")
-                    .body(&self.text)
-            }
-            ResponseStatus::Redirect => {
-                HttpResponse::Found()
-                    .header(header::LOCATION, self.text.clone())
-                    .finish()
-                    .into_body()
-            }
+            ResponseStatus::NoResponse => HttpResponse::InternalServerError()
+                .body("Internal server error: No response"),
+            ResponseStatus::Ok => HttpResponse::Ok()
+                .content_type("text/html; charset=utf-8")
+                .body(&self.text),
+            ResponseStatus::Redirect => HttpResponse::Found()
+                .header(header::LOCATION, self.text.clone())
+                .finish()
+                .into_body(),
         }
     }
 

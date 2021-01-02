@@ -38,7 +38,11 @@ impl<'a> DatabaseIf<'a> {
     ///
     /// Returns the number of affected rows.
     ///
-    pub fn exec(&self, sql: &str, values: &[DbValue]) -> Result<usize, Error> {
+    pub fn exec(
+        &self,
+        sql: &str,
+        values: &[DbValue],
+    ) -> Result<usize, Error> {
         self.0.exec(sql, values)
     }
 
