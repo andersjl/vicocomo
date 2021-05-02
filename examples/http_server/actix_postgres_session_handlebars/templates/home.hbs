@@ -3,9 +3,32 @@
     <title> test </title>
   </head>
   <body>
-    {{> (partial) }}
-    <div> {{ hej }} </div>
+    {{ #if content }}
+      {{> (partial) content }}
+    {{ /if }}
+    {{ #if false }}
+      <div> {{ hej }} </div>
+    {{ else }}
+      {{ #if true }}
+        <div> falskt </div>
+      {{ else }}
+        <div> sant </div>
+      {{ /if }}
+    {{ /if }}
     <div> {{ i }} </div>
+    {{ #each array }}
+      first{{ #if @last
+      }} last:
+      {{ /if
+      }}{{ this }}
+    {{ /each }}
+    <div>
+      {{ #if empty }}
+        text for empty array
+      {{ else }}
+        ignoring empty array
+      {{ /if }}
+    </div>
     {{ #if more }}
       <div> {{ more }} mer </div>
     {{ /if }}

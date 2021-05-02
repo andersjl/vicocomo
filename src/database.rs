@@ -227,7 +227,7 @@ pub struct NullConn;
 
 impl DbConn for NullConn {
     fn exec(&self, _sql: &str, _vals: &[DbValue]) -> Result<usize, Error> {
-        Err(Error::database("no database"))
+        Err(Error::database(None, "no database"))
     }
 
     fn query(
@@ -236,6 +236,6 @@ impl DbConn for NullConn {
         _values: &[DbValue],
         _types: &[DbType],
     ) -> Result<Vec<Vec<DbValue>>, Error> {
-        Err(Error::database("no database"))
+        Err(Error::database(None, "no database"))
     }
 }

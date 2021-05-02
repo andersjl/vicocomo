@@ -1,22 +1,23 @@
 [package]
 name = "vicocomo"
-version = "0.1.17"
+version = "0.1.22"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 
 [dependencies]
-case = "*"
-chrono = "*"
-itertools = "*"
-lazy_static = "*"
-regex = "*"
-proc-macro2 = "*"
-quote = "*"
-serde = { version = "*", features = ["derive"] }
-serde_json = "*"
-syn = { version = "*", features = ["extra-traits"] }
-v_htmlescape = "*"
-vicocomo_db_macro = { path = "vicocomo_db_macro" }
-vicocomo_derive_utils = { path = "vicocomo_derive_utils" }
-vicocomo_html_derive = { path = "vicocomo_html_derive" }
+case = "1.0"
+chrono = { version = "0.4.19", features = ["serde"] }
+itertools = "0.10"
+lazy_static = "1.4"
+proc-macro2 = "1.0.24"
+quote = "1.0.9"
+regex = "1.4.4"
+serde = { version = "1.0.124", features = ["derive"] }
+serde_json = "1.0.64"
+syn = { version = "1.0.63", features = ["full", "extra-traits"] }
+v_htmlescape = "0.12"
 vicocomo_active_record = { path = "vicocomo_active_record" }
+vicocomo_db_macros = { path = "vicocomo_db_macros" }
+vicocomo_derive_utils = { path = "vicocomo_derive_utils" }
+vicocomo_html_macros = { path = "vicocomo_html_macros" }
+vicocomo_session_model = { path = "vicocomo_session_model" }

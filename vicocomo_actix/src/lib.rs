@@ -5,25 +5,30 @@
 //! ](https://crates.io/crates/actix-web).
 //!
 
-use ::vicocomo::{Error, HttpServer};
+mod session;
+
+use ::vicocomo::{DatabaseIf, Error, HttpServer};
 pub use ::vicocomo_actix_config::config;
+use session::Session;
 use std::{cell::RefCell, collections::HashMap};
 
-pub struct AxServer<'a> {
+pub struct AxServer<'a, 'd> {
     request: &'a ::actix_web::HttpRequest,
     req_body: String,
     path_vals: HashMap<String, String>,
     param_vals: HashMap<String, Vec<String>>,
     response: RefCell<Response>,
-    session: Option<::actix_session::Session>,
+    session: Option<RefCell<Session<'d>>>,
 }
 
-impl<'a> AxServer<'a> {
+impl<'a, 'd> AxServer<'a, 'd> {
     pub fn new(
         request: &'a ::actix_web::HttpRequest,
         req_body: &str,
         path_vals: &[(String, String)],
-        sess: Option<::actix_session::Session>,
+        session: Option<::actix_session::Session>,
+        db: Option<DatabaseIf<'d>>,
+        prune: i64,
     ) -> Self {
         use lazy_static::lazy_static;
         use regex::Regex;
@@ -69,7 +74,7 @@ impl<'a> AxServer<'a> {
                 .collect(),
             param_vals,
             response: RefCell::new(Response::new()),
-            session: sess,
+            session: session.and_then(|s| Session::new(s, db, prune)),
         }
     }
 
@@ -78,7 +83,7 @@ impl<'a> AxServer<'a> {
     }
 }
 
-impl HttpServer for AxServer<'_> {
+impl HttpServer for AxServer<'_, '_> {
     fn param_val(&self, name: &str) -> Option<String> {
         self.param_vals.get(name).map(|v| v[0].clone())
     }
@@ -112,7 +117,7 @@ impl HttpServer for AxServer<'_> {
         self.req_body.clone()
     }
 
-    fn req_uri(&self) -> String {
+    fn req_url(&self) -> String {
         self.request.uri().to_string()
     }
 
@@ -133,17 +138,15 @@ impl HttpServer for AxServer<'_> {
     }
 
     fn session_clear(&self) {
-        self.session.as_ref().map(|s| s.clear()).unwrap_or(());
+        let _ = self.session.as_ref().map(|c| c.borrow_mut().clear());
     }
 
     fn session_get(&self, key: &str) -> Option<String> {
-        self.session
-            .as_ref()
-            .and_then(|s| s.get(key).unwrap_or(None))
+        self.session.as_ref().and_then(|c| c.borrow().get(key))
     }
 
     fn session_remove(&self, key: &str) {
-        self.session.as_ref().map(|s| s.remove(key)).unwrap_or(())
+        let _ = self.session.as_ref().map(|c| c.borrow_mut().remove(key));
     }
 
     fn session_set(
@@ -153,10 +156,7 @@ impl HttpServer for AxServer<'_> {
     ) -> Result<(), ::vicocomo::Error> {
         self.session
             .as_ref()
-            .map(|s| {
-                s.set(key, value)
-                    .map_err(|e| ::vicocomo::Error::other(&e.to_string()))
-            })
+            .map(|c| c.borrow_mut().set(key, value))
             .unwrap_or_else(|| Err(Error::other("no session store defined")))
     }
 }

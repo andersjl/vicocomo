@@ -33,14 +33,12 @@
 //!     #[vicocomo_belongs_to(        // "many" side of one-to-many
 //!         name = "Father",          // needed if several impl same Remote
 //!         remote_type =             // remote struct path, default
-//!             "crate::x::OlMan",    // crate::models::rem::Rem (if rem_id)
+//!             "crate::x::OlMan",    // crate::models::Rem (if rem_id)
 //!         remote_pk = "pk",         // remote PK field, default "id",
 //!     )]                            // must be a single primary key field
 //!     rem_id: u32,                  // May be nullable, in this case not
 //! }
 //! ```
-extern crate proc_macro;
-extern crate syn;
 
 use proc_macro::TokenStream;
 
@@ -88,8 +86,8 @@ mod save;
 ///   prepended.
 ///
 ///   If the field identifier ends in `_id` the default path is
-///   `crate::models::`*rem*`::`*rem camel cased*, where *rem* is the field
-///   identifier with `_id` stripped.  If not, `remote_type` is mandatory.
+///   `crate::models::`*rem camel cased*, where *rem* is the field identifier
+///   with `_id` stripped.  If not, `remote_type` is mandatory.
 ///
 /// `vicocomo_column = "`*column name*`"` - The database column storing the
 /// field.  Default the snake cased field name.
@@ -139,7 +137,7 @@ mod save;
 ///
 /// The old reference is not removed from the database.
 ///
-/// Should return `Err` if the association field is not an `Option`.
+/// Returns `Err` if the association field is not an `Option`.
 ///
 /// `pub fn `*name*`_siblings(&self, db: DatabaseIf) -> Result<Vec<Self>, Error>`
 ///
@@ -172,7 +170,7 @@ pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
 /// `vicocomo_table_name = "`*some table name*`"` - The database table storing
 /// the struct.  Default the snake cased struct name with a plural 's'.
 ///
-/// `vicocomo_before_delete`: - See [`BeforeDelete`
+/// `vicocomo_before_delete` - See [`BeforeDelete`
 /// ](../vicocomo/active_record/trait.BeforeDelete.html).  If present, the
 /// generated [`Delete::delete()`
 /// ](../vicocomo/active_record/trait.Delete.html#tymethod.delete) requires
@@ -195,7 +193,7 @@ pub fn belongs_to_derive(input: TokenStream) -> TokenStream {
 ///   `Self` and `Remote` types that ensures cascading on-delete behavior.
 ///
 /// The intention is to use the attribute to generate referential integrity
-/// tests in future releases.
+/// tests and/or automatic schema generation in future releases.
 ///
 /// ## Field attributes
 ///
@@ -286,37 +284,30 @@ pub fn delete_derive(input: TokenStream) -> TokenStream {
 /// Given the struct declaration
 /// ```text
 /// #[derive(::vicocomo::Find)]
-/// struct Example {
+/// struct ExampleStruct {
 ///     #[vicocomo_primary]
 ///     id: Option<u32>,
 ///     #[vicocomo_optional]
 ///     #[vicocomo_unique = "uni-lbl"]
-///     un1: Option<i32>,
+///     un_1: Option<i32>,
 ///     #[vicocomo_unique = "uni-lbl"]
-///     un2: i32,
+///     un_2: i32,
 /// }
 /// ```
 /// also the following methods are generated:
 ///
 /// ```text
-/// pub fn find_by_un1_and_un2(
-///     db: DatabaseIf,
-///     un1: i32,
-///     un2: i32,
-/// ) -> Option<Self>
+/// pub fn find_by_un1_and_un2(db: DatabaseIf, un_1: i32, un_2: i32) -> Option<Self>
 /// ```
 /// Find an object in the database by the unique fields.
 ///
 /// `db` is the database connection object.
 ///
-/// `un1` and `un2` are the unique parameters.  Note that `un1` is "unwrapped"
-/// even though it is declared `vicocomo_optional`.
+/// `un_1` and `un_2` are the unique parameters.  Note that `un_1` is
+/// "unwrapped" even though it is declared `vicocomo_optional`.
 ///
 /// ```text
-/// pub fn find_equal_un1_and_un2(
-///     &self,
-///     db: DatabaseIf
-/// ) -> Option<Self>
+/// pub fn find_equal_un1_and_un2(&self, db: DatabaseIf) -> Option<Self>
 /// ```
 /// Find an object in the database that has the same values for the unique
 /// fields as `self`.  If a unique field in `self` is `vicocomo_optional` and
@@ -325,24 +316,33 @@ pub fn delete_derive(input: TokenStream) -> TokenStream {
 /// `db` is the database connection object.
 ///
 /// ```text
-/// pub fn validate_exists_un1_and_un2(
-///     db: DatabaseIf,
-///     un1: i32,
-///     un2: i32,
-///     msg: &str,
-/// ) -> Result<(), ::vicocomo::Error> {
+/// pub fn validate_exists_un1_and_un2(db: DatabaseIf, un_1: i32, un_2: i32) -> Result<(), ::vicocomo::Error>
 /// ```
-/// Return `Err` with `msg` if no row exists with those values for the unique
-/// columns.
+/// Returns [`Err::CannotSave`
+/// ](../vicocomo/error/enum.Error.html#variant.CannotSave) if no row exists
+/// with those values for the unique columns.
+///
+/// The general error message would be
+/// <br>`Some("error--CannotSave--ExampleStruct--un_1--un_2--not-found".to_string())"`
+/// as `ExampleStruct` has more than one unique field. If there is only one,
+/// the general error message is `None`.
+///
+/// The (field name, error message) pairs would be
+/// ```text
+/// (   "model--ExampleStruct--field--un_1".to_string(),
+///     "error--CannotSave--ExampleStruct--un_1--not-found".to_string(),
+/// ), ...
+/// ```
+/// Note that error reporting may be localized in [`config/texts.cfg`
+/// ](../vicocomo/texts/index.html), see [`vicocomo::Error`
+/// ](../vicocomo/error/enum.Error.html).
 ///
 /// ```text
-/// pub fn validate_unique_un1_and_un2(
-///     &self,
-///     db: DatabaseIf,
-///     msg: &str
-/// ) -> Result<(), ::vicocomo::Error> {
+/// pub fn validate_unique_un1_and_un2(&self, db: DatabaseIf, msg: &str) -> Result<(), ::vicocomo::Error>
 /// ```
-/// Return `Err` with `msg` if `find_equal_un1_and_un2()` returns `Some()`.
+/// If `find_equal_un1_and_un2()` returns `Some()` it returns an error exactly
+/// like `validate_exists_un1_and_un2()` above, substituting "not-unique" for
+/// "not-found".
 ///
 #[proc_macro_derive(
     Find,
@@ -395,7 +395,7 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 ///
 /// - `remote_fk_col = "`*a database column name*`"`:  If one-to-many, the
 ///   column in the remote model's table, if many-to-many in the join table,
-///   that refers to `self`.  Default *snake case last identifier in
+///   that refers to `self`. Default *snake case last identifier in
 ///   `Self`*`_id`.
 ///
 ///   Note that a model with a composite primary key cannot derive `HasMany`.
@@ -459,6 +459,9 @@ pub fn find_derive(input: TokenStream) -> TokenStream {
 /// is strongly recommended to create a unique index in the database to
 /// prevent multiple connections between the same objects.
 ///
+/// `Error::CannotSave("error--CannotSave--`*name camel cased*--not-unique", [])`
+/// is returned if there is a unique restriction error.
+///
 /// `pub fn disconnect_from_`*name*`(&self, db: DatabaseIf, remote: &Remote) -> Result<usize, Error>`
 ///
 /// Delete the join table row connecting `self` to `remote`.  *Returns `Ok(0)`
@@ -482,7 +485,7 @@ pub fn has_many_derive(input: TokenStream) -> TokenStream {
 ///
 /// See this [example](../vicocomo_active_record/index.html).
 ///
-/// `vicocomo_before_save`: - See [`BeforeSave`
+/// `vicocomo_before_save` - See [`BeforeSave`
 /// ](../vicocomo/active_record/trait.BeforeSave.html).  If present, the
 /// generated [`Save::insert()`
 /// ](../vicocomo/active_record/trait.Save.html#tymethod.insert),
@@ -504,7 +507,8 @@ pub fn has_many_derive(input: TokenStream) -> TokenStream {
 /// `vicocomo_belongs_to(` ... `)` - See [`BelongsTo`](derive.BelongsTo.html).
 /// <b>At present, this attriubute has no effect when saving!</b>  Referential
 /// integrity should be handled by the database.  However, the intention is to
-/// use the attribute to generate referential integrity tests in the future.
+/// use the attribute to generate referential integrity tests and/or automatic
+/// schema generation in the future.
 ///
 /// `vicocomo_column = "`*column name*`"` - The database column storing the
 /// field.  Default the snake cased field name.

@@ -8,6 +8,7 @@ use ::core::{
 };
 use ::quote::format_ident;
 use ::serde::{de::DeserializeOwned, Serialize};
+use ::serde_json::Value as JsonValue;
 use ::std::{cmp::Ordering, collections::HashMap};
 use ::syn::{
     braced, parenthesized,
@@ -26,33 +27,38 @@ use ::vicocomo_derive_utils::*;
 pub struct HttpServerIf<'a>(&'a dyn HttpServer);
 
 impl<'a> HttpServerIf<'a> {
-    /// Create an interface to the `server`.
+    /// Create an interface to the `server`. *Not to be used by web
+    /// application developers, web server adapters only.*
     ///
     pub fn new(server: &'a impl HttpServer) -> Self {
         Self(server)
     }
 
-    /// The parameter values in the URI (get) or body (post) as a json string.
-    /// The parameters may be structured à la PHP:
-    /// ```text
-    /// simple=1&arr[]=2&arr[]=3&map[a]=4&map[b]=5&deep[c][]=6&deep[c][]=7&deep[d]=8
-    /// // -> {
-    /// //     "simple": "1",
-    /// //     "arr":    ["2", "3"],
-    /// //     "map":    {"a": "4", "b": "5"},
-    /// //     "deep:    {"c": ["6", "7"], "d": "8"}
-    /// // }
-    /// ```
-    /// Note that all values are strings.
+    /// The parameter values in the URL (get) or body (post) as a
+    /// `serde_json::Value`.
     ///
-    pub fn param_json(&self) -> Result<String, Error> {
+    /// The parameters may be structured à la PHP:
+    // No doc test, but see the unit test test_formdata()
+    /// ```text
+    /// smpl=1&arr[]=2&arr[]=3&map[a]=4&map[b]=5&deep[c][]=6&deep[c][]=7&deep[d]=8&mtrx[][]=9
+    /// -> json!({
+    ///     "smpl": "1",
+    ///     "arr":  ["2", "3"],
+    ///     "map":  { "a": "4", "b": "5" },
+    ///     "deep": { "c": ["6", "7"], "d": "8" },
+    ///     "mtrx": [["9"]],
+    /// })
+    /// ```
+    /// Note that all leaf values are strings.
+    ///
+    pub fn param_json(&self) -> Result<JsonValue, Error> {
         FormData::parse(self.0.param_vals()).and_then(|fd| {
-            serde_json::to_string(&fd)
+            ::serde_json::to_value(&fd)
                 .map_err(|e| Error::invalid_input(&e.to_string()))
         })
     }
 
-    /// The value of the parameter with `name` in the URI (get) or body (post)
+    /// The value of the parameter with `name` in the URL (get) or body (post)
     /// as a URL-decoded string.  For structured parameters, use
     /// [`param_json()`](#method.param_json)
     ///
@@ -96,10 +102,10 @@ impl<'a> HttpServerIf<'a> {
         self.0.req_body()
     }
 
-    /// The requested HTTP URI, including scheme, path, and query.
+    /// The requested HTTP URL, including scheme, path, and query.
     ///
-    pub fn req_uri(&self) -> String {
-        self.0.req_uri()
+    pub fn req_url(&self) -> String {
+        self.0.req_url()
     }
 
     /// Set the body of the response
@@ -132,22 +138,18 @@ impl<'a> HttpServerIf<'a> {
         self.0.session_clear();
     }
 
-    /// Return `key` as `T`.
+    /// Return the session value for `key` as `T`.
     ///
-    /// If the current value for `key` is not a `T`, `Err(_)` is returned.
-    /// If there is no current value for `key`, `Ok(None)` is returned.
+    /// If there is no current value for `key`, or  the current value for
+    /// `key` is not a `T`,`None` is returned.
     ///
-    pub fn session_get<T>(&self, key: &str) -> Result<Option<T>, Error>
+    pub fn session_get<T>(&self, key: &str) -> Option<T>
     where
         T: DeserializeOwned,
     {
-        match self.0.session_get(key) {
-            Some(s) => Ok(Some(
-                serde_json::from_str(&s)
-                    .map_err(|e| Error::other(&e.to_string()))?,
-            )),
-            None => Ok(None),
-        }
+        self.0
+            .session_get(key)
+            .and_then(|s| serde_json::from_str(&s).ok())
     }
 
     /// Remove the `key`-value pair.
@@ -791,7 +793,7 @@ pub trait HttpServer {
     ///
     fn param_val(&self, name: &str) -> Option<String>;
 
-    /// All parameter values in the URI (get) or body (post) as a vector of
+    /// All parameter values in the URL (get) or body (post) as a vector of
     /// URL-decoded key-value pairs.
     ///
     fn param_vals(&self) -> Vec<(String, String)>;
@@ -816,10 +818,10 @@ pub trait HttpServer {
     ///
     fn req_body(&self) -> String;
 
-    /// See [`HttpServerIf::req_uri()`
-    /// ](struct.HttpServerIf.html#method.req_uri).
+    /// See [`HttpServerIf::req_url()`
+    /// ](struct.HttpServerIf.html#method.req_url).
     ///
-    fn req_uri(&self) -> String;
+    fn req_url(&self) -> String;
 
     /// See [`HttpServerIf::resp_body()`
     /// ](struct.HttpServerIf.html#method.resp_body).
@@ -846,7 +848,8 @@ pub trait HttpServer {
     fn session_clear(&self);
 
     /// See [`HttpServerIf::session_get()`
-    /// ](struct.HttpServerIf.html#method.session_get).
+    /// ](struct.HttpServerIf.html#method.session_get), but the JSON is not
+    /// decoded.
     ///
     fn session_get(&self, key: &str) -> Option<String>;
 
@@ -857,7 +860,7 @@ pub trait HttpServer {
 
     /// See [`HttpServerIf::session_set()`
     /// ](struct.HttpServerIf.html#method.session_set), but the value is
-    /// already serialized on entry.
+    /// already JSON-serialized on entry.
     ///
     fn session_set(&self, key: &str, value: &str) -> Result<(), Error>;
 }
@@ -920,11 +923,7 @@ pub trait TemplEng {
     /// `data` is data for the template as `serde_json::Value`.
     ///
     #[allow(unused_variables)]
-    fn render(
-        &self,
-        tmpl: &str,
-        json: &::serde_json::value::Value,
-    ) -> Result<String, Error>;
+    fn render(&self, tmpl: &str, json: &JsonValue) -> Result<String, Error>;
 }
 
 /// # For HTTP server adapter developers only
@@ -939,7 +938,7 @@ impl TemplEng for NullTemplEng {
     fn render(
         &self,
         _tmpl: &str,
-        _json: &::serde_json::value::Value,
+        _json: &JsonValue,
     ) -> Result<String, Error> {
         Err(Error::render("no template engine"))
     }
@@ -947,7 +946,8 @@ impl TemplEng for NullTemplEng {
 
 // --- private --------------------------------------------------------------
 
-use ::regex::Regex;
+use ::regex::{CaptureMatches, Regex};
+use ::std::iter::Peekable;
 
 ::lazy_static::lazy_static! {
     static ref PATH_PARAMS: Regex = Regex::new(r"(<[^>]*>)").unwrap();
@@ -963,124 +963,111 @@ enum FormData {
 }
 
 impl FormData {
-    fn new() -> Self {
-        Self::Map(HashMap::new())
-    }
-
-    fn branch(&mut self, nam: &str) -> Result<&mut Self, Error> {
+    // Expect self to be a Map and value to be a Leaf.
+    // Depending on more_keys.next():
+    // - None => insert value in self at key
+    // - "" => recurse to push() to the Arr in self at key, or create the Arr
+    // - => recurse to insert() in the Map in self at key
+    fn insert(
+        &mut self,
+        key: String,
+        mut more_keys: Peekable<CaptureMatches>,
+        value: Self,
+    ) -> Result<(), Error> {
         if let FormData::Map(ref mut map) = self {
-            match map.get(nam) {
-                Some(val) => match val {
-                    Self::Map(_) => (),
-                    _ => {
-                        return Err(Error::invalid_input(&format!(
-                            "get(\"{}\") is not a Map variant",
-                            nam,
-                        )));
-                    }
-                },
+            match more_keys.next() {
                 None => {
-                    map.insert(nam.to_string(), Self::new());
+                    map.insert(key, value);
+                }
+                Some(next_match) => {
+                    let next_key = next_match.get(1).unwrap().as_str();
+                    if next_key.len() == 0 {
+                        if map.get(&key).is_none() {
+                            map.insert(
+                                key.to_string(),
+                                Self::Arr(Vec::new()),
+                            );
+                        }
+                        map.get_mut(&key).unwrap().push(more_keys, value)?
+                    } else {
+                        if map.get(&key).is_none() {
+                            map.insert(
+                                key.to_string(),
+                                Self::Map(HashMap::new()),
+                            );
+                        }
+                        map.get_mut(&key).unwrap().insert(
+                            next_key.to_string(),
+                            more_keys,
+                            value,
+                        )?
+                    }
                 }
             }
-            Ok(self.get_mut(nam).unwrap())
+            Ok(())
         } else {
             Err(Error::invalid_input("self is not a Map variant"))
         }
     }
 
-    /*
-    fn get(&self, nam: &str) -> Option<&Self> {
-        if let FormData::Map(map) = self {
-            map.get(nam)
-        } else {
-            None
-        }
-    }
-    */
-
-    fn get_mut(&mut self, nam: &str) -> Option<&mut Self> {
-        if let FormData::Map(map) = self {
-            map.get_mut(nam)
-        } else {
-            None
-        }
-    }
-
-    fn insert(&mut self, nam: &str, val: &FormData) -> Result<(), Error> {
-        if let FormData::Map(ref mut map) = self {
-            if map.insert(nam.to_string(), val.clone()).is_none() {
-                Ok(())
-            } else {
-                Err(Error::invalid_input(&format!(
-                    "\"{}\" is already set",
-                    nam
-                )))
+    // Expect self to be an Arr and value to be a Leaf.
+    // Depending on more_keys.next():
+    // - None => push value on self
+    // - "" => recurse to push() to the Arr last in self
+    // - => recurse to insert() in the Map last in self
+    fn push(
+        &mut self,
+        mut more_keys: Peekable<CaptureMatches>,
+        value: Self,
+    ) -> Result<(), Error> {
+        if let FormData::Arr(ref mut arr) = self {
+            match more_keys.next() {
+                None => arr.push(value),
+                Some(next_match) => {
+                    let next_key = next_match.get(1).unwrap().as_str();
+                    if next_key.len() == 0 {
+                        if arr.is_empty() {
+                            arr.push(Self::Arr(Vec::new()));
+                        }
+                        arr.last_mut().unwrap().push(more_keys, value)?
+                    } else {
+                        if arr.is_empty() {
+                            arr.push(Self::Map(HashMap::new()));
+                        }
+                        arr.last_mut().unwrap().insert(
+                            next_key.to_string(),
+                            more_keys,
+                            value,
+                        )?
+                    }
+                }
             }
+            Ok(())
         } else {
-            Err(Error::invalid_input("self is not a Map variant"))
+            Err(Error::invalid_input("self is not an Arr variant"))
         }
     }
 
+    // vals is [(<URL or body parameter name>, <URL-decoded string value>)].
+    // The parameter name should be e.g. "foo[bar][]" indicating that the
+    // value is an element in an array that is a value with key "bar" in a
+    // map that is the value with key "foo" in the returned FormData::Map.
     fn parse(vals: Vec<(String, String)>) -> Result<Self, Error> {
         ::lazy_static::lazy_static! {
-            static ref BRACKETS: ::regex::Regex =
-                ::regex::Regex::new(r"\[([^]]*)\]").unwrap();
+            static ref BRACKETS: Regex = Regex::new(r"\[([^]]*)\]").unwrap();
         }
-        let mut result = FormData::new();
+        let mut result = FormData::Map(HashMap::new());
         for (raw_key, raw_val) in vals {
             let val = Self::Leaf(raw_val);
             let mut nested = BRACKETS.captures_iter(&raw_key).peekable();
-            let mut key = if nested.peek().is_none() {
-                &raw_key
+            let key = if let Some(mtch) = nested.peek() {
+                &raw_key[0..mtch.get(0).unwrap().start()]
             } else {
-                &raw_key[0..nested.peek().unwrap().get(0).unwrap().start()]
+                &raw_key
             };
-            let mut branch = &mut result;
-            loop {
-                match nested.peek() {
-                    Some(c) => {
-                        let next_key = c.get(1).unwrap().as_str();
-                        if next_key.len() == 0 {
-                            branch.push(key, &val)?;
-                            break;
-                        }
-                        branch = branch.branch(key)?;
-                        key = next_key;
-                    }
-                    None => {
-                        branch.insert(key, &val)?;
-                        break;
-                    }
-                }
-            }
+            result.insert(key.to_string(), nested, val)?;
         }
         Ok(result)
-    }
-
-    fn push(&mut self, nam: &str, val: &FormData) -> Result<(), Error> {
-        match self {
-            FormData::Map(ref mut map) => match map.get_mut(nam) {
-                Some(old_val) => {
-                    if let FormData::Arr(ref mut old_arr) = old_val {
-                        old_arr.push(val.clone());
-                        return Ok(());
-                    }
-                }
-                None => {
-                    map.insert(
-                        nam.to_string(),
-                        FormData::Arr(vec![val.clone()]),
-                    );
-                    return Ok(());
-                }
-            },
-            _ => (),
-        }
-        Err(Error::invalid_input(&format!(
-            "get(\"{}\") is not an Arr variant",
-            nam
-        )))
     }
 }
 
@@ -1194,77 +1181,6 @@ impl Parse for Config {
                 path
             }
         };
-        /*
-        let role_enum: Option<Type> = match app_config.get_mut("role_enum") {
-            Some(val) => match val {
-                ConfigAttrVal::Literal(_) => {
-                    if val.get_bool()? {
-                        *val = ConfigAttrVal::Path(parse_quote!(crate::models::UserRole));
-                        Some(parse_quote!(crate::models::UserRole))
-                    } else {
-                        None
-                    }
-                }
-                _ => {
-                    let p = val.get_path()?;
-                    Some(parse_quote!(#p))
-                }
-            },
-            None => {
-                app_config.insert(
-                    "role_enum".to_string(),
-                    ConfigAttrVal::Literal(parse_quote!(false)),
-                );
-                None
-            }
-        };
-        let role_enum: Option<Type> = {
-            enum Result { False, Deflt, Given }
-            let mut result: Result = app_config
-                .get("role_enum")
-                .map(|val| {
-                    match val {
-                        ConfigAttrVal::Literal(_) => {
-                            if val.get_bool()? {
-                                Result::Deflt
-                            } else {
-                                Result::Given
-                            }
-                        }
-                        _ => Result::Given,
-                    }
-                })
-                .unwrap_or_else(|| {
-                    if app_config.contains_key("role_variants") {
-                        Result::Deflt
-                    } else {
-                        Result::False
-                    }
-                });
-            match result {
-                Result::False => {
-                    app_config.insert(
-                        "role_enum".to_string(),
-                        ConfigAttrVal::Literal(parse_quote!(false)),
-                    );
-                    None
-                }
-                Result::Deflt => {
-                    app_config.insert(
-                        "role_enum".to_string(),
-                        ConfigAttrVal::Path(parse_quote!(
-                            crate::models::UserRole
-                        )),
-                    );
-                    Some(parse_quote!(crate::models::UserRole))
-                }
-                Result::Given => {
-                    let p = app_config.get("role_enum").unwrap().get_path()?;
-                    Some(parse_quote!(#p))
-                }
-            }
-        };
-        */
         let role_enum: Option<Type> = {
             enum Result {
                 False,
@@ -1373,9 +1289,7 @@ impl Handler {
         authorizers: &[Authorizer],
         role_enum: &Type,
     ) -> ::syn::Result<()> {
-//eprintln!("");
         for auth in authorizers {
-//eprintln!("{}.is_match({}) -> {}", auth.pattern, self.route, auth.pattern.is_match(&self.route));
             if auth.pattern.is_match(&self.route) {
                 if auth.roles == vec!["Public".to_string()] {
                     return Ok(());
@@ -1891,17 +1805,6 @@ struct Level2 {
     attrs: Vec<ConfigAttr>,
 }
 
-/*
-impl Level2 {
-    fn get_str(&self) -> ::syn::Result<String> {
-        self.id
-            .as_ref()
-            .map(|i| i.to_string())
-            .ok_or_else(|| syn_error("level 2 id required"))
-    }
-}
-*/
-
 impl Parse for Level2 {
     fn parse(stream: ParseStream) -> ::syn::Result<Self> {
         Ok(Self {
@@ -1943,4 +1846,43 @@ impl Parse for ConfigAttr {
 
 fn syn_error(e: &str) -> ::syn::Error {
     ::syn::Error::new(::proc_macro2::Span::call_site(), e)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::serde_json::json;
+
+    #[test]
+    fn test_formdata() {
+        assert_eq!(
+            ::serde_json::to_value(
+                FormData::parse(
+                    vec![
+                        ("smpl", "1"),
+                        ("arr[]", "2"),
+                        ("arr[]", "3"),
+                        ("map[a]", "4"),
+                        ("map[b]", "5"),
+                        ("deep[c][]", "6"),
+                        ("deep[c][]", "7"),
+                        ("deep[d]", "8"),
+                        ("mtrx[][]", "9"),
+                    ]
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+            json!({
+                "smpl": "1",
+                "arr":  ["2", "3"],
+                "map":  { "a": "4", "b": "5" },
+                "deep": { "c": ["6", "7"], "d": "8" },
+                "mtrx": [["9"]],
+            }),
+        );
+    }
 }

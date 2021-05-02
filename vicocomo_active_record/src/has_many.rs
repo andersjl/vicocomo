@@ -4,8 +4,9 @@ use ::vicocomo_derive_utils::*;
 
 #[allow(unused_variables)]
 pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
+    use ::proc_macro2::Span;
     use ::quote::{format_ident, quote};
-    use ::syn::{export::Span, parse_quote, Expr, LitStr};
+    use ::syn::{parse_quote, Expr, LitStr};
 
     let struct_id = &model.struct_id;
     let table_name = &model.table_name;
@@ -153,9 +154,6 @@ pub(crate) fn has_many_impl(model: &Model) -> TokenStream {
                     filter: Option<&::vicocomo::Query>,
                 ) -> Result<Vec<#remote_type>, ::vicocomo::Error> {
                     use ::vicocomo::Find;
-                    /*
-                    Ok(Vec::new())
-                    */
                     let mut bld = match filter {
                         Some(f) => f.clone().builder(),
                         None => ::vicocomo::QueryBld::new(),

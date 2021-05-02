@@ -1,10 +1,11 @@
 use crate::model::Model;
-use proc_macro::TokenStream;
+use ::proc_macro::TokenStream;
 
 #[allow(unused_variables)]
 pub(crate) fn delete_impl(model: &Model) -> TokenStream {
+    use ::proc_macro2::Span;
     use ::quote::quote;
-    use ::syn::{export::Span, parse_quote, Expr, LitStr};
+    use ::syn::{parse_quote, Expr, LitStr};
 
     let Model {
         ref struct_id,

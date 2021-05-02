@@ -1,10 +1,10 @@
 use crate::model::Model;
-use proc_macro::TokenStream;
+use ::proc_macro::TokenStream;
 
 #[allow(unused_variables)]
 pub(crate) fn save_impl(model: &Model) -> TokenStream {
-    use quote::quote;
-    use syn::{parse_quote, Expr};
+    use ::quote::quote;
+    use ::syn::{parse_quote, Expr};
 
     let Model {
         ref struct_id,

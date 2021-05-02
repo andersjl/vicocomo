@@ -1,9 +1,10 @@
-use ::vicocomo_derive_utils::*;
-use proc_macro::TokenStream;
-use syn::{
-    export::Span, parse_quote, punctuated::Punctuated, AttrStyle, Attribute,
-    Expr, Ident, Lit, LitStr, Meta, NestedMeta, Type,
+use ::proc_macro::TokenStream;
+use ::proc_macro2::Span;
+use ::syn::{
+    parse_quote, punctuated::Punctuated, AttrStyle, Attribute, Expr, Ident,
+    Lit, LitStr, Meta, NestedMeta, Type,
 };
+use ::vicocomo_derive_utils::*;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum ExtraInfo {
@@ -115,9 +116,9 @@ impl Model {
     // public methods without receiver - - - - - - - - - - - - - - - - - - - -
 
     pub(crate) fn new(input: TokenStream, compute: Vec<ExtraInfo>) -> Self {
-        use case::CaseExt;
-        use regex::Regex;
-        use syn::{
+        use ::case::CaseExt;
+        use ::regex::Regex;
+        use ::syn::{
             parse, Data::Struct, DeriveInput, Fields::Named, FieldsNamed,
         };
 
@@ -439,11 +440,13 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                         );
                         (parsed.unwrap(), *nullable)
                     })
-                    .or_else(|| panic!(
+                    .or_else(|| {
+                        panic!(
                         "Type {} currently not allowed in a vicocomo Active \
                             Record model",
                         type_string,
-                    ));
+                    )
+                    });
             }
             fields.push(Field {
                 id,
@@ -500,17 +503,16 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         );
         parse_quote!(
             if #actual != #expected {
-                return Err(::vicocomo::Error::database(&format!(
-                    #error_msg,
-                    #actual,
-                    #expected,
-                )));
+                return Err(::vicocomo::Error::database(
+                    None,
+                    &format!(#error_msg, #actual, #expected),
+                ));
             }
         )
     }
 
     pub(crate) fn strip_option<'a>(ty: &'a Type) -> &'a Type {
-        use syn::{GenericArgument, PathArguments::AngleBracketed};
+        use ::syn::{GenericArgument, PathArguments::AngleBracketed};
         match ty {
             Type::Path(p) => match p.path.segments.first() {
                 Some(segm) if segm.ident == "Option" => {
@@ -655,8 +657,8 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    // the type of the returned expression is Option<PkType>
-    pub(crate) fn pk_self_to_tuple(&self) -> Expr {
+    // the returned expression evaluates to Option<PkType>
+    pub(crate) fn expr_to_pk_tuple(&self, expr: Expr) -> Expr {
         let pk_fields = &self.pk_fields();
         let mut exprs: Vec<Expr> = Vec::new();
         let mut pk_opts: Vec<Ident> = Vec::new();
@@ -664,20 +666,23 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             let id = &pk.id;
             if pk.opt {
                 pk_opts.push(id.clone());
-                exprs.push(parse_quote!(self.#id.clone().unwrap()));
+                exprs.push(parse_quote!((#expr).#id.clone().unwrap()));
             } else {
-                exprs.push(parse_quote!(self.#id.clone()));
+                exprs.push(parse_quote!((#expr).#id.clone()));
             }
         }
         let tuple = match pk_fields.len() {
-            0 => panic!("missing primary key"),
+            0 => parse_quote!(None),
             1 => exprs.drain(..1).next().unwrap(),
             _ => parse_quote!( ( #( #exprs ),* ) ),
         };
-        if pk_opts.is_empty() {
+        if pk_fields.is_empty() {
+            tuple
+        } else if pk_opts.is_empty() {
             parse_quote!(Some(#tuple))
         } else {
-            let check: Expr = parse_quote!( #( self.#pk_opts.is_some() )&&* );
+            let check: Expr =
+                parse_quote!( #( (#expr).#pk_opts.is_some() )&&* );
             parse_quote!(
                 if #check {
                     Some(#tuple)
@@ -731,7 +736,8 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             .collect();
         parse_quote!(
             {
-                use std::convert::TryInto;
+                use ::std::convert::TryInto;
+
                 let mut error: Option<::vicocomo::Error> = None;
                 let mut models = Vec::new();
                 let mut rows: Vec<Vec<::vicocomo::DbValue>> = #rows;
@@ -762,7 +768,8 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
     }
 
     pub(crate) fn unique_fields(&self) -> Vec<Vec<&Field>> {
-        use std::collections::HashMap;
+        use ::std::collections::HashMap;
+
         let mut unis: HashMap<&str, Vec<&Field>> = HashMap::new();
         for field in &self.fields {
             let uni_lbl = match &field.uni {
@@ -801,7 +808,8 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
 
     fn get_has_many(attrs: Vec<Attribute>, struct_nam: &str) -> Vec<HasMany> {
         use ::case::CaseExt;
-        use regex::Regex;
+        use ::regex::Regex;
+
         const EXPECT_HAS_MANY_ERROR: &'static str =
             "expected #[vicocomo_has_many( ... )]";
 
@@ -830,7 +838,13 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                                 match entry {
                                     NestedMeta::Meta(nested) => match nested {
                                         Meta::NameValue(n_v) => {
-                                            match n_v.path.get_ident().unwrap().to_string().as_str() {
+                                            match n_v
+                                                .path
+                                                .get_ident()
+                                                .unwrap()
+                                                .to_string()
+                                                .as_str()
+    {
         "join_fk_col" =>
         match &n_v.lit {
             Lit::Str(s) => join_fk_col = Some(s.value()),
@@ -949,15 +963,10 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
 
     // (type path, last segment as string)
     fn remote_type(path: &str) -> (Type, String) {
-        use case::CaseExt;
         let mut type_str = path.to_string();
         let type_vec = path.split("::").collect::<Vec<_>>();
         if type_vec.len() == 1 {
-            type_str = format!(
-                "crate::models::{}::{}",
-                type_str.to_snake(),
-                type_str,
-            );
+            type_str = format!("crate::models::{}", type_str);
         }
         (
             syn::parse_macro_input::parse(

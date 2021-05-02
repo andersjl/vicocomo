@@ -1,4 +1,5 @@
-//! Traits implemented by model objects and some helper types.
+//! Traits implemented by model objects persisted in an SQL database, and some
+//! helper types for querying the objects in the database.
 //!
 //! All of the traits have [derive macros
 //! ](../../vicocomo_active_record/index.html) with the same name.
@@ -77,6 +78,9 @@ pub trait Delete<PkType> {
     /// the `on_delete` value in the attribute `vicocomo_has_many`, e.g.
     /// relying on the database's referential integrity.
     ///
+    /// For referential integrity and error handling, see [`delete()`
+    /// ](#tymethod.delete).
+    ///
     fn delete(self, db: DatabaseIf) -> Result<usize, Error>;
 
     /// Return `Ok(batch.len())` iff each key in `batch` identifies a database
@@ -86,9 +90,14 @@ pub trait Delete<PkType> {
     /// than one primary key column, `PkType` is a tuple in the order they are
     /// declared in the struct.
     ///
-    /// The implementation should ensure referential integrity if the
-    /// implementor derives [`HasMany`](../derive.HasMany.html), see
-    /// [`delete()`](#tymethod.delete).
+    /// Return [`Err(Error::CannotDelete)`
+    /// ](../error/enum.Error.html#variant:CannotDelete) for the first of the
+    /// objects referred to in `batch` that
+    /// - does not exist in the database, or
+    /// - cannot be deleted because of a database foreign key constraint, or
+    /// - uses [`before_delete()`
+    ///   ](trait.BeforeDelete.html#tymethod.before_delete) which returns an
+    ///   error.
     ///
     fn delete_batch(db: DatabaseIf, batch: &[PkType])
         -> Result<usize, Error>;
@@ -107,6 +116,9 @@ pub trait BeforeDelete {
     /// ](../../vicocomo_active_record/derive.HasMany.html) associations.
     /// Those should be handled by [`delete()`
     /// ](trait.Delete.html#tymethod.delete) directly.
+    ///
+    /// On error return, the variant should be a `Error::CannotDelete`
+    /// indicating the offending field(s) and what the problem is.
     ///
     fn before_delete(&mut self, db: DatabaseIf) -> Result<(), Error>;
 }
@@ -156,8 +168,10 @@ pub trait Find<PkType>: Sized {
     ///
     fn query(db: DatabaseIf, query: &Query) -> Result<Vec<Self>, Error>;
 
-    /// Return an error if there is no object in the database whith the given
-    /// primary key(s).  See [`find()`](trait.Find.html#tymethod.find).
+    /// Return an [`Error::Database`
+    /// ](../error/enum.Error.html#variant.Database) if there is no object in
+    /// the database whith the given primary key(s).  See [`find()`
+    /// ](trait.Find.html#method.find).
     ///
     /// The default implementaion uses `find()` in the obvious way.
     ///
@@ -168,12 +182,14 @@ pub trait Find<PkType>: Sized {
     ) -> Result<(), Error> {
         match Self::find(db, pk) {
             Some(_) => Ok(()),
-            None => Err(Error::database(msg)),
+            None => Err(Error::database(None, msg)),
         }
     }
 
-    /// Return an error if this object is already stored in the database.  See
-    /// [`find_equal()`](trait.Find.html#tymethod.find_equal).
+    /// Return an [`Error::Database`
+    /// ](../error/enum.Error.html#variant.Database) if this object is already
+    /// stored in the database.  See [`find_equal()`
+    /// ](trait.Find.html#method.find_equal).
     ///
     /// The default implementaion uses `find_equal()` in the obvious way.
     /// Note that the default `find_equal()` will make the default
@@ -185,7 +201,7 @@ pub trait Find<PkType>: Sized {
         msg: &str,
     ) -> Result<(), Error> {
         match self.find_equal(db) {
-            Some(_) => Err(Error::database(msg)),
+            Some(_) => Err(Error::database(None, msg)),
             None => Ok(()),
         }
     }
@@ -204,9 +220,8 @@ pub trait Save: Sized {
     /// It is an error if `self` has a primary key that exists in the
     /// database.
     ///
-    /// The implementation should return `Err` if the implementor derives
-    /// [`BelongsTo`](../derive.BelongsTo.html) and there is an invalid remote
-    /// reference, e.g. relying on the database's referential integrity.
+    /// For referential integrity and error handling, see [`insert_batch()`
+    /// ](#tymethod.insert_batch).
     ///
     fn insert(&mut self, db: DatabaseIf) -> Result<(), Error> {
         *self = Self::insert_batch(db, std::slice::from_mut(self))?
@@ -225,9 +240,14 @@ pub trait Save: Sized {
     /// It is an error if any of the data has a primary key that exists in the
     /// database.
     ///
-    /// The implementation should ensure referential integrity if the
-    /// implementor derives [`BelongsTo`](../derive.BelongsTo.html), see
-    /// [`insert()`](#method.insert).
+    /// Return [`Err(Error::CannotSave)`
+    /// ](../error/enum.Error.html#variant:CannotSave) for the first of the
+    /// objects in `data` that
+    /// - has a primary key that exists in the database, or
+    /// - has an invalid remote [`BelongsTo`](../derive.BelongsTo.html)
+    ///   reference (e.g. relying on the database's referential integrity), or
+    /// - uses [`before_save()`](trait.BeforeSave.html#tymethod.before_save)
+    ///   which returns an error.
     ///
     fn insert_batch(
         db: DatabaseIf,
@@ -257,6 +277,14 @@ pub trait Save: Sized {
     /// implementor derives [`BelongsTo`](../derive.BelongsTo.html), see
     /// [`insert()`](#method.insert).
     ///
+    /// Return [`Err(Error::CannotSave)`
+    /// ](../error/enum.Error.html#variant:CannotSave) if `self`
+    /// - does not have a primary key that exists in the database, or
+    /// - has an invalid remote [`BelongsTo`](../derive.BelongsTo.html)
+    ///   reference (e.g. relying on the database's referential integrity), or
+    /// - uses [`before_save()`](trait.BeforeSave.html#tymethod.before_save)
+    ///   which returns an error.
+    ///
     fn update(&mut self, db: DatabaseIf) -> Result<(), Error>;
 
     /// Try to UPDATE the row in the database corresponding to `self`.  Each
@@ -268,6 +296,10 @@ pub trait Save: Sized {
     /// <b>Note</b> that this function updates directly to the database and
     /// should ignore the visibility of the fields in `self` corresponding to
     /// the `cols`.
+    ///
+    /// Return [`Err(Error::Database)`
+    /// ](../error/enum.Error.html#variant:Database) if the database update
+    /// fails.
     ///
     fn update_columns(
         &mut self,
@@ -286,11 +318,14 @@ pub trait BeforeSave {
     /// [`insert()`](trait.Save.html#tymethod.insert),
     /// [`save()`](trait.Save.html#tymethod.save), and
     /// [`update()`](trait.Save.html#tymethod.update) should return `Err` as
-    /// well.  `before_save()` should *not* handle referential integrity for
+    /// well. `before_save()` should *not* handle referential integrity for
     /// [`BelongsTo`](../derive.BelongsTo.html) associations.  Those should be
     /// handled by [`insert()`](trait.Save.html#tymethod.insert), [`save()`
     /// ](trait.Save.html#tymethod.save), and [`update()`
     /// ](trait.Save.html#tymethod.update) directly.
+    ///
+    /// On error return, the variant should be an `Error::CannotSave`
+    /// indicating the offending field(s) and what the problem is.
     ///
     fn before_save(&mut self, db: DatabaseIf) -> Result<(), Error>;
 }

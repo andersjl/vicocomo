@@ -71,19 +71,21 @@ pub fn test_single_pk(db: DatabaseIf) {
     )
     .is_none());
     assert!(s.find_equal_name_and_un2(db).is_none());
-    assert!(
+    assert_eq!(
         SinglePk::validate_exists_name_and_un2(
             db,
             s.name.as_ref().unwrap(),
             &s.un2,
-            "message"
         )
         .err()
         .unwrap()
-        .to_string()
-            == "Database error\nmessage: &quot;hej&quot;, 42"
+        .to_string(),
+        "error--CannotSave\
+        \nerror--CannotSave--SinglePk--name--un2--not-found\
+        \nerror--CannotSave--SinglePk--name--not-found\
+        \nerror--CannotSave--SinglePk--un2--not-found",
     );
-    assert!(s.validate_unique_name_and_un2(db, "message").is_ok());
+    assert!(s.validate_unique_name_and_un2(db).is_ok());
     println!("    OK");
     println!("error updating non-existing ..");
     let res = s.update(db);
@@ -152,19 +154,28 @@ pub fn test_single_pk(db: DatabaseIf) {
         format!("{:?}", &res)
             == format!("{:?}", &s.find_equal_name_and_un2(db).unwrap())
     );
+    println!("    OK");
+    println!("validating existing by unique fields ..");
     assert!(SinglePk::validate_exists_name_and_un2(
         db,
         s.name.as_ref().unwrap(),
         &s.un2,
-        "message"
     )
     .is_ok());
-    assert!(
-        s.validate_unique_name_and_un2(db, "message")
+    println!("    OK");
+    println!("validating unique when saving ..");
+    assert!(s.validate_unique_name_and_un2(db).is_ok());
+    let mut s1 = s.clone();
+    s1.id = None;
+    assert_eq!(
+        s1.validate_unique_name_and_un2(db)
             .err()
             .unwrap()
-            .to_string()
-            == "Database error\nmessage: Some(&quot;nytt namn&quot;), 42"
+            .to_string(),
+        "error--CannotSave\
+            \nerror--CannotSave--SinglePk--name--un2--not-unique\
+            \nerror--CannotSave--SinglePk--name--not-unique\
+            \nerror--CannotSave--SinglePk--un2--not-unique",
     );
     println!("    OK");
 

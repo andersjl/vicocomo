@@ -1,14 +1,17 @@
 use crate::model::Model;
-use proc_macro::TokenStream;
-use syn::{export::Span, Ident};
+use ::proc_macro::TokenStream;
+use ::proc_macro2::Span;
+use ::quote::format_ident;
+use ::syn::{Ident, LitStr};
 
 #[allow(unused_variables)]
 pub(crate) fn find_impl(model: &Model) -> TokenStream {
-    use quote::quote;
-    use syn::{
+    use ::quote::quote;
+    use ::syn::{
         parse_quote, punctuated::Punctuated, token::Comma, Expr, ItemFn,
     };
     let struct_id = &model.struct_id;
+    let model_name = LitStr::new(&struct_id.to_string(), Span::call_site());
     let table_name = &model.table_name;
     let all_cols = model
         .fields
@@ -20,8 +23,10 @@ pub(crate) fn find_impl(model: &Model) -> TokenStream {
     let pk_type = &model.pk_type();
 
     // == general functions ==================================================
+
     let default_order = model.default_order();
     let all_cols_join = all_cols.join(", ");
+
     // SELECT <all> FROM <table> [ ORDER BY <default> ]
     let load_sql = format!(
         "SELECT {} FROM {} {}",
@@ -30,6 +35,7 @@ pub(crate) fn find_impl(model: &Model) -> TokenStream {
     let load_models = model.rows_to_models_expr(
         parse_quote!(db.query(#load_sql, &[], &[ #( #db_types ),* ])?),
     );
+
     // SELECT <all> FROM <table>
     // [ WHERE ... ] [ ORDER BY ... ] [ LIMIT ... ] [ OFFSET ... ]
     let query_sql = format!(
@@ -75,7 +81,7 @@ pub(crate) fn find_impl(model: &Model) -> TokenStream {
                 match opt {
                     Some(v) => values.push(v.clone()),
                     None => return Err(::vicocomo::Error::invalid_input(
-                        "value is None",
+                        "database--Query--value-missing",
                     )),
                 }
             }
@@ -87,8 +93,8 @@ pub(crate) fn find_impl(model: &Model) -> TokenStream {
         }
     );
     let mut gen = proc_macro2::TokenStream::new();
+    let self_to_pk_tuple_expr = model.expr_to_pk_tuple(parse_quote!(self));
     if pk_len > 0 {
-        let pk_self_to_tuple = model.pk_self_to_tuple();
         let find_pk_sql = model.find_sql(
             model
                 .pk_fields()
@@ -97,7 +103,6 @@ pub(crate) fn find_impl(model: &Model) -> TokenStream {
                 .collect::<Vec<_>>()
                 .as_slice(),
         );
-        let pk_iter = (0..pk_len).map(|ix| syn::Index::from(ix));
         let mut pk_values: Punctuated<Expr, Comma> = Punctuated::new();
         if pk_len == 1 {
             pk_values.push(parse_quote!(pk.clone().into()));
@@ -131,7 +136,9 @@ pub(crate) fn find_impl(model: &Model) -> TokenStream {
                 fn find_equal(&self, db: ::vicocomo::DatabaseIf)
                     -> Option<Self>
                 {
-                    #pk_self_to_tuple.and_then(|tup| Self::find(db, &tup))
+                    #self_to_pk_tuple_expr.and_then(|tup| {
+                        Self::find(db, &tup)
+                    })
                 }
 
                 #load_fn
@@ -150,8 +157,9 @@ pub(crate) fn find_impl(model: &Model) -> TokenStream {
     }
 
     // == unique field functions =============================================
+
     for uni_flds in model.unique_fields() {
-        use syn::FnArg;
+        use ::syn::FnArg;
         let mut uni_cols = Vec::new();
         let uni_str = &uni_flds
             .iter()
@@ -185,6 +193,7 @@ pub(crate) fn find_impl(model: &Model) -> TokenStream {
         }
 
         // -- finding --------------------------------------------------------
+
         let find_uni_sql = model.find_sql(&uni_cols);
         let find_by_str = format!("find_by_{}", uni_str);
         let find_by_id = Ident::new(find_by_str.as_str(), Span::call_site());
@@ -221,53 +230,88 @@ pub(crate) fn find_impl(model: &Model) -> TokenStream {
         });
 
         // -- validating -----------------------------------------------------
-        let val_uni_str = format!("validate_unique_{}", uni_str);
-        let uni_id = Ident::new(val_uni_str.as_str(), Span::call_site());
-        let val_exi_str = format!("validate_exists_{}", uni_str);
-        let exi_id = Ident::new(val_exi_str.as_str(), Span::call_site());
-        let mut exi_pars = find_pars.clone();
-        exi_pars.push(parse_quote!(msg: &str));
-        let validate_error_format = format!(
-            "{{}}: {}",
-            (0..uni_flds.len())
-                .map(|_| "{:?}")
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-        let mut exi_frmt_args: Punctuated<Expr, Comma> = Punctuated::new();
-        exi_frmt_args.push(parse_quote!(#validate_error_format));
-        exi_frmt_args.push(parse_quote!(msg));
-        let mut uni_frmt_args = exi_frmt_args.clone();
+
+        let uni_id = format_ident!("validate_unique_{}", uni_str);
+        let exi_id = format_ident!("validate_exists_{}", uni_str);
+        let uni_dashes = &uni_str.replace("_and_", "--");
+        let not_found_error: Expr = if uni_flds.len() > 1 {
+            let msg = LitStr::new(
+                &format!("{}--not-found", &uni_dashes),
+                Span::call_site(),
+            );
+            parse_quote!(Some(#msg.to_string()))
+        } else {
+            parse_quote!(None)
+        };
+        let not_unique_error: Expr = if uni_flds.len() > 1 {
+            let msg = LitStr::new(
+                &format!("{}--not-unique", &uni_dashes),
+                Span::call_site(),
+            );
+            parse_quote!(Some(#msg.to_string()))
+        } else {
+            parse_quote!(None)
+        };
+        let mut uni_name: Vec<LitStr> = Vec::new();
         for field in uni_flds {
-            let fld_id = &field.id;
-            let par_id = id_to_par(fld_id);
-            exi_frmt_args.push(parse_quote!(#par_id));
-            uni_frmt_args.push(parse_quote!(self.#fld_id));
+            uni_name
+                .push(LitStr::new(&field.id.to_string(), Span::call_site()));
         }
+        let obj_to_pk_tuple_expr = model.expr_to_pk_tuple(parse_quote!(obj));
         gen.extend(quote! {
             impl #struct_id {
 
-                // -- validate_exists_field1_and_field3(db, v1, v3, msg) -----
-                pub fn #exi_id(#exi_pars) -> Result<(), ::vicocomo::Error> {
+                // -- validate_exists_field1_and_field3(db, v1, v3) ----------
+                pub fn #exi_id(#find_pars) -> Result<(), ::vicocomo::Error> {
                     match Self::#find_by_id(#find_args) {
                         Some(_) => Ok(()),
-                        None => Err(::vicocomo::Error::database(
-                            &format!(#exi_frmt_args)
-                        )),
+                        None => {
+                            Err(::vicocomo::Error::CannotSave(
+                                ::vicocomo::ModelError {
+                                    general: #not_found_error,
+                                    model: #model_name.to_string(),
+                                    field_errors: vec![
+                                    #(
+                                        ::vicocomo::FieldError {
+                                            field: #uni_name.to_string(),
+                                            texts:
+                                                vec!["not-found".to_string()],
+                                        },
+                                    )*
+                                    ],
+                                }
+                            ))
+                        }
                     }
                 }
 
-                // -- validate_unique_field1_and_field3(db, msg) -------------
+                // -- validate_unique_field1_and_field3(db) ------------------
                 pub fn #uni_id(
                     &self,
                     db: ::vicocomo::DatabaseIf,
-                    msg: &str
                 ) -> Result<(), ::vicocomo::Error> {
                     match self.#find_eq_id(db) {
-                        Some(_) => Err(::vicocomo::Error::database(
-                            &format!(#uni_frmt_args)
-                        )),
-                        None => Ok(()),
+                        Some(obj) if #self_to_pk_tuple_expr
+                            != #obj_to_pk_tuple_expr =>
+                        {
+                            Err(::vicocomo::Error::CannotSave(
+                                ::vicocomo::ModelError {
+                                    general: #not_unique_error,
+                                    model: #model_name.to_string(),
+                                    field_errors: vec![
+                                    #(
+                                        ::vicocomo::FieldError {
+                                            field: #uni_name.to_string(),
+                                            texts: vec![
+                                                "not-unique".to_string(),
+                                            ],
+                                        },
+                                    )*
+                                    ],
+                                }
+                            ))
+                        }
+                        _ => Ok(()),
                     }
                 }
             }

@@ -1,6 +1,6 @@
 //! Implement `::vicocomo::DbConn` by way of the `tokio-postgres` crate.
 
-use ::vicocomo::{DbConn, DbType, DbValue, Error};
+use ::vicocomo::{DatabaseError, DbConn, DbType, DbValue, Error};
 use futures::executor::block_on;
 use postgres_types;
 
@@ -16,7 +16,10 @@ impl PgConn {
 
     fn error(&self, err: &::tokio_postgres::error::Error) -> Error {
         self.rollback().unwrap_or(());
-        Error::database(&err.to_string())
+        Error::Database(DatabaseError {
+            sqlstate: err.code().map(|c| c.code().to_string()),
+            text: err.to_string(),
+        })
     }
 }
 

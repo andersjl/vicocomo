@@ -8,15 +8,15 @@
 //!
 //! # Defining texts
 //!
-//! The texts are defined in the file `config/texts.cfg" as a number of
+//! The texts are defined in the file `config/texts.cfg` as a number of
 //! comma-separated key-value pairs optionally defining parameterized
 //! substitution, see the example below.
 //!
 //! # Example
 //! ```
-//! use ::vicocomo::t;
+//! use vicocomo::t;
 //!
-//! ::std::fs::write(
+//! std::fs::write(
 //!     "config/texts.cfg",
 //!     r#"
 //!     "simple"           => "some text without parameters",
@@ -75,7 +75,7 @@
 ///
 #[macro_export]
 macro_rules! t {
-    ($key: literal $( , $name: literal : $value: expr )* $( , )? ) => {
+    ($key: expr $( , $name: literal : $value: expr )* $( , )? ) => {
         {
             let texts = &$crate::texts::TEXTS;
             let mut params: Vec<(&str, &str)> = Vec::new();
@@ -84,7 +84,6 @@ macro_rules! t {
             params.push(($name, &val));
         )*
             $crate::texts::get_text($key, params.as_slice())
-
         }
     };
 }
@@ -93,13 +92,18 @@ use ::regex::Regex;
 use ::std::collections::HashMap;
 
 lazy_static! {
+    #[doc(hidden)]
     pub static ref DEFS: String =
         ::std::fs::read_to_string("config/texts.cfg")
             .unwrap_or_else(|_| String::new());
 }
 
 lazy_static! {
-    pub static ref TEXTS: HashMap<&'static str, (Vec<(&'static str, &'static str)>, &'static str,)> = {
+    #[doc(hidden)]
+    pub static ref TEXTS: HashMap<
+        &'static str,
+        (Vec<(&'static str, &'static str)>, &'static str,)
+    > = {
         lazy_static! {
             static ref KEY_VAL_PAIR: Regex = Regex::new(
                 r#""((?:[^"]|\\")*)"\s*=>\s*"((?:[^"]|\\")*)"(?:,|$)"#,
@@ -117,6 +121,10 @@ lazy_static! {
     };
 }
 
+// find < > delimited parameters in text and return a pair (
+//   a vector of pairs ( text before parameter, parameter name ),
+//   text after the last parameter,
+// )
 #[doc(hidden)]
 pub fn find_params(
     text: &'static str,
@@ -135,6 +143,7 @@ pub fn find_params(
     (befores_names, &text[last..])
 }
 
+// params is [ ( param name, param value ), ... ] in arbitrary order
 #[doc(hidden)]
 pub fn get_text(key: &str, params: &[(&str, &str)]) -> String {
     let mut result = String::new();
@@ -162,5 +171,8 @@ pub fn get_text(key: &str, params: &[(&str, &str)]) -> String {
             }
         }
     }
-    result.replace("\\<", "<").replace("\\>", ">")
+    result
+        .replace("\\<", "<")
+        .replace("\\>", ">")
+        .replace(r#"\""#, r#"""#)
 }

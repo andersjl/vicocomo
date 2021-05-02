@@ -1,0 +1,17 @@
+[package]
+name = "vicocomo_db_macros"
+version = "0.1.22"
+authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+case = "1.0"
+proc-macro2 = "1.0.24"
+quote = "1.0.9"
+regex = "1.4.4"
+syn = { version = "1.0.63", features = ["full", "extra-traits"] }
+vicocomo_derive_utils = { path = "../vicocomo_derive_utils", version = "*" }
+

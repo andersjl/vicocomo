@@ -31,12 +31,12 @@ pub fn test_multi_pk(db: DatabaseIf) {
     println!("not finding non-existing {} ..", m.pk());
     assert!(MultiPk::find(db, &(42, 17)).is_none());
     assert!(m.find_equal(db).is_none());
-    assert!(
+    assert_eq!(
         MultiPk::validate_exists(db, &(m.id2, m.id.unwrap()), "message")
             .err()
             .unwrap()
-            .to_string()
-            == "Database error\nmessage"
+            .to_string(),
+        "error--Database\nerror--Database--message",
     );
     assert!(m.validate_unique(db, "message").is_ok());
     println!("    OK");
@@ -55,9 +55,9 @@ pub fn test_multi_pk(db: DatabaseIf) {
         MultiPk::validate_exists(db, &(m.id.unwrap(), m.id2), "message")
             .is_ok()
     );
-    assert!(
-        m.validate_unique(db, "message").err().unwrap().to_string()
-            == "Database error\nmessage"
+    assert_eq!(
+        m.validate_unique(db, "message").err().unwrap().to_string(),
+        "error--Database\nerror--Database--message",
     );
     println!("    OK");
     println!("error inserting existing ..");

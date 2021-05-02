@@ -1,7 +1,11 @@
 //! Only for use by the `vicocomo_`... derive macros.
 
-use quote::ToTokens;
-use syn::{export::Span, Attribute, Ident};
+use ::proc_macro2::Span;
+use ::quote::ToTokens;
+use ::syn::{
+    punctuated::Punctuated, token::Comma, Attribute, Data, DeriveInput,
+    Field, Fields, Ident,
+};
 
 #[doc(hidden)]
 pub fn tokens_to_string<T: ToTokens>(obj: &T) -> String {
@@ -14,13 +18,13 @@ pub fn tokens_to_string<T: ToTokens>(obj: &T) -> String {
 pub fn get_string_from_attr<F>(
     attrs: &[Attribute],
     attr_name: &str,
-    struct_id: &Ident,
+    id: &Ident,
     default: F,
 ) -> String
 where
     F: Fn(&Ident) -> String,
 {
-    use syn::{Lit, Meta};
+    use ::syn::{Lit, Meta};
     let vicocomo_name = vicocomo_attr(attr_name);
     let error_msg = format!("expected #[{} = \"some_name\"]", vicocomo_name);
     match attrs
@@ -35,7 +39,7 @@ where
             },
             _ => panic!("{}", error_msg),
         },
-        None => default(struct_id),
+        None => default(id),
     }
 }
 
@@ -45,7 +49,7 @@ pub fn get_strings_from_attr(
     attr_name: &str,
     count: Option<usize>,
 ) -> Vec<Vec<String>> {
-    use syn::{Lit, Meta, NestedMeta};
+    use ::syn::{Lit, Meta, NestedMeta};
     let vicocomo_name = vicocomo_attr(attr_name);
     let error_msg = format!(
         "expected #[{}(\"val\", ...)]{}",
@@ -92,6 +96,26 @@ where
         &get_string_from_attr(attrs, attr_name, struct_id, default),
         Span::call_site(),
     )
+}
+
+#[doc(hidden)]
+pub fn named_fields(
+    struct_tokens: &DeriveInput,
+) -> Result<Punctuated<Field, Comma>, String> {
+    if let Data::Struct(data_struct) = &struct_tokens.data {
+        if let Fields::Named(fields_named) = &data_struct.fields {
+            Ok(fields_named.named.clone())
+        } else {
+            Err("fields must be named".to_string())
+        }
+    } else {
+        Err("must be a struct".to_string())
+    }
+}
+
+#[doc(hidden)]
+pub fn tmplog(data: &str) {
+    ::std::fs::write("tmp/log.txt", data).expect("tmplog failed");
 }
 
 fn vicocomo_attr(attr_name: &str) -> String {

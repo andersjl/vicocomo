@@ -1,12 +1,13 @@
 use crate::model::{ForKey, Model};
-use proc_macro::TokenStream;
+use ::proc_macro::TokenStream;
 //TODO code smells
 
 #[allow(unused_variables)]
 pub(crate) fn belongs_to_impl(model: &Model) -> TokenStream {
+    use ::proc_macro2::Span;
+    use ::quote::{format_ident, quote};
+    use ::syn::{parse_quote, Expr, LitStr};
     use ::vicocomo_derive_utils::*;
-    use quote::{format_ident, quote};
-    use syn::{export::Span, parse_quote, Expr, LitStr};
 
     let struct_id = &model.struct_id;
     let table_name = &model.table_name;
