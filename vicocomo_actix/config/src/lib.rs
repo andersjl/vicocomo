@@ -2,29 +2,29 @@
 
 use ::proc_macro::TokenStream;
 
-/// A macro that uses [`vicocomo::http_server::Config`
-/// ](../vicocomo/http_server/struct.Config.html) to implement `actix_main()`.
+/// A macro that uses [`vicocomo::http::server::Config`
+/// ](../vicocomo/http/server/struct.Config.html) to implement `actix_main()`.
 /// ```text
 /// pub fn actix_main() -> std::io::Result<()>
 /// ```
 /// ### Web sessions under Actix
 ///
 /// Implementing the trait [`vicocomo::Session`
-/// ](../vicocomo/http_server/trait.Session.html) does not work well for
+/// ](../vicocomo/http/server/trait.Session.html) does not work well for
 /// `actix`. Instead, `config` accepts an adapter-specific [`app_config`
-/// ](../vicocomo/http_server/struct.Config.html#level-1-app_config) attribute
+/// ](../vicocomo/http/server/struct.Config.html#level-1-app_config) attribute
 /// `session`, which can have the values
 /// - <b>`None`</b>: No session support.
-/// - <b>`Cookie`</b>: [`actix_session::CookieSession`
-///   ](../actix_session/struct.CookieSession.html) is used for session
-///   support. This is the default if the attribute is not defined.
-/// - <b>`Database`</b>: Still using `CookieSession` to store a session ID,
-///   the actual session data is stored in the database. This requires that
-///   the plugin `DbConn` is defined, and that the database has a table named
-///   `"__vicocomo__sessions"` to store the sessions. The table should have
-///   three columns, `id` storing a 64 bit integer primary key, `data` storing
-///   the serialized session data as an unlimited ascii text, and `time`
-///   storing the last access time as a 64 bit integer.
+/// - <b>`Cookie`</b>: [`actix_session::storage::CookieSessionStore`
+///   ](../actix_session/storage/struct.CookieSessionStore.html) is used for
+///   session support. This is the default if the attribute is not defined.
+/// - <b>`Database`</b>: Still using `CookieSessionStore` to store a session
+///   ID, the actual session data is stored in the database. This requires
+///   that the plugin `DbConn` is defined, and that the database has a table
+///   named `"__vicocomo__sessions"` to store the sessions. The table should
+///   have three columns, `id` storing a 64 bit integer primary key, `data`
+///   storing the serialized session data as an unlimited ascii text, and
+///   `time` storing the last access time as a 64 bit integer.
 ///
 ///   For `Database`, the value may be an array `[Database, `*max age*`]`,
 ///   where *max age* indicates a duration after which untouched session data
@@ -65,9 +65,13 @@ use ::proc_macro::TokenStream;
 ///             // The type is ignored by vicocomo_actix, but still required!
 ///             (),
 ///             // vicocomo_actix requires the initialization expression to
-///             // evaluate to CookieSession rather than vicocomo::Session.
-///             ::actix_session::CookieSession::signed(&[0; 32])
-///                 .secure(false),
+///             // evaluate to SessionMiddleware rather than vicocomo::Session.
+///             actix_session::SessionMiddleware::builder(
+///                 actix_session::storage::CookieSessionStore::default(),
+///                 actix_web::cookie::Key::from(&[0; 64]),
+///             )
+///             // configuration method calls as needed
+///             .build(),
 ///         ),
 ///     },
 ///     plug_in(TemplEng) {
@@ -85,8 +89,8 @@ use ::proc_macro::TokenStream;
 ///     actix_main()
 /// }
 /// ```
-/// (see [`vicocomo::http_server::Config`
-/// ](../vicocomo/http_server/struct.Config.html)).
+/// (see [`vicocomo::http::server::Config`
+/// ](../vicocomo/http/server/struct.Config.html)).
 ///
 #[proc_macro]
 pub fn config(input: TokenStream) -> TokenStream {
@@ -97,7 +101,7 @@ pub fn config(input: TokenStream) -> TokenStream {
         parse_macro_input, parse_quote, punctuated::Punctuated, token, Expr,
         FnArg, Ident, LitInt, LitStr, Path, Type,
     };
-    use ::vicocomo::{http_server::ConfigAttrVal, Config, Handler};
+    use ::vicocomo::{Config, ConfigAttrVal, Handler};
 
     const ERROR_SESSION: &'static str =
         "expected None, Cookie, Database, or [Database, <max age>]";
@@ -154,7 +158,7 @@ pub fn config(input: TokenStream) -> TokenStream {
                 }
                 _ => (),
             }
-            result.unwrap_or_else(|| panic!(ERROR_SESSION))
+            result.unwrap_or_else(|| panic!("{}", ERROR_SESSION))
         })
         .unwrap_or_else(|| (true, SESSION_DB_NONE.to_string())); // Cookie
     let (templ_type, templ_init) = plug_ins.get("TemplEng").unwrap();
@@ -275,12 +279,11 @@ pub fn config(input: TokenStream) -> TokenStream {
                     parse_quote!(
                         if !(#cond) {
                             return ::actix_web::HttpResponse::Found()
-                                .header(
+                                .append_header((
                                     ::actix_web::http::header::LOCATION,
                                     #unauthorized_route.clone(),
-                                )
+                                ))
                                 .finish()
-                                .into_body();
                         }
                     )
                 }
@@ -300,12 +303,12 @@ pub fn config(input: TokenStream) -> TokenStream {
         #[actix_rt::main]
         pub async fn actix_main() -> std::io::Result<()> {
             let database_ref = ::actix_web::web::Data::new(#db_init);
-            let handlebars_ref = ::actix_web::web::Data::new(#templ_init);
+            let templ_ref = ::actix_web::web::Data::new(#templ_init);
             let port_str = ::std::env::var("PORT").unwrap_or_default();
             ::actix_web::HttpServer::new(move || {
                 ::actix_web::App::new()
                     .app_data(database_ref.clone())
-                    .app_data(handlebars_ref.clone())
+                    .app_data(templ_ref.clone())
                 #(  .wrap(#session_middleware))*
                 #(
                     .service(
@@ -346,8 +349,8 @@ pub fn config(input: TokenStream) -> TokenStream {
                 pub async fn #handler_fn_vec(
                     #hndl_pars_vec
                 ) -> ::actix_web::HttpResponse {
-                    let pg_arc = db_extr.into_inner();
-                    let db_if = ::vicocomo::DatabaseIf::new(pg_arc.as_ref());
+                    let db_arc = db_extr.into_inner();
+                    let db_if = ::vicocomo::DatabaseIf::new(db_arc.as_ref());
                     let te_arc = teng.into_inner();
                     let te_if = ::vicocomo::TemplEngIf::new(te_arc.as_ref());
                     let path_pars: Vec<(String, String)> = #path_pars_expr_vec;

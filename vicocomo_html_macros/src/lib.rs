@@ -25,8 +25,8 @@ mod path_tag;
 /// ```
 /// Initialize the `HtmlInput` fields to have `InputType` variants as defined
 /// by the derived struct's field types and attributes (see the [examples
-/// ](../vicocomo/html/input/trait.HtmlForm.html#examples) below), with value
-/// `None` (or `vec![]` for multiple selection variants).
+/// ](../vicocomo/html/input/trait.HtmlForm.html#examples)), with value `None`
+/// (or `vec![]` for multiple selection variants).
 ///
 /// Initialize other fields to `None`.
 ///

@@ -15,50 +15,65 @@ pub fn html_form_impl(input: TokenStream) -> TokenStream {
     let struct_id = struct_tokens.ident;
     let struct_name = struct_id.to_string();
     let mut field_id: Vec<Ident> = Vec::new();
-    let mut field_name: Vec<LitStr> = Vec::new();
+    let mut field_lit: Vec<LitStr> = Vec::new();
+    let mut has_errors = false;
     let mut input_id: Vec<Ident> = Vec::new();
     let mut init_expr: Vec<Expr> = Vec::new();
-    let mut input_name: Vec<LitStr> = Vec::new();
+    let mut input_lit: Vec<LitStr> = Vec::new();
     let mut json_expr: Vec<Expr> = Vec::new();
     let mut label_str: Vec<LitStr> = Vec::new();
     for field in Field::collect(&named_fields) {
         let id = field.id.clone();
-        if id.to_string() == "errors" {
-            continue;
-        }
-        let name = LitStr::new(&id.to_string(), Span::call_site());
+        let ty = field.input_type;
+        let lit = LitStr::new(&id.to_string(), Span::call_site());
         field_id.push(id.clone());
-        field_name.push(name.clone());
-        if let Some(ty) = field.input_type {
-            let typ_id = ty.to_ident();
-            input_id.push(id.clone());
-            init_expr.push(parse_quote!(::vicocomo::HtmlInput::new(
-                ::vicocomo::InputType::#typ_id,
-                #name,
-            )));
-            input_name.push(name.clone());
-            json_expr.push(parse_quote!(self.#id.render()));
-            label_str.push(LitStr::new(
-                &(String::new()
-                    + &struct_name
-                    + "--"
-                    + &id.to_string()
-                    + "--label"),
-                Span::call_site(),
-            ));
-        } else {
-            init_expr.push(parse_quote!(None));
-            json_expr.push(parse_quote!(
-                ::serde_json::to_value(self.#id.clone())
-                    .unwrap_or(::serde_json::json!(null))
-            ));
+        field_lit.push(lit.clone());
+        match field.input_type {
+            InputType::Errors => {
+                has_errors = true;
+                init_expr.push(parse_quote!(::std::vec::Vec::new()));
+                json_expr.push(parse_quote!(
+                    ::serde_json::to_value(self.#id.clone())
+                        .unwrap_or(::serde_json::json!(null))
+                ));
+            }
+            InputType::None => {
+                init_expr.push(parse_quote!(None));
+                json_expr.push(parse_quote!(
+                    ::serde_json::to_value(self.#id.clone())
+                        .unwrap_or(::serde_json::json!(null))
+                ));
+            }
+            _ => {
+                let typ_id = ty.to_ident();
+                input_id.push(id.clone());
+                init_expr.push(parse_quote!(::vicocomo::HtmlInput::new(
+                    ::vicocomo::InputType::#typ_id,
+                    #lit,
+                )));
+                input_lit.push(lit.clone());
+                json_expr.push(parse_quote!(self.#id.render()));
+                label_str.push(LitStr::new(
+                    &(String::new()
+                        + &struct_name
+                        + "--"
+                        + &id.to_string()
+                        + "--label"),
+                    Span::call_site(),
+                ));
+            }
         }
     }
+    assert!(
+        has_errors,
+        "#[derive(HtmlForm)] requires {} to have a field\n    \
+            errors: Vec<String>",
+        struct_name,
+    );
     TokenStream::from(quote! {
         impl #struct_id {
             pub fn new() -> Self {
                 Self {
-                    errors: Vec::new(),
                 #(  #field_id: #init_expr, )*
                 }
             }
@@ -80,41 +95,43 @@ pub fn html_form_impl(input: TokenStream) -> TokenStream {
             }
         }
         impl ::vicocomo::HtmlForm for #struct_id {
-            fn add_error(&mut self, error: &str) {
-                self.errors.push(error.to_string())
-            }
-            fn clear_errors(&mut self) {
-                self.errors.clear();
-            #( self.#input_id.clear_errors(); )*
-            }
-            fn error_iter(&self) -> ::std::slice::Iter<'_, String> {
-                self.errors.iter()
-            }
-            fn merge_error(
+            fn add_error(
                 &mut self,
                 error: &::vicocomo::Error,
                 translate: &[(&str, &str)],
             ) {
-                let mut variant = "";
-                let mut mdl_err: Option<&::vicocomo::ModelError> = None;
                 match error {
-                    ::vicocomo::Error::CannotDelete(err) => {
-                        self.errors.push(
-                            ::vicocomo::Error::format_model(
-                                "CannotDelete",
-                                &err,
-                            ),
-                        );
-                        variant = "CannotDelete";
-                        mdl_err = Some(err);
-                    }
-                    ::vicocomo::Error::CannotSave(err) => {
-                        self.errors.push(::vicocomo::Error::format_model(
-                            "CannotSave",
-                            &err,
-                        ));
-                        variant = "CannotSave";
-                        mdl_err = Some(err);
+                    ::vicocomo::Error::Model(err) => {
+                        self.errors
+                            .push(::vicocomo::Error::format_model(&err));
+                        let mut err_flds = ::std::collections::HashMap::new();
+                        let kind =
+                            ::vicocomo::Error::format_model_kind(err);
+                        for fe in &err.field_errors {
+                            err_flds.insert(
+                                fe.0.clone(),
+                                ::vicocomo::Error::format_field(
+                                    &kind,
+                                    &err.model,
+                                    fe,
+                                ),
+                            );
+                        }
+                    #(
+                        let mut err_fld = #input_lit;
+                        if let Some(translation) =
+                            translate.iter().find(|(_, fld_nam)| {
+                                *fld_nam == #input_lit
+                            })
+                        {
+                            err_fld = translation.0;
+                        };
+                        if let Some(mut fld_errs) = err_flds.remove(err_fld) {
+                            for err in fld_errs.drain(..) {
+                                self.#input_id.add_error_text(&err);
+                            }
+                        }
+                    )*
                     }
                     ::vicocomo::Error::Database(err) => {
                         self.errors.push(::vicocomo::Error::format_database(
@@ -145,35 +162,30 @@ pub fn html_form_impl(input: TokenStream) -> TokenStream {
                             err,
                         ));
                     }
-                }
-                if let Some(me) = mdl_err {
-                    let mut err_flds = ::std::collections::HashMap::new();
-                    for fe in &me.field_errors {
-                        err_flds.insert(
-                            fe.field.clone(),
-                            ::vicocomo::Error::format_field(
-                                variant,
-                                &me.model,
-                                fe,
-                            ),
-                        );
+                    ::vicocomo::Error::ThisCannotHappen(err) => {
+                        self.errors.push(::vicocomo::Error::format_error(
+                            "ThisCannotHappen",
+                            err,
+                        ));
                     }
-                #(
-                    let mut err_fld = #input_name;
-                    if let Some(translation) =
-                        translate.iter().find(|(_, fld_nam)| {
-                            *fld_nam == #input_name
-                        })
-                    {
-                        err_fld = translation.0;
-                    };
-                    if let Some(mut fld_errs) = err_flds.remove(err_fld) {
-                        for err in fld_errs.drain(..) {
-                            self.#input_id.add_error(&err);
-                        }
-                    }
-                )*
                 }
+            }
+            fn add_error_text(&mut self, error: &str) {
+                self.errors.push(error.to_string())
+            }
+            fn clear_errors(&mut self) {
+                self.errors.clear();
+            #( self.#input_id.clear_errors(); )*
+            }
+            fn has_errors(&self) -> bool {
+                !self.errors.is_empty() #( || self.#input_id.has_errors() )*
+            }
+            fn is_empty(&self) -> bool {
+                true
+            #(  && self.#input_id.get().is_none() )*
+            }
+            fn iter_error(&self) -> ::std::slice::Iter<'_, String> {
+                self.errors.iter()
             }
             fn prepend_error(&mut self, error: &str) {
                 if self.errors.first().map(|e| e != error).unwrap_or(true) {
@@ -183,7 +195,7 @@ pub fn html_form_impl(input: TokenStream) -> TokenStream {
             fn to_json(&self) -> ::serde_json::value::Value {
                 let mut result = ::serde_json::value::Map::new();
             #(
-                result.insert(#field_name.to_string(), #json_expr);
+                result.insert(#field_lit.to_string(), #json_expr);
             )*
                 ::serde_json::value::Value::Object(result)
             }
@@ -191,7 +203,7 @@ pub fn html_form_impl(input: TokenStream) -> TokenStream {
                 let mut result = ::serde_json::value::Map::new();
             #(
                 result.insert(
-                    #input_name.to_string(),
+                    #input_lit.to_string(),
                     ::serde_json::to_value(self.#input_id.get_mult())
                         .unwrap_or_else(|_| ::serde_json::json!([])),
                 );
@@ -206,7 +218,7 @@ pub fn html_form_impl(input: TokenStream) -> TokenStream {
                     if let ::serde_json::value::Value::Object(obj) = json {
                         obj
                     } else {
-                        self.add_error(&json.to_string());
+                        self.add_error_text(&json.to_string());
                         return Err(::vicocomo::Error::invalid_input(
                             &json.to_string(),
                         ));
@@ -214,7 +226,7 @@ pub fn html_form_impl(input: TokenStream) -> TokenStream {
                 let mut backup = self.clone();
                 let mut error = false;
             #(
-                if let Some(val) = inputs.get(#input_name) {
+                if let Some(val) = inputs.get(#input_lit) {
                     if let Err(_) = self.#input_id.update(val) {
                         error = true;
                     }
@@ -245,7 +257,7 @@ pub fn html_form_impl(input: TokenStream) -> TokenStream {
 #[derive(Debug)]
 struct Field {
     id: Ident,
-    input_type: Option<InputType>,
+    input_type: InputType,
 }
 
 impl Field {
@@ -257,11 +269,12 @@ impl Field {
                 .as_ref()
                 .expect("expected field identifier")
                 .clone();
+            let default_type = InputType::from_field(&id, &field.ty);
             result.push(Self {
                 id: id.clone(),
-                input_type: InputType::from_field_type(&field.ty)
-                    .as_ref()
-                    .map(|default_type| {
+                input_type: match default_type {
+                    InputType::Errors | InputType::None => default_type,
+                    _ => {
                         let attr_type = get_string_from_attr(
                             &field.attrs,
                             "html_input_type",
@@ -273,7 +286,8 @@ impl Field {
                         } else {
                             attr_type.parse().unwrap()
                         }
-                    }),
+                    }
+                },
             });
         }
         result
@@ -285,7 +299,9 @@ enum InputType {
     Checkbox,
     Date,
     Email,
+    Errors,
     Hidden,
+    None,
     Number,
     Password,
     Radio,
@@ -299,48 +315,53 @@ enum InputType {
 }
 
 impl InputType {
-    fn from_field_type(field_type: &Type) -> Option<Self> {
+    fn from_field(field_id: &Ident, field_type: &Type) -> Self {
+        if field_id.to_string() == "errors"
+            && *field_type == parse_quote!(Vec<String>)
+        {
+            return InputType::Errors;
+        }
         if let Type::Path(p) = field_type {
             let last = p.path.segments.last();
             if last.is_none() {
-                return None;
+                return InputType::None;
             }
             let segm = last.unwrap();
             if segm.ident.to_string() != "HtmlInput" {
-                return None;
+                return InputType::None;
             }
             let args;
             if let PathArguments::AngleBracketed(a) = &segm.arguments {
                 args = a;
             } else {
-                return None;
+                return InputType::None;
             }
             let arg = args.args.first();
             if arg.is_none() {
-                return None;
+                return InputType::None;
             }
             if let GenericArgument::Type(rust_type) = arg.unwrap() {
                 if let Type::Path(p) = rust_type {
                     let segm = p.path.segments.last();
                     if segm.is_none() {
-                        return None;
+                        return InputType::None;
                     }
                     match segm.unwrap().ident.to_string().as_str() {
                         "f32" | "f64" | "i8" | "i16" | "i32" | "i64"
                         | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
-                        | "u128" | "usize" => Some(Self::Number),
-                        "String" => Some(Self::Text),
-                        "NaiveDate" => Some(Self::Date),
-                        _ => None,
+                        | "u128" | "usize" => Self::Number,
+                        "String" => Self::Text,
+                        "NaiveDate" => Self::Date,
+                        _ => InputType::None,
                     }
                 } else {
-                    None
+                    InputType::None
                 }
             } else {
-                None
+                InputType::None
             }
         } else {
-            None
+            InputType::None
         }
     }
 
@@ -349,7 +370,9 @@ impl InputType {
             Self::Checkbox => parse_quote!(Checkbox),
             Self::Date => parse_quote!(Date),
             Self::Email => parse_quote!(Email),
+            Self::Errors => parse_quote!(Errors),
             Self::Hidden => parse_quote!(Hidden),
+            Self::None => parse_quote!(None),
             Self::Number => parse_quote!(Number),
             Self::Password => parse_quote!(Password),
             Self::Radio => parse_quote!(Radio),

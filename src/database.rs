@@ -68,6 +68,31 @@ impl<'a> DatabaseIf<'a> {
         self.0.query(sql, values, types)
     }
 
+    /// Query for one single value from one single column. See [`query()`
+    /// ](#method.query). Ignores errors.
+    ///
+    pub fn query_column(
+        &self,
+        sql: &str,
+        values: &[DbValue],
+        typ: DbType,
+    ) -> Option<DbValue> {
+        let mut result: Option<DbValue> = None;
+        if let Ok(db_result) = self.query(sql, values, &[typ]) {
+            if let Some(db_row) = db_result.first() {
+                result = db_row.first().map(|db_val| db_val.clone());
+            }
+        }
+        result
+        /*
+        self.query(sql, values, &[typ])
+            .ok()
+            .and_then(|db_result| db_result.first())
+            .and_then(|db_row| db_row.first())
+            .map(|db_val| db_val.clone())
+        */
+    }
+
     /// Rollback the present transaction.
     ///
     pub fn rollback(&self) -> Result<(), Error> {
@@ -166,6 +191,22 @@ pub enum DbValue {
     NulText(Option<String>),
 }
 
+impl DbValue {
+    /// Clone into an `Option` so that e.g.
+    ///     Int(i)          -> Some(Int(i))
+    ///     NulInt(None)    -> None
+    ///     NulInt(Some(i)) -> Some(Int(i))
+    ///
+    pub fn to_option(&self) -> Option<Self> {
+        match self {
+            Self::NulFloat(opt) => opt.map(|f| Self::Float(f)),
+            Self::NulInt(opt) => opt.map(|i| Self::Int(i)),
+            Self::NulText(opt) => opt.as_ref().map(|s| Self::Text(s.clone())),
+            _ => Some(self.clone()),
+        }
+    }
+}
+
 macro_rules! write_opt {
     ($f:ident, $o:ident) => {
         match $o {
@@ -188,36 +229,36 @@ impl fmt::Display for DbValue {
     }
 }
 
-db_value_convert! { no_option_type, bool, Int, value != 0 }
-db_value_convert! { no_option_type, f32, Float }
-db_value_convert! { no_option_type, f64, Float }
-db_value_convert! { no_option_type, i32, Int }
-db_value_convert! { no_option_type, i64, Int }
+db_value_convert! { in_db_value_module, bool, Int, value != 0 }
+db_value_convert! { in_db_value_module, f32, Float }
+db_value_convert! { in_db_value_module, f64, Float }
+db_value_convert! { in_db_value_module, i32, Int }
+db_value_convert! { in_db_value_module, i64, Int }
 db_value_convert! {
-    no_option_type,
+    in_db_value_module,
     NaiveDate,
     Int,
     NaiveDate::from_num_days_from_ce(value as i32),
     other.num_days_from_ce() as i64,
 }
 db_value_convert! {
-    no_option_type,
+    in_db_value_module,
     NaiveDateTime,
     Int,
     NaiveDateTime::from_timestamp(value, 0),
     other.timestamp(),
 }
 db_value_convert! {
-    no_option_type,
+    in_db_value_module,
     NaiveTime,
     Int,
     NaiveTime::from_num_seconds_from_midnight(value as u32, 0),
     other.num_seconds_from_midnight() as i64,
 }
-db_value_convert! { no_option_type, String, Text }
-db_value_convert! { no_option_type, u32, Int }
-db_value_convert! { no_option_type, u64, Int }
-db_value_convert! { no_option_type, usize, Int }
+db_value_convert! { in_db_value_module, String, Text }
+db_value_convert! { in_db_value_module, u32, Int }
+db_value_convert! { in_db_value_module, u64, Int }
+db_value_convert! { in_db_value_module, usize, Int }
 
 /// An implementation of [`DbConn`](trait.DbConn.html) that does nothing and
 /// returns [`Error`](../error/enum.Error.html).

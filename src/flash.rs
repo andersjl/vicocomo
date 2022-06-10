@@ -91,7 +91,7 @@ impl<'a> Flash<'a> {
     /// The returned pairs are ordered first after the `severities`, then in
     /// the order they were [`push()`ed](method.push.html).
     ///
-    /// `"<br />"` is substituted for `"\n"` in the [`message`
+    /// `"<br>"` is substituted for `"\n"` in the [`message`
     /// ](struct.FlashData.html#field.message) field.
     ///
     pub fn remove(&mut self, severities: &[&str]) -> Vec<FlashData> {
@@ -102,7 +102,7 @@ impl<'a> Flash<'a> {
                     removed.extend(messages.drain(..).map(|message| {
                         FlashData {
                             severity: severity.to_string(),
-                            message: message.replace("\n", "<br />"),
+                            message: message.replace("\n", "<br>"),
                         }
                     }))
                 }
@@ -124,9 +124,8 @@ impl<'a> Flash<'a> {
 ///
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FlashData {
-    /// The severity of the message as an HTML safe string.
+    /// The message severity as an HTML safe string.
     pub severity: String,
-    /// The severity of the message as an HTML safe string that may contain
-    /// `<br />`..
+    /// The message text as an HTML safe string that may contain `<br>`.
     pub message: String,
 }

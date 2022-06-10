@@ -1,9 +1,11 @@
 use ::vicocomo::DatabaseIf;
 pub fn test_one_to_many(db: DatabaseIf) {
-    use super::models::{multi_pk::MultiPk, other_parent::NonstandardParent};
-    use ::vicocomo::Find;
+    use super::models::{
+        multi_pk::MultiPk, multi_pk_templ, other_parent::NonstandardParent,
+    };
+    use ::vicocomo::ActiveRecord;
 
-    let (mut m, _m2, dp, bp, np) = super::models::setup(db);
+    let (mut m, _m2, dp, bp, np) = super::models::reset_db(db);
 
     println!("\none-to-many associations --------------------------------\n");
 
@@ -34,6 +36,34 @@ pub fn test_one_to_many(db: DatabaseIf) {
                 )
                 .unwrap(),
             )
+    );
+    println!("    OK");
+
+    println!("deleting children ..");
+    assert!(dp.save_multi_pks(db, &[]).is_ok());
+    assert!(dp.multi_pks(db, None).unwrap().is_empty());
+    println!("    OK");
+
+    println!("creating children ..");
+    let mut mp1 = multi_pk_templ(&dp);
+    mp1.id2 = 1;
+    let mut mp2 = multi_pk_templ(&dp);
+    mp2.id2 = 2;
+    assert!(dp.save_multi_pks(db, &[mp1.clone(), mp2]).is_ok());
+    let mps = dp.multi_pks(db, None);
+    assert!(mps.is_ok());
+    assert_eq!(mps.unwrap().len(), 2);
+    println!("    OK");
+
+    println!("changing children ..");
+    let mut mp3 = multi_pk_templ(&dp);
+    mp3.id2 = 3;
+    assert!(dp.save_multi_pks(db, &[mp1, mp3]).is_ok());
+    let mps = dp.multi_pks(db, None);
+    assert!(mps.is_ok());
+    assert_eq!(
+        mps.unwrap().iter().map(|mp| mp.id2).collect::<Vec<_>>(),
+        [1, 3],
     );
     println!("    OK");
 }

@@ -1,20 +1,18 @@
 //! Implement `::vicocomo::DbConn` by way of the `tokio-postgres` crate.
 
+use ::futures::executor::block_on;
 use ::vicocomo::{DatabaseError, DbConn, DbType, DbValue, Error};
-use futures::executor::block_on;
-use postgres_types;
 
-/// A wrapping of `::tokio_postgres::Client` that implements
-/// `::vicocomo::DbConn`.
+/// A wrapping of `tokio_postgres::Client` that implements `vicocomo::DbConn`.
 ///
-pub struct PgConn(::tokio_postgres::Client);
+pub struct PgConn(tokio_postgres::Client);
 
 impl PgConn {
-    pub fn new(client: ::tokio_postgres::Client) -> Self {
+    pub fn new(client: tokio_postgres::Client) -> Self {
         Self(client)
     }
 
-    fn error(&self, err: &::tokio_postgres::error::Error) -> Error {
+    fn error(&self, err: &tokio_postgres::error::Error) -> Error {
         self.rollback().unwrap_or(());
         Error::Database(DatabaseError {
             sqlstate: err.code().map(|c| c.code().to_string()),
@@ -28,9 +26,13 @@ macro_rules! from_values {
         &$values
             .iter()
             .map(|val| match val {
-                DbValue::Float(v) => v as &(dyn postgres_types::ToSql + Sync),
-                DbValue::Int(v) => v as &(dyn postgres_types::ToSql + Sync),
-                DbValue::Text(v) => v as &(dyn postgres_types::ToSql + Sync),
+                DbValue::Float(v) => {
+                    v as &(dyn postgres_types::ToSql + Sync)
+                }
+                DbValue::Int(v) => v as &(dyn ::postgres_types::ToSql + Sync),
+                DbValue::Text(v) => {
+                    v as &(dyn postgres_types::ToSql + Sync)
+                }
                 DbValue::NulFloat(v) => {
                     v as &(dyn postgres_types::ToSql + Sync)
                 }

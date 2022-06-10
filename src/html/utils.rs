@@ -9,7 +9,7 @@ use std::fmt;
 
 /// Represents an HTML attribute.
 ///
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct HtmlTagAttr {
     name: String,
     values: Option<Vec<String>>,
@@ -70,10 +70,7 @@ impl HtmlTagAttr {
     ///
     pub fn add(&mut self, values: &str) {
         use ::itertools::Itertools;
-        let mut vals = match &self.values {
-            Some(_) => self.values.take().unwrap(),
-            None => Vec::new(),
-        };
+        let mut vals = self.values.take().unwrap_or_else(|| Vec::new());
         vals.extend(&mut values.split_whitespace().map(|s| s.to_string()));
         self.values = Some(vals.into_iter().unique().collect::<Vec<_>>());
     }
@@ -125,7 +122,7 @@ impl fmt::Display for HtmlTagAttr {
 
 /// Represents a part of the content of an HTML tag.
 ///
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub enum HtmlTagInner {
     Text(String),
     Tag(HtmlTag),
@@ -292,7 +289,7 @@ const VOID_ELEMENTS: [&str; 14] = [
 
 /// Represents a general tag
 ///
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct HtmlTag {
     tag: String,
     attrs: Vec<HtmlTagAttr>,
@@ -364,7 +361,7 @@ impl HtmlTag {
             .map(|a| a.values().unwrap_or_else(|| String::new()))
     }
 
-    /// Get the first value of `attr` as a space-separated list.
+    /// Get the first value of `attr`.
     ///
     /// Returns `None` if the attribute is not known.
     ///
@@ -388,6 +385,12 @@ impl HtmlTag {
     ///
     pub fn get_inner(&self) -> ::std::slice::Iter<'_, HtmlTagInner> {
         self.inner.iter()
+    }
+
+    /// `true` iff the tag is void, i.e. cannot have an end tag.
+    ///
+    pub fn void(&self) -> bool {
+        self.void
     }
 
     /// Push a tag to the tag's inner HTML

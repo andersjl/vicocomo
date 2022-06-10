@@ -12,19 +12,22 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
     use ::quote::{format_ident, quote};
     use ::syn::{parse_macro_input, parse_quote, LitStr};
     let ConvertDef {
-        no_option_type,
+        in_db_value_module,
         other,
         variant,
         from_db,
         into_db,
     } = parse_macro_input!(input as ConvertDef);
-    let other_str = tokens_to_string(&other);
+    let error_type: Type;
     let option_type_str: String;
     let option_type: Type;
-    if no_option_type {
+    let other_str = tokens_to_string(&other);
+    if in_db_value_module {
+        error_type = parse_quote!(crate::Error);
         option_type_str = format!("Option<{}>", other_str);
         option_type = parse_quote!(Option<#other>);
     } else {
+        error_type = parse_quote!(::vicocomo::Error);
         option_type_str = format!("Opt{}", other_str);
         let option_type_id = format_ident!("{}", option_type_str);
         option_type = parse_quote!(#option_type_id);
@@ -59,13 +62,13 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
         } else {
             parse_quote!(option)
         };
-        if no_option_type {
+        if in_db_value_module {
             conv
         } else {
             parse_quote!(Self(#conv))
         }
     };
-    let other_opt: Expr = if no_option_type {
+    let other_opt: Expr = if in_db_value_module {
         parse_quote!(self)
     } else {
         parse_quote!(self.0)
@@ -85,9 +88,10 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
     );
     let nul_variant = format_ident!("Nul{}", variant);
     let mut gen = proc_macro2::TokenStream::new();
-    if !no_option_type {
+    if !in_db_value_module {
         gen.extend(quote! {
-            pub struct #option_type(Option<#other>);
+            #[derive(Clone, Debug, Eq, PartialEq)]
+            pub struct #option_type(pub Option<#other>);
         });
     }
     gen.extend(quote! {
@@ -97,7 +101,7 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
             }
         }
         impl ::std::convert::TryFrom<DbValue> for #option_type {
-            type Error = Error;
+            type Error = #error_type;
             fn try_from(db_value: DbValue) -> Result<Self, Self::Error> {
                 match db_value {
                     DbValue::#nul_variant(option) => Ok(#option_to_other),
@@ -108,7 +112,7 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
             }
         }
         impl ::std::convert::TryFrom<DbValue> for #other {
-            type Error = Error;
+            type Error = #error_type;
             fn try_from(db_value: DbValue) -> Result<Self, Self::Error> {
                 match db_value {
                     DbValue::#variant(value) => Ok(#value_to_other),
@@ -129,7 +133,7 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
 }
 
 struct ConvertDef {
-    no_option_type: bool,
+    in_db_value_module: bool,
     other: Type,
     variant: Ident,
     from_db: Option<Expr>,
@@ -139,16 +143,16 @@ struct ConvertDef {
 impl Parse for ConvertDef {
     fn parse(input: ParseStream) -> parse::Result<Self> {
         use ::syn::token;
-        let no_option_type = input
+        let in_db_value_module = input
             .fork()
             .parse::<Ident>()
-            .map(|id| &id.to_string() == "no_option_type")
+            .map(|id| &id.to_string() == "in_db_value_module")
             .unwrap_or(false);
-        if no_option_type {
+        if in_db_value_module {
             input.parse::<Ident>().and(input.parse::<token::Comma>())?;
         }
         let result = Self {
-            no_option_type,
+            in_db_value_module,
             other: input.parse()?,
             variant: input.parse::<token::Comma>().and(input.parse())?,
             from_db: input
@@ -160,9 +164,7 @@ impl Parse for ConvertDef {
                 .ok()
                 .and(input.parse().ok()),
         };
-        match input.parse::<token::Comma>() {
-            _ => (),
-        }
+        let _ = input.parse::<token::Comma>();
         Ok(result)
     }
 }

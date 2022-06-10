@@ -1,6 +1,8 @@
-mod html;
-
 #[test]
 fn test_html_html_form() {
-    html::html_form::test();
+    ::vicocomo::test_utils::test_crate(
+        "../vicocomo/examples/html/html_form",
+        false,
+        "run",
+    );
 }

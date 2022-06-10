@@ -1,45 +1,99 @@
 use super::models::{
-    multi_pk::MultiPk, multi_pk_templ, other_parent::NonstandardParent,
-    setup_many_to_many, single_pk::SinglePk,
+    find_or_insert_single_pk, multi_pk::MultiPk, multi_pk_templ,
+    other_parent::NonstandardParent, reset_many_to_many, single_pk::SinglePk,
 };
-use ::vicocomo::{DatabaseIf, DbValue, Delete, Find, Save};
+use ::vicocomo::{is_error, ActiveRecord, DatabaseIf, DbValue};
 
 pub fn test_delete(db: DatabaseIf) {
-    let (m, _m2, dp, bp, np) = super::models::setup(db);
-    let s = single_pk(db, 1);
+    let (m, _m2, dp, bp, np) = super::models::reset_db(db);
+    let s = find_or_insert_single_pk(db, "", 1);
 
     println!("\ndeleting ------------------------------------------------\n");
 
     println!("deleting existing ..");
-    let res = s.clone().delete(db);
-    assert!(res.is_ok());
-    assert!(res.unwrap() == 1);
-    let res = m.clone().delete(db);
-    assert!(res.is_ok());
-    assert!(res.unwrap() == 1);
+    assert!(s.clone().delete(db).is_ok());
+    assert!(m.clone().delete(db).is_ok());
     println!("    OK");
-    println!("error deleting non-existing {:?}", m.pk());
+    println!("error deleting struct w/o primary key");
+    let mut no_prim = s.clone();
+    no_prim.id = None;
+    let res = no_prim.clone().delete(db);
+    assert!(res.is_err());
+    assert!(is_error!(
+        &res.err().unwrap(),
+        Model(
+            CannotDelete,
+            "SinglePk", Some("missing-primary-key".to_string()),
+        ),
+    ));
+    println!("    OK");
+    println!("error deleting non-existing MultiPk {:?}", m.pk());
     let res = m.delete(db);
     assert!(res.is_err());
+    assert!(is_error!(
+        &res.err().unwrap(),
+        Model(
+            CannotDelete,
+            "MultiPk", Some("not-found".to_string()),
+            "id", [],
+            "id2", [],
+        ),
+    ));
     println!("    OK");
-    single_pk(db, 2);
-    single_pk(db, 3);
-    single_pk(db, 4);
-    for (pks, del) in [([42, 43], 0), ([42, 3], 1), ([4, 2], 2)].iter() {
-        print!("deleting {} out of batch {:?} .. ", del, pks);
+    println!("Error deleting if before_delete() returns Err");
+    let mut s = find_or_insert_single_pk(db, "", 1);
+    s.name = Some("immortal".to_string());
+    let err = ::vicocomo::BeforeDelete::before_delete(&mut s, db);
+    assert!(err.is_err());
+    let err = err.err().unwrap();
+    assert!(is_error!(
+        err.clone(),
+        Model(
+            CannotDelete,
+            "SinglePk", None,
+            "name", ["Some(\"immortal\")"],
+        ),
+    ));
+    let res = s.clone().delete(db);
+    assert!(res.is_err());
+    let res = res.err().unwrap();
+    assert_eq!(res, err);
+    println!("    OK");
+    println!("OK deleting if before_delete() returns Ok");
+    s.name = None;
+    assert!(s.clone().delete(db).is_ok());
+    println!("    OK");
+
+    println!("delete_batch() empty slice");
+    let res = SinglePk::delete_batch(db, &[]);
+    assert!(res.is_ok());
+    assert!(res.unwrap() == 0);
+    println!("    OK");
+    find_or_insert_single_pk(db, "", 2);
+    find_or_insert_single_pk(db, "", 3);
+    find_or_insert_single_pk(db, "", 4);
+    for (pks, del) in [([42, 43], 0), ([42, 4], 1), ([5, 3], 2)].iter() {
+        print!("deleting SinglePk, {} out of batch {:?} .. ", del, pks);
         let res = SinglePk::delete_batch(db, pks);
         if pks.len() == *del {
             assert!(res.is_ok());
             assert!(res.unwrap() == *del);
             println!("success");
         } else {
-            assert!(res.is_err());
+            assert!(is_error!(
+                res.err().unwrap(),
+                Model(
+                    CannotDelete,
+                    "SinglePk", Some("not-found".to_string()),
+                    "id", [],
+                ),
+            ));
             println!("error (as expected!)");
         }
     }
     println!("    OK");
     println!("error deleting \"restrict\" parent ..");
-    let mut m17 = multi_pk_templ();
+    let mut m17 = multi_pk_templ(&dp);
     m17.id2 = 17;
     m17.save(db).unwrap();
     m17.set_bonus_parent(&bp)
@@ -52,6 +106,14 @@ pub fn test_delete(db: DatabaseIf) {
     );
     let res = bp.clone().delete(db);
     assert!(res.is_err());
+    assert!(is_error!(
+        res.err().unwrap(),
+        Model(
+            CannotDelete,
+            "NonstandardParent", Some("foreign-key-violation".to_string()),
+            "BonusChild", [],
+        ),
+    ));
     let new_counts = (
         np.bonus_childs(db, None).unwrap().len(),
         np.multi_pks(db, None).unwrap().len(),
@@ -94,7 +156,7 @@ pub fn test_delete(db: DatabaseIf) {
     assert!(MultiPk::find(db, &(m17.id.unwrap(), m17.id2)).is_none());
     println!("    OK");
     println!("deleting \"many-to-many\" parent ..");
-    let (pa, pb, sa, sb) = setup_many_to_many(db);
+    let (_dp, pa, pb, sa, sb) = reset_many_to_many(db);
     pa.connect_to_single_pk(db, &sa).unwrap();
     pa.connect_to_single_pk(db, &sb).unwrap();
     pb.connect_to_single_pk(db, &sa).unwrap();
@@ -145,16 +207,4 @@ pub fn test_delete(db: DatabaseIf) {
     );
     println!(" OK");
     println!("    OK");
-}
-
-fn single_pk(db: DatabaseIf, un2: i32) -> SinglePk {
-    let mut result = SinglePk {
-        id: None,
-        name: None,
-        data: None,
-        un1: None,
-        un2: un2,
-    };
-    result.save(db).unwrap();
-    result
 }

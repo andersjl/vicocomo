@@ -1,19 +1,30 @@
+// TODO: -> Vec<&Field> => -> Filter
 use ::proc_macro::TokenStream;
 use ::proc_macro2::Span;
+use ::std::collections::HashMap;
 use ::syn::{
     parse_quote, punctuated::Punctuated, AttrStyle, Attribute, Expr, Ident,
-    Lit, LitStr, Meta, NestedMeta, Type,
+    Lit, LitInt, LitStr, Meta, NestedMeta, Path, Type,
 };
 use ::vicocomo_derive_utils::*;
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub(crate) enum ExtraInfo {
-    BelongsToData,
-    DatabaseTypes,
-    HasManyData,
-    OrderFields,
-    UniqueFields,
-}
+const ATTR_BELONGS_TO_ERROR: &'static str =
+    "expected #[vicocomo_belongs_to( ... )]";
+const ATTR_COLUMN_ERROR: &'static str =
+    "expected #[vicocomo_column = \"column_name\"]";
+const ATTR_DB_VALUE_ERROR: &'static str =
+    "expected #[vicocomo_db_value = \"<DbValue variant as str>\"]";
+const ATTR_OPTIONAL_ERROR: &'static str = "expected #[vicocomo_optional]";
+const ATTR_ORDER_ERROR: &'static str =
+    "expected #[vicocomo_order_by(<int>, <\"ASC\"/\"DESC\">)]";
+const ATTR_PRESENCE_VLDTR_ERROR: &'static str =
+    "expected #[vicocomo_presence_validator] on an Option<_> field \
+    that is not #[vicocomo_optional]";
+const ATTR_PRIMARY_ERROR: &'static str = "expected #[vicocomo_primary]";
+const ATTR_REQUIRED_ERROR: &'static str =
+    "expected #[vicocomo_required] on a field that is not nullable";
+const ATTR_UNIQUE_ERROR: &'static str =
+    "expected #[vicocomo_unique = \"label\"]";
 
 #[derive(Clone, Debug)]
 pub(crate) enum Order {
@@ -31,10 +42,8 @@ impl Order {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ForKey {
-    // The name attribute value
-    pub(crate) assoc_name: Option<String>,
-    // The name attibute or the remote type last segment, snaked
-    pub(crate) assoc_snake: String,
+    // The name attribute value or the remote type last segment
+    pub(crate) assoc_name: String,
     // The remote type primary key field
     pub(crate) remote_pk: Ident,
     // Mandatory remote type primary key field
@@ -48,10 +57,13 @@ pub(crate) struct Field {
     pub(crate) id: Ident,
     pub(crate) ty: Type,
     pub(crate) col: LitStr,
-    // .1 indicates whether the column is nullable, i.e. a Nul... DbType
-    pub(crate) dbt: Option<(Expr, bool)>,
+    pub(crate) dbt: DbType,
+    // indictates what the field is (part of) the primary key
     pub(crate) pri: bool,
-    pub(crate) uni: Option<String>,
+    // indicates that the field must not have a zero or empty value
+    pub(crate) req: bool,
+    // indictates that a presence validator should be generated
+    pub(crate) pre: bool,
     pub(crate) ord: Option<Order>,
     // indicates whether the field is optional. It may be nullable regardless.
     pub(crate) opt: bool,
@@ -60,13 +72,11 @@ pub(crate) struct Field {
 
 #[derive(Clone, Debug)]
 pub(crate) struct HasMany {
-    // The name attribute value, as a String
-    pub(crate) assoc_name: Option<String>,
-    // The name attibute or the remote type last segment, snaked
-    pub(crate) assoc_snake: String,
+    // The name attribute value or the remote type last segment, as a String
+    pub(crate) assoc_name: String,
     // What to do when deleting self
     pub(crate) on_delete: OnDelete,
-    // The name of the Remote BelongsTo association to Self
+    // The name of the Remote BelongsTo or HasMany association to Self
     pub(crate) remote_assoc: String,
     // The database name of the foreign key column to Self in Remote or join
     pub(crate) remote_fk_col: String,
@@ -87,15 +97,27 @@ pub(crate) struct ManyToMany {
     pub(crate) remote_pk: Ident,
     // Mandatory remote type primary key field
     pub(crate) remote_pk_mand: bool,
-    // The remote type primary key field
+    // The remote type primary key column
     pub(crate) remote_pk_col: String,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum OnDelete {
     Cascade,
     Forget,
     Restrict,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct UniqueFieldSet {
+    // The set
+    pub(crate) fields: Vec<Field>,
+    // find_by_...
+    pub(crate) find_by_id: Ident,
+    // find_equal_...
+    pub(crate) find_eq_id: Ident,
+    // the Expr-s unwrap optional fields in the set - beware!
+    pub(crate) find_self_args: Vec<Expr>,
 }
 
 #[derive(Clone, Debug)]
@@ -110,30 +132,18 @@ pub(crate) struct Model {
     // indicates presence of the vicocomo_before_save attribute
     pub(crate) before_save: bool,
     pub(crate) fields: Vec<Field>,
+    pub(crate) uniques: Vec<UniqueFieldSet>,
 }
 
 impl Model {
     // public methods without receiver - - - - - - - - - - - - - - - - - - - -
 
-    pub(crate) fn new(input: TokenStream, compute: Vec<ExtraInfo>) -> Self {
+    pub(crate) fn new(input: TokenStream) -> Self {
         use ::case::CaseExt;
         use ::regex::Regex;
         use ::syn::{
             parse, Data::Struct, DeriveInput, Fields::Named, FieldsNamed,
         };
-
-        const EXPECT_BELONGS_TO_ERROR: &'static str =
-            "expected #[vicocomo_belongs_to( ... )]";
-        const EXPECT_COLUMN_ERROR: &'static str =
-            "expected #[vicocomo_column = \"column_name\"]";
-        const EXPECT_OPTIONAL_ERROR: &'static str =
-            "expected #[vicocomo_optional]";
-        const EXPECT_ORDER_ERROR: &'static str =
-            "expected #[vicocomo_order_by(<int>, <\"ASC\"/\"DESC\">)]";
-        const EXPECT_PRIMARY_ERROR: &'static str =
-            "expected #[vicocomo_primary]";
-        const EXPECT_UNIQUE_ERROR: &'static str =
-            "expected #[vicocomo_unique = \"label\"]";
 
         let struct_tokens: DeriveInput = parse(input).unwrap();
         let data = struct_tokens.data;
@@ -161,19 +171,18 @@ impl Model {
             .iter()
             .any(|a| a.path.is_ident("vicocomo_before_save"));
         let has_many: Vec<HasMany> =
-            if compute.contains(&ExtraInfo::HasManyData) {
-                Self::get_has_many(attrs, &struct_id.to_string())
-            } else {
-                Vec::new()
-            };
+            Self::get_has_many(attrs, &struct_id.to_string());
         let mut fields = Vec::new();
+        let mut unis: HashMap<String, Vec<Field>> = HashMap::new();
         for field in named_fields {
+            let mut dbt = None;
             let id = field.ident.expect("expected field identifier").clone();
             let ty = field.ty.clone();
             let mut col =
                 LitStr::new(id.to_string().as_str(), Span::call_site());
-            let mut dbt = None;
             let mut pri = false;
+            let mut req = false;
+            let mut pre = false;
             let mut uni = None;
             let mut ord = None;
             let mut opt = false;
@@ -186,11 +195,9 @@ impl Model {
                 let attr_id =
                     attr.path.segments.first().unwrap().ident.clone();
                 match attr_id.to_string().as_str() {
-                    "vicocomo_belongs_to"
-                        if compute.contains(&ExtraInfo::BelongsToData) =>
-                    {
+                    "vicocomo_belongs_to" => {
                         let field_name = id.to_string();
-                        let mut assoc_name: Option<String> = None;
+                        let mut assoc_name_attr: Option<String> = None;
                         let mut remote_pk =
                             Ident::new("id", Span::call_site());
                         let mut remote_pk_mand = false;
@@ -204,9 +211,7 @@ impl Model {
                                         .to_string(),
                                 )
                             });
-                        match attr
-                            .parse_meta()
-                            .expect(EXPECT_BELONGS_TO_ERROR)
+                        match attr.parse_meta().expect(ATTR_BELONGS_TO_ERROR)
                         {
                             Meta::List(list) => {
                                 for entry in list.nested.iter() {
@@ -216,8 +221,8 @@ impl Model {
 Meta::NameValue(n_v) => {
     match n_v.path.get_ident().unwrap().to_string().as_str() {
         "name" => match &n_v.lit {
-            Lit::Str(s) => assoc_name = Some(s.value()),
-            _ => panic!(EXPECT_BELONGS_TO_ERROR),
+            Lit::Str(s) => assoc_name_attr = Some(s.value()),
+            _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         }
         "remote_pk" => match &n_v.lit {
             Lit::Str(lit_str) => {
@@ -232,69 +237,86 @@ Meta::NameValue(n_v) => {
                 }
                 remote_pk = Ident::new(&pk_string, Span::call_site());
             }
-            _ => panic!(EXPECT_BELONGS_TO_ERROR),
+            _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         }
         "remote_type" => match &n_v.lit {
             Lit::Str(s) => {
                 remote_type_string = Some(s.value())
             }
-            _ => panic!(EXPECT_BELONGS_TO_ERROR),
+            _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         }
-        _ => panic!(EXPECT_BELONGS_TO_ERROR),
+        _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
     }
 }
-_ => panic!(EXPECT_BELONGS_TO_ERROR),
+_ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                                             }
                                         }
-                                        _ => panic!(EXPECT_BELONGS_TO_ERROR),
+                                        _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                                     }
                                 }
                             }
-                            _ => panic!(EXPECT_BELONGS_TO_ERROR),
+                            _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                         }
                         let (remote_type, rem_type_str) =
                             Self::remote_type(&remote_type_string.unwrap());
-                        let assoc_snake = assoc_name
-                            .as_ref()
-                            .unwrap_or(&rem_type_str)
-                            .to_snake();
+                        let assoc_name =
+                            assoc_name_attr.unwrap_or(rem_type_str);
                         fk = Some(ForKey {
                             assoc_name,
-                            assoc_snake,
                             remote_pk,
                             remote_pk_mand,
                             remote_type,
                         });
                     }
                     "vicocomo_column" => {
-                        col = match attr
+                        col =
+                            match attr.parse_meta().expect(ATTR_COLUMN_ERROR)
+                            {
+                                Meta::NameValue(value) => match value.lit {
+                                    Lit::Str(co) => co,
+                                    _ => panic!("{}", ATTR_COLUMN_ERROR),
+                                },
+                                _ => panic!("{}", ATTR_COLUMN_ERROR),
+                            };
+                    }
+                    "vicocomo_db_value" => {
+                        dbt = match attr
                             .parse_meta()
-                            .expect(EXPECT_COLUMN_ERROR)
+                            .expect(ATTR_DB_VALUE_ERROR)
                         {
                             Meta::NameValue(value) => match value.lit {
-                                Lit::Str(co) => co,
-                                _ => panic!(EXPECT_COLUMN_ERROR),
+                                Lit::Str(var_lit) => {
+                                    match var_lit.value().as_str() {
+                                        "Float" => Some(DbType::Float),
+                                        "Int" => Some(DbType::Int),
+                                        "Text" => Some(DbType::Text),
+                                        "NulFloat" => Some(DbType::NulFloat),
+                                        "NulInt" => Some(DbType::NulInt),
+                                        "NulText" => Some(DbType::NulText),
+                                        _ => {
+                                            panic!("{}", ATTR_DB_VALUE_ERROR,)
+                                        }
+                                    }
+                                }
+                                _ => panic!("{}", ATTR_DB_VALUE_ERROR),
                             },
-                            _ => panic!(EXPECT_COLUMN_ERROR),
+                            _ => panic!("{}", ATTR_DB_VALUE_ERROR),
                         };
                     }
                     "vicocomo_optional" => {
-                        match attr.parse_meta().expect(EXPECT_OPTIONAL_ERROR)
-                        {
+                        match attr.parse_meta().expect(ATTR_OPTIONAL_ERROR) {
                             Meta::Path(_) => opt = true,
-                            _ => panic!(EXPECT_OPTIONAL_ERROR),
+                            _ => panic!("{}", ATTR_OPTIONAL_ERROR),
                         };
                     }
-                    "vicocomo_order_by"
-                        if compute.contains(&ExtraInfo::OrderFields) =>
-                    {
+                    "vicocomo_order_by" => {
                         let mut precedence = 0;
                         let mut ascending = true;
-                        match attr.parse_meta().expect(EXPECT_ORDER_ERROR) {
+                        match attr.parse_meta().expect(ATTR_ORDER_ERROR) {
                             Meta::List(path_list) => {
                                 let mut values = path_list.nested;
                                 if values.len() > 2 {
-                                    panic!(EXPECT_ORDER_ERROR);
+                                    panic!("{}", ATTR_ORDER_ERROR);
                                 } else if values.len() == 2 {
                                     match values.pop().unwrap().into_value() {
                                         NestedMeta::Lit(lit) => match lit {
@@ -308,13 +330,16 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                                                         ascending = false;
                                                     }
                                                     _ => panic!(
-                                                        EXPECT_ORDER_ERROR
+                                                        "{}",
+                                                        ATTR_ORDER_ERROR,
                                                     ),
                                                 }
                                             }
-                                            _ => panic!(EXPECT_ORDER_ERROR),
+                                            _ => {
+                                                panic!("{}", ATTR_ORDER_ERROR)
+                                            }
                                         },
-                                        _ => panic!(EXPECT_ORDER_ERROR),
+                                        _ => panic!("{}", ATTR_ORDER_ERROR),
                                     }
                                 }
                                 if values.len() == 1 {
@@ -323,18 +348,18 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                                             Lit::Int(prec) => {
                                                 precedence = prec
                                                     .base10_parse()
-                                                    .expect(
-                                                        EXPECT_ORDER_ERROR,
-                                                    )
+                                                    .expect(ATTR_ORDER_ERROR)
                                             }
-                                            _ => panic!(EXPECT_ORDER_ERROR),
+                                            _ => {
+                                                panic!("{}", ATTR_ORDER_ERROR)
+                                            }
                                         },
-                                        _ => panic!(EXPECT_ORDER_ERROR),
+                                        _ => panic!("{}", ATTR_ORDER_ERROR),
                                     }
                                 }
                             }
                             Meta::Path(_) => (),
-                            _ => panic!(EXPECT_ORDER_ERROR),
+                            _ => panic!("{}", ATTR_ORDER_ERROR),
                         };
                         ord = Some(if ascending {
                             Order::Asc(precedence)
@@ -342,124 +367,160 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                             Order::Desc(precedence)
                         });
                     }
-                    "vicocomo_primary" => {
-                        match attr.parse_meta().expect(EXPECT_PRIMARY_ERROR) {
-                            Meta::Path(_) => pri = true,
-                            _ => panic!(EXPECT_PRIMARY_ERROR),
+                    "vicocomo_presence_validator" => {
+                        match attr
+                            .parse_meta()
+                            .expect(ATTR_PRESENCE_VLDTR_ERROR)
+                        {
+                            Meta::Path(_) => pre = true,
+                            _ => panic!("{}", ATTR_PRESENCE_VLDTR_ERROR),
                         };
                     }
-                    "vicocomo_unique"
-                        if compute.contains(&ExtraInfo::UniqueFields) =>
-                    {
-                        let label = match attr
-                            .parse_meta()
-                            .expect(EXPECT_UNIQUE_ERROR)
-                        {
-                            Meta::NameValue(value) => match value.lit {
-                                Lit::Str(lbl) => lbl.value(),
-                                _ => panic!(EXPECT_UNIQUE_ERROR),
-                            },
-                            _ => panic!(EXPECT_UNIQUE_ERROR),
+                    "vicocomo_primary" => {
+                        match attr.parse_meta().expect(ATTR_PRIMARY_ERROR) {
+                            Meta::Path(_) => {
+                                pri = true;
+                            }
+                            _ => panic!("{}", ATTR_PRIMARY_ERROR),
                         };
+                    }
+                    "vicocomo_required" => {
+                        match attr.parse_meta().expect(ATTR_REQUIRED_ERROR) {
+                            Meta::Path(_) => req = true,
+                            _ => panic!("{}", ATTR_REQUIRED_ERROR),
+                        };
+                    }
+                    "vicocomo_unique" => {
+                        let label =
+                            match attr.parse_meta().expect(ATTR_UNIQUE_ERROR)
+                            {
+                                Meta::NameValue(value) => match value.lit {
+                                    Lit::Str(lbl) => lbl.value(),
+                                    _ => panic!("{}", ATTR_UNIQUE_ERROR),
+                                },
+                                _ => panic!("{}", ATTR_UNIQUE_ERROR),
+                            };
                         uni = Some(label);
                     }
                     _ => (),
                 }
             }
-            if compute.contains(&ExtraInfo::DatabaseTypes) {
-                use ::lazy_static::lazy_static;
-                use ::quote::format_ident;
-                use ::std::{collections::HashMap, fs::read_to_string};
-                lazy_static! {
-                    pub static ref DB_TYPES: HashMap<String, (String, bool)> = {
-                        let mut map = HashMap::new();
-                        let mut db_types = "
-                            f32 => Float,
-                            f64 => Float,
-                            bool => Int,
-                            i32 => Int,
-                            i64 => Int,
-                            u32 => Int,
-                            u64 => Int,
-                            usize => Int,
-                            NaiveDate => Int,
-                            NaiveDateTime => Int,
-                            NaiveTime => Int,
-                            String => Text,
-                            "
-                        .to_string();
-                        db_types.extend(
-                            read_to_string("config/db-types.cfg")
-                                .unwrap_or_else(|_| String::new())
-                                .chars(),
+            use ::lazy_static::lazy_static;
+            use ::quote::format_ident;
+            lazy_static! {
+                pub(crate) static ref DB_TYPES: HashMap<String, DbType> = {
+                    let mut map = HashMap::new();
+                    for (typ_str, var_str) in &[
+                        ("bool", "Int"),
+                        ("f32", "Float"),
+                        ("f64", "Float"),
+                        ("i32", "Int"),
+                        ("i64", "Int"),
+                        ("u32", "Int"),
+                        ("u64", "Int"),
+                        ("usize", "Int"),
+                        ("NaiveDate", "Int"),
+                        ("NaiveDateTime", "Int"),
+                        ("NaiveTime", "Int"),
+                        ("String", "Text"),
+                    ] {
+                        let typ_id = format_ident!("{}", typ_str);
+                        let typ: Type = parse_quote!(#typ_id);
+                        let opt: Type = parse_quote!(Option<#typ_id>);
+                        map.insert(
+                            tokens_to_string(&typ),
+                            match *var_str {
+                                "Float" => DbType::Float,
+                                "Int" => DbType::Int,
+                                "Text" => DbType::Text,
+                                _ => panic!(),
+                            },
                         );
-                        for defs in db_types.split(',').map(|typ_var| {
-                            let mut typ_var = typ_var.split("=>");
-                            let typ_str = typ_var.next().unwrap().trim();
-                            typ_var.next().map(|s| {
-                                let var_str = s.trim();
-                                (
-                                    format_ident!("{}", typ_str),
-                                    format!(
-                                        "::vicocomo::DbType::{}",
-                                        var_str,
-                                    ),
-                                    format!(
-                                        "::vicocomo::DbType::Nul{}",
-                                        var_str,
-                                    ),
-                                )
-                            })
-                        }) {
-                            defs.map(|(typ_id, var_str, nul_str)| {
-                                let typ: Type = parse_quote!(#typ_id);
-                                let opt: Type = parse_quote!(Option<#typ_id>);
-                                map.insert(
-                                    tokens_to_string(&typ),
-                                    (var_str, false),
-                                );
-                                map.insert(
-                                    tokens_to_string(&opt),
-                                    (nul_str, true),
-                                );
-                            });
-                        }
-                        map
-                    };
-                }
-                let type_string = tokens_to_string(if opt {
-                    Self::strip_option(&field.ty)
-                } else {
-                    &field.ty
-                });
-                let db_type = DB_TYPES.get(&type_string);
-                dbt = db_type
-                    .map(|(dbt_str, nullable)| {
-                        let parsed = ::syn::parse_macro_input::parse::<Expr>(
-                            dbt_str.parse::<TokenStream>().unwrap(),
+                        map.insert(
+                            tokens_to_string(&opt),
+                            match *var_str {
+                                "Float" => DbType::NulFloat,
+                                "Int" => DbType::NulInt,
+                                "Text" => DbType::NulText,
+                                _ => panic!(),
+                            },
                         );
-                        (parsed.unwrap(), *nullable)
-                    })
-                    .or_else(|| {
-                        panic!(
-                        "Type {} currently not allowed in a vicocomo Active \
-                            Record model",
+                    }
+                    map
+                };
+            }
+            let type_string = tokens_to_string(if opt {
+                Self::strip_option(&field.ty)
+            } else {
+                &field.ty
+            });
+            let dbt = dbt.unwrap_or_else(|| {
+                *DB_TYPES.get(&type_string).unwrap_or_else(|| {
+                    panic!(
+                        "Type {} currently not allowed in a vicocomo \
+                            Active Record model",
                         type_string,
                     )
-                    });
-            }
-            fields.push(Field {
+                })
+            });
+            assert!(
+                !pre || (dbt.nul() && !opt),
+                "{}",
+                ATTR_PRESENCE_VLDTR_ERROR,
+            );
+            assert!(!(req && dbt.nul()), "{}", ATTR_REQUIRED_ERROR,);
+            let field = Field {
                 id,
                 ty,
                 col,
                 dbt,
                 pri,
-                uni,
+                req,
+                pre,
                 ord,
                 opt,
                 fk,
-            });
+            };
+            fields.push(field.clone());
+            if let Some(s) = uni {
+                if !pri {
+                    match unis.get_mut(&s) {
+                        Some(v) => v.push(field.clone()),
+                        None => {
+                            unis.insert(s, vec![field.clone()]);
+                        }
+                    }
+                }
+            }
         }
+        let mut uniques = Vec::new();
+        uniques.extend(unis.drain().map(|(_k, fields)| {
+            let mut find_self_args: Vec<Expr> = vec![parse_quote!(db)];
+            let mut uni_fld_strs = Vec::new();
+            for field in &fields {
+                let fld_id = &field.id;
+                if field.opt {
+                    find_self_args
+                        .push(parse_quote!(self.#fld_id.as_ref().unwrap()));
+                } else {
+                    find_self_args.push(parse_quote!(&self.#fld_id));
+                }
+                uni_fld_strs.push(fld_id.to_string());
+            }
+            let uni_str = uni_fld_strs.join("_and_");
+            UniqueFieldSet {
+                fields,
+                find_by_id: Ident::new(
+                    &format!("find_by_{}", &uni_str),
+                    Span::call_site(),
+                ),
+                find_eq_id: Ident::new(
+                    &format!("find_equal_{}", &uni_str),
+                    Span::call_site(),
+                ),
+                find_self_args,
+            }
+        }));
 
         Self {
             struct_id,
@@ -468,7 +529,43 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             before_delete,
             before_save,
             fields,
+            uniques,
         }
+    }
+
+    pub(crate) fn col_to_field_string_map(&self) -> Expr {
+        let mut col_str: Vec<Expr> = Vec::new();
+        let mut fld_str: Vec<Expr> = Vec::new();
+        for f in &self.fields {
+            let col = &f.col;
+            col_str.push(parse_quote!(#col));
+            let fld = LitStr::new(&f.id.to_string(), Span::call_site());
+            fld_str.push(parse_quote!(#fld));
+        }
+        parse_quote!({
+            let mut map = ::std::collections::HashMap::new();
+        #(  map.insert(#col_str.to_string(), #fld_str.to_string()); )*
+            map
+        })
+    }
+
+    pub(crate) fn field_none_err_expr(
+        model_id: &Ident,
+        field_id: &Ident,
+    ) -> Expr {
+        let model_lit = id_to_litstr(&model_id);
+        let field_lit = id_to_litstr(field_id);
+        parse_quote!(
+            vicocomo::Error::Model(::vicocomo::ModelError {
+                error: ::vicocomo::ModelErrorKind::Invalid,
+                model: #model_lit.to_string(),
+                general: None,
+                field_errors: vec![
+                    (#field_lit.to_string(), vec!["None".to_string()]),
+                ],
+                assoc_errors: Vec::new(),
+            })
+        )
     }
 
     pub(crate) fn placeholders_expr(row_cnt: Expr, col_cnt: Expr) -> Expr {
@@ -489,25 +586,6 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                     )
                 }).collect::<Vec<_>>()
                 .join(", ")
-        )
-    }
-
-    pub(crate) fn check_row_count_expr(
-        query: &str,
-        actual: Expr,
-        expected: Expr,
-    ) -> Expr {
-        let error_msg = LitStr::new(
-            format!("{} {{}} records, expected {{}}", query).as_str(),
-            Span::call_site(),
-        );
-        parse_quote!(
-            if #actual != #expected {
-                return Err(::vicocomo::Error::database(
-                    None,
-                    &format!(#error_msg, #actual, #expected),
-                ));
-            }
         )
     }
 
@@ -536,6 +614,76 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
 
     // public methods with receiver  - - - - - - - - - - - - - - - - - - - - -
 
+    pub(crate) fn before_save_expr(&self, obj: Ident) -> Expr {
+        let req_chk: Vec<Expr> = self
+            .fields
+            .iter()
+            .filter(|f| f.req)
+            .map(|f| {
+                let fld_id = &f.id;
+                let fld_lit =
+                    LitStr::new(&fld_id.to_string(), Span::call_site());
+                let struct_lit = LitStr::new(
+                    &self.struct_id.to_string(),
+                    Span::call_site(),
+                );
+                let err: Expr = parse_quote!(::vicocomo::model_error!(
+                    CannotSave,
+                    #struct_lit: "",
+                    #fld_lit: ["required"],
+                ));
+                if f.dbt.text() {
+                    if f.opt {
+                        parse_quote!(
+                            match #obj.#fld_id.as_ref() {
+                                Some(val) if ::vicocomo::blacken(val)
+                                    .is_empty() => Err(#err),
+                                _ => Ok(()),
+                            }
+                        )
+                    } else {
+                        parse_quote!(
+                            if ::vicocomo::blacken(&#obj.#fld_id)
+                                .is_empty()
+                            {
+                                Err(#err)
+                            } else {
+                                Ok(())
+                            }
+                        )
+                    }
+                } else {
+                    if f.opt {
+                        parse_quote!(
+                            match #obj.#fld_id {
+                                Some(val) if val == 0 => Err(#err),
+                                None => Ok(()),
+                            }
+                        )
+                    } else {
+                        parse_quote!(
+                            if #obj.#fld_id == 0 {
+                                Err(#err)
+                            } else {
+                                Ok(())
+                            }
+                        )
+                    }
+                }
+            })
+            .collect();
+        if self.before_save {
+            parse_quote!({
+            #(  #req_chk?; )*
+                ::vicocomo::BeforeSave::before_save(#obj, db)?;
+            })
+        } else {
+            parse_quote!({
+            #(  #req_chk?; )*
+            })
+        }
+    }
+
     pub(crate) fn belongs_to_fields(&self) -> Vec<&Field> {
         self.fields.iter().filter(|f| f.fk.is_some()).collect()
     }
@@ -544,11 +692,8 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         self.fields.iter().map(|f| f.col.value()).collect()
     }
 
-    pub(crate) fn db_types(&self) -> Vec<&Expr> {
-        self.fields
-            .iter()
-            .map(|f| &f.dbt.as_ref().unwrap().0)
-            .collect()
+    pub(crate) fn db_types(&self) -> Vec<Path> {
+        self.fields.iter().map(|f| f.dbt.path()).collect()
     }
 
     pub(crate) fn default_order(&self) -> String {
@@ -572,6 +717,23 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                     .collect::<Vec<_>>()
                     .join(", "),
             )
+        }
+    }
+
+    // Streamline field value to an Option<&FieldValueType> regardless of
+    // whether optional or not or nullable or not.
+    //
+    // val is an expression yielding the field value, e.g. self.some_field.
+    //
+    pub(crate) fn field_value_expr(&self, fld: &Field, val: Expr) -> Expr {
+        if fld.opt == fld.dbt.nul() {
+            if fld.dbt.nul() {
+                parse_quote!(#val.as_ref().and_then(|opt| opt.as_ref()))
+            } else {
+                parse_quote!(Some(&#val))
+            }
+        } else {
+            parse_quote!(#val.as_ref())
         }
     }
 
@@ -605,35 +767,32 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         result
     }
 
-    pub(crate) fn pk_batch_expr(&self, batch_name: &str) -> Expr {
+    pub(crate) fn pk_batch_expr(&self, batch_name: &str) -> Option<Expr> {
         let pk_len = self.fields.iter().filter(|f| f.pri).count();
         let batch: Ident = Ident::new(batch_name, Span::call_site());
         match pk_len {
-            0 => panic!("missing primary key field"),
-            1 => parse_quote!(
+            0 => None,
+            1 => Some(parse_quote!(
                 &#batch
                     .iter()
                     .map(|foo| (*foo).clone().into())
                     .collect::<Vec<_>>()[..]
-            ),
+            )),
             _ => {
-                let ixs = (0..pk_len).map(|i| {
-                    syn::LitInt::new(
-                        i.to_string().as_str(),
-                        Span::call_site(),
-                    )
+                let ix = (0..pk_len).map(|i| {
+                    LitInt::new(i.to_string().as_str(), Span::call_site())
                 });
-                parse_quote!(
+                Some(parse_quote!(
                     &#batch
                         .iter()
                         .fold(
                             Vec::new(),
                             |mut all_vals, pk| {
-                                #( all_vals.push((*pk).#ixs.into()); )*
+                                #( all_vals.push((*pk).#ix.into()); )*
                                 all_vals
                             }
                         )[..]
-                )
+                ))
             }
         }
     }
@@ -657,42 +816,6 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    // the returned expression evaluates to Option<PkType>
-    pub(crate) fn expr_to_pk_tuple(&self, expr: Expr) -> Expr {
-        let pk_fields = &self.pk_fields();
-        let mut exprs: Vec<Expr> = Vec::new();
-        let mut pk_opts: Vec<Ident> = Vec::new();
-        for pk in pk_fields {
-            let id = &pk.id;
-            if pk.opt {
-                pk_opts.push(id.clone());
-                exprs.push(parse_quote!((#expr).#id.clone().unwrap()));
-            } else {
-                exprs.push(parse_quote!((#expr).#id.clone()));
-            }
-        }
-        let tuple = match pk_fields.len() {
-            0 => parse_quote!(None),
-            1 => exprs.drain(..1).next().unwrap(),
-            _ => parse_quote!( ( #( #exprs ),* ) ),
-        };
-        if pk_fields.is_empty() {
-            tuple
-        } else if pk_opts.is_empty() {
-            parse_quote!(Some(#tuple))
-        } else {
-            let check: Expr =
-                parse_quote!( #( (#expr).#pk_opts.is_some() )&&* );
-            parse_quote!(
-                if #check {
-                    Some(#tuple)
-                } else {
-                    None
-                }
-            )
-        }
-    }
-
     pub(crate) fn pk_type(&self) -> Type {
         Self::types_to_tuple(
             self.pk_fields()
@@ -709,7 +832,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    pub(crate) fn pk_values(&self) -> Expr {
+    pub(crate) fn pk_db_values(&self) -> Expr {
         let pk_ids: Vec<&Ident> =
             self.pk_fields().iter().map(|f| &f.id).collect();
         parse_quote!(
@@ -721,6 +844,20 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
+    // obj should evaluate to a model instance
+    //
+    // See value().
+    //
+    pub(crate) fn pk_value(&self, obj: Expr) -> Expr {
+        self.value(self.pk_fields().as_slice(), obj)
+    }
+
+    pub(crate) fn presence_validator_fields(&self) -> Vec<&Field> {
+        self.fields.iter().filter(|f| f.pre).collect()
+    }
+
+    // rows should be a Vec<Vec<DbValue>>
+    // returns Result<Vec<struct_id>, Error>
     pub(crate) fn rows_to_models_expr(&self, rows: Expr) -> Expr {
         let retrieved = &self.fields;
         let ids: Vec<&Ident> = retrieved.iter().map(|f| &f.id).collect();
@@ -767,41 +904,62 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
-    pub(crate) fn unique_fields(&self) -> Vec<Vec<&Field>> {
-        use ::std::collections::HashMap;
-
-        let mut unis: HashMap<&str, Vec<&Field>> = HashMap::new();
-        for field in &self.fields {
-            let uni_lbl = match &field.uni {
-                Some(s) if !field.pri => Some(s.as_str()),
-                _ => None,
-            };
-            match &uni_lbl {
-                Some(s) => {
-                    let key = s;
-                    match unis.get_mut(key) {
-                        Some(v) => v.push(&field),
-                        None => {
-                            unis.insert(key, vec![&field]);
-                        }
-                    }
-                }
-                None => (),
-            }
-        }
-        unis.drain().map(|(_k, v)| v).collect()
-    }
-
-    pub(crate) fn upd_db_types(&self) -> Vec<Expr> {
+    pub(crate) fn upd_db_types(&self) -> Vec<Path> {
         self.fields
             .iter()
             .filter(|f| !f.pri)
-            .map(|f| f.dbt.as_ref().unwrap().0.clone())
+            .map(|f| f.dbt.path())
             .collect()
     }
 
     pub(crate) fn upd_fields(&self) -> Vec<&Field> {
         self.fields.iter().filter(|f| !f.pri).collect()
+    }
+
+    // Get the value of the fields, or None if any of them is None.
+    //
+    // obj should evaluate to a model instance
+    //
+    // The returned expression evaluates to, depending on the len() of fields:
+    // 0: Option::<()>::None.
+    // 1: Some(value that is unwrapped if Option), or None if the field is
+    //    an Option that is None.
+    // n: an option holding
+    //    - Some(tuple of values that are unwrapped if Option), or
+    //    - None if any of the values are None.
+    //
+    pub(crate) fn value(&self, fields: &[&Field], obj: Expr) -> Expr {
+        match fields.len() {
+            0 => parse_quote!(Option::<()>::None),
+            1 => {
+                let def = fields.first().unwrap().clone();
+                let id = &def.id;
+                if def.opt {
+                    parse_quote!(#obj.#id.clone())
+                } else {
+                    parse_quote!(Some(#obj.#id.clone()))
+                }
+            }
+            _ => {
+                let val: Vec<Expr> = fields
+                    .iter()
+                    .map(|def| {
+                        let id = &def.id;
+                        if def.opt {
+                            parse_quote!(
+                                match #obj.#id {
+                                    Some(val) => val.clone(),
+                                    None => return None,
+                                }
+                            )
+                        } else {
+                            parse_quote!(#obj.#id.clone())
+                        }
+                    })
+                    .collect();
+                parse_quote!( Some( ( #(  #val ),* ) ) )
+            }
+        }
     }
 
     // private methods without receiver  - - - - - - - - - - - - - - - - - - -
@@ -810,7 +968,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         use ::case::CaseExt;
         use ::regex::Regex;
 
-        const EXPECT_HAS_MANY_ERROR: &'static str =
+        const ATTR_HAS_MANY_ERROR: &'static str =
             "expected #[vicocomo_has_many( ... )]";
 
         let mut result = Vec::new();
@@ -822,7 +980,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             let attr_id = attr.path.segments.first().unwrap().ident.clone();
             match attr_id.to_string().as_str() {
                 "vicocomo_has_many" => {
-                    let mut assoc_name: Option<String> = None;
+                    let mut assoc_name_attr: Option<String> = None;
                     let mut join_fk_col: Option<String> = None;
                     let mut join_table_name: Option<String> = None;
                     let mut on_delete: OnDelete = OnDelete::Restrict;
@@ -832,7 +990,7 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                     let mut remote_pk_mand = false;
                     let mut remote_pk_col: Option<String> = None;
                     let mut remote_type_string: Option<String> = None;
-                    match attr.parse_meta().expect(EXPECT_HAS_MANY_ERROR) {
+                    match attr.parse_meta().expect(ATTR_HAS_MANY_ERROR) {
                         Meta::List(list) => {
                             for entry in list.nested.iter() {
                                 match entry {
@@ -848,12 +1006,12 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         "join_fk_col" =>
         match &n_v.lit {
             Lit::Str(s) => join_fk_col = Some(s.value()),
-            _ => panic!(EXPECT_HAS_MANY_ERROR),
+            _ => panic!("{}", ATTR_HAS_MANY_ERROR),
         }
         "name" =>
         match &n_v.lit {
-            Lit::Str(s) => assoc_name = Some(s.value()),
-            _ => panic!(EXPECT_HAS_MANY_ERROR),
+            Lit::Str(s) => assoc_name_attr = Some(s.value()),
+            _ => panic!("{}", ATTR_HAS_MANY_ERROR),
         }
         "on_delete" =>
         match &n_v.lit {
@@ -867,17 +1025,17 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                     ),
                 }
             }
-            _ => panic!(EXPECT_HAS_MANY_ERROR),
+            _ => panic!("{}", ATTR_HAS_MANY_ERROR),
         }
         "remote_assoc" =>
         match &n_v.lit {
             Lit::Str(s) => remote_assoc = Some(s.value()),
-            _ => panic!(EXPECT_HAS_MANY_ERROR),
+            _ => panic!("{}", ATTR_HAS_MANY_ERROR),
         }
         "remote_fk_col" =>
         match &n_v.lit {
             Lit::Str(s) => remote_fk_col = Some(s.value()),
-            _ => panic!(EXPECT_HAS_MANY_ERROR),
+            _ => panic!("{}", ATTR_HAS_MANY_ERROR),
         }
         "remote_pk" =>
         match &n_v.lit {
@@ -893,47 +1051,46 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
                 }
                 remote_pk = Ident::new(&pk_string, Span::call_site());
             }
-            _ => panic!(EXPECT_HAS_MANY_ERROR),
+            _ => panic!("{}", ATTR_HAS_MANY_ERROR),
         }
         "remote_pk_col" =>
         match &n_v.lit {
             Lit::Str(s) => remote_pk_col = Some(s.value()),
-            _ => panic!(EXPECT_HAS_MANY_ERROR),
+            _ => panic!("{}", ATTR_HAS_MANY_ERROR),
         }
         "remote_type" =>
         match &n_v.lit {
             Lit::Str(s) => {
                 remote_type_string = Some(s.value())
             }
-            _ => panic!(EXPECT_HAS_MANY_ERROR),
+            _ => panic!("{}", ATTR_HAS_MANY_ERROR),
         }
         "join_table" =>
         match &n_v.lit {
             Lit::Str(s) => {
                 join_table_name = Some(s.value())
             }
-            _ => panic!(EXPECT_HAS_MANY_ERROR),
+            _ => panic!("{}", ATTR_HAS_MANY_ERROR),
         }
-        _ => panic!(EXPECT_HAS_MANY_ERROR),
+        _ => panic!("{}", ATTR_HAS_MANY_ERROR),
     }
                                         }
-                                        _ => panic!(EXPECT_HAS_MANY_ERROR),
+                                        _ => {
+                                            panic!("{}", ATTR_HAS_MANY_ERROR)
+                                        }
                                     },
-                                    _ => panic!(EXPECT_HAS_MANY_ERROR),
+                                    _ => panic!("{}", ATTR_HAS_MANY_ERROR),
                                 }
                             }
                         }
-                        _ => panic!(EXPECT_HAS_MANY_ERROR),
+                        _ => panic!("{}", ATTR_HAS_MANY_ERROR),
                     }
                     let (remote_type, rem_type_str) =
                         Self::remote_type(&remote_type_string.unwrap());
-                    let assoc_snake = assoc_name
-                        .as_ref()
-                        .unwrap_or(&rem_type_str)
-                        .to_snake();
+                    let assoc_name =
+                        assoc_name_attr.unwrap_or(rem_type_str.clone());
                     result.push(HasMany {
                         assoc_name,
-                        assoc_snake,
                         on_delete,
                         remote_assoc: remote_assoc
                             .unwrap_or(struct_nam.to_string()),
@@ -977,13 +1134,18 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
         )
     }
 
+    // types.len()  returned type
+    // 0:           ()
+    // 1;           types[0]
+    // n:           (types[0], ... )
+    //
     fn types_to_tuple(types: &[&Type]) -> Type {
         if 1 == types.len() {
             return types[0].clone();
         }
-        let mut result: syn::TypeTuple = syn::TypeTuple {
-            paren_token: syn::token::Paren {
-                span: proc_macro2::Span::call_site(),
+        let mut result = ::syn::TypeTuple {
+            paren_token: ::syn::token::Paren {
+                span: ::proc_macro2::Span::call_site(),
             },
             elems: Punctuated::new(),
         };
@@ -991,5 +1153,43 @@ _ => panic!(EXPECT_BELONGS_TO_ERROR),
             result.elems.push((*ty).clone());
         }
         result.into()
+    }
+}
+
+// Mirror vicocomo::DbType
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DbType {
+    Float,
+    Int,
+    Text,
+    NulFloat,
+    NulInt,
+    NulText,
+}
+
+impl DbType {
+    pub(crate) fn path(&self) -> Path {
+        match self {
+            Self::Float => parse_quote!(::vicocomo::DbType::Float),
+            Self::Int => parse_quote!(::vicocomo::DbType::Int),
+            Self::Text => parse_quote!(::vicocomo::DbType::Text),
+            Self::NulFloat => parse_quote!(::vicocomo::DbType::NulFloat),
+            Self::NulInt => parse_quote!(::vicocomo::DbType::NulInt),
+            Self::NulText => parse_quote!(::vicocomo::DbType::NulText),
+        }
+    }
+
+    pub(crate) fn nul(&self) -> bool {
+        match self {
+            Self::NulFloat | Self::NulInt | Self::NulText => true,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn text(&self) -> bool {
+        match self {
+            Self::Text | Self::NulText => true,
+            _ => false,
+        }
     }
 }

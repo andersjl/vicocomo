@@ -1,13 +1,7 @@
 mod controllers;
 
 ::vicocomo_actix::config! {
-    plug_in(Session) {
-        def: (
-            (),
-            ::actix_session::CookieSession::signed(&[0; 32])
-                .secure(false).expires_in(60),
-        ),
-    },
+    app_config { session: None },
     plug_in(TemplEng) {
         def: (
             ::vicocomo_handlebars::HbTemplEng<'_>,

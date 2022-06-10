@@ -4,7 +4,7 @@
   </head>
   <body>
     {{ #if content }}
-      {{> (partial) content }}
+      {{> (lookup this "partial") content }}
     {{ /if }}
     {{ #if false }}
       <div> {{ hej }} </div>

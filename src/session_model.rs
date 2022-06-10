@@ -18,6 +18,12 @@ pub trait SessionModel:
         let _ = self.store(srv);
     }
 
+    /// Forget the form data by removing its `key()` from the session^.
+    ///
+    fn forget(srv: HttpServerIf) {
+        srv.session_remove(Self::key());
+    }
+
     /// Return the key to use to store model data in the web session. The key
     /// should be unique.
     ///
@@ -29,6 +35,16 @@ pub trait SessionModel:
     fn load(srv: HttpServerIf) -> Self {
         srv.session_get(Self::key())
             .unwrap_or_else(|| Self::default())
+    }
+
+    /// Create an object from the web session if stored, compute it from the
+    /// closure if not.
+    ///
+    fn load_or_else<I>(srv: HttpServerIf, init: I) -> Self
+    where
+        I: FnOnce() -> Self,
+    {
+        srv.session_get(Self::key()).unwrap_or_else(|| init())
     }
 
     /// Store object data in the web session.

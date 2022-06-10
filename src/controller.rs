@@ -35,7 +35,7 @@ macro_rules! controller_nyi {
 
 /// Provides default implementations of all the standard route handling
 /// methods as defined by
-/// [`vicocomo::Config`](../../vicocomo/http_server/struct.Config.html).  They
+/// [`vicocomo::Config`](../../vicocomo/http/server/struct.Config.html).  They
 /// do nothing and return an error.
 ///
 pub trait Controller {
@@ -50,8 +50,8 @@ pub trait Controller {
     controller_nyi! { replace,   "Controller::replace"   }
     controller_nyi! { show,      "Controller::show"      }
 
-    /// Fine-grained access control, see [`http_server::Config`
-    /// ](../http_server/struct.Config.html#filtering-access-control)
+    /// Fine-grained access control, see [`http::server::Config`
+    /// ](../http/server/struct.Config.html#filtering-access-control)
     ///
     /// The default method returns `false`, denying access unconditionally.
     ///

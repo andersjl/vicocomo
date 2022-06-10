@@ -1,162 +1,137 @@
 //! Traits implemented by model objects persisted in an SQL database, and some
 //! helper types for querying the objects in the database.
 //!
-//! All of the traits have [derive macros
+//! The trait [`ActiveRecord`](trait.ActiveRecord.html) has a [derive macro
 //! ](../../vicocomo_active_record/index.html) with the same name.
-//!
-//! ## Pseudo traits
-//!
-//! "Pseudo" because there are derive macros, [`BelongsTo`
-//! ](../../vicocomo_active_record/derive.BelongsTo.html) and [`HasMany`
-//! ](../../vicocomo_active_record/derive.HasMany.html), that actually do not
-//! implement traits.
-//!
-//! ### BelongsTo
-//!
-//! Functions for an association where this type is on the "many" side of a
-//! one-to-many relationship to another (or the same) type.
-//!
-//! For functions, see the [`BelongsTo`
-//! ](../../vicocomo_active_record/derive.BelongsTo.html) derive macro.
-//!
-//! ### HasMany
-//!
-//! Functions for a one-to-many or many-to-many relationship between this type
-//! and another (or the same) type.
-//!
-//! For functions, see the [`HasMany`
-//! ](../../vicocomo_active_record/derive.HasMany.html) derive macro.
-//!
-//  ### Motivation for not declaring those traits
-//
-//  Using BelongsTo as an example, it would have been declared something like
-//
-//      pub trait BelongsTo<Remote, Name = Remote>: Sized {
-//          fn all_belonging_to(
-//              db: DatabaseIf,
-//              remote: &Remote,
-//          ) -> Result<Vec<Self>, Error>;
-//
-//          fn get(&self, db: DatabaseIf) -> Option<Remote>;
-//
-//          fn set(&mut self, remote: &Remote) -> Result<(), Error>;
-//      }
-//
-//  The reason for the Name type is to handle the case where there are more
-//  than one BelongsTo associations connectiong the implementing Self type to
-//  the same Remote type, which is not uncommon.  Name would typically be a
-//  unit struct which is only used for this disambiguation.
-//
-//  Suppose the Remote type is Person, and you have one implementation with
-//  Name Mother, and another with Name Employer.  Example code would be:
-//
-//      children = <Self as BelongsTo<Person, Mother>>::all_belonging_to(
-//          db, &a_mother
-//      );
-//      boss = BelongsTo::<Person, Employer>::get(&me, db);
-//
-//  This is rather cumbersome.  Therefore the chosen solution is not to
-//  declare the trait but having the derive macro define functions with
-//  different names:
-//
-//      children = Self::all_belonging_to_mother(db, &a_mother);
-//      boss = me.employer(db);
-//
-//  Easier to write and (more important) read.
 
 use crate::Error;
-use crate::{DatabaseIf, DbValue};
+use crate::{
+    error::{ModelError, ModelErrorKind},
+    DatabaseIf, DbValue,
+};
 
-/// Functions for deleting models from the database.
+/// Help to implement the well-known Acitve Record pattern (see Martin Fowler:
+/// [Patterns of Enterprise Application Architecture
+/// ](https://martinfowler.com/eaaCatalog/activeRecord.html).
 ///
-#[allow(unused_variables)]
-pub trait Delete<PkType> {
-    /// Return `Ok(1)` iff the corresponding database row is deleted.
+/// There is a [derive macro](../../vicocomo_active_record/index.html).
+/// The trait should be used as an interface to a *thin* wrapping of the
+/// database! Avoid coding elaborate business rules etc in methods of the
+/// deriving `struct`. Use [contexts
+/// ](https://en.wikipedia.org/wiki/Data,_context_and_interaction) for that.
+/// *Especially* if the logic involves more than one `ActiveRecord` class, or
+/// classes with no direct relation to the database.
+///
+/// Note that the derive macro implements a number of functions that are *not*
+/// in the trait! These are mainly functions for either side of one-to-many or
+/// many-to-many associations between this type and another (or the same)
+/// type.
+//
+// It proved tedious and with no obvious gain execpt possibly machine code
+// size to avoid this function name generation using generics.
+///
+/// For those non-trait functions, see the [derive macro `ActiveRecord`
+/// ](../derive.ActiveRecord.html).
+///
+pub trait ActiveRecord: Sized {
+    /// <b>No primary key</b>: `()`. Some functions are useful also for
+    /// relations that have no primary key, e.g. views.
     ///
-    /// The implementation should ensure referential integrity if the
-    /// implementor derives [`HasMany`](../derive.HasMany.html) as defined by
-    /// the `on_delete` value in the attribute `vicocomo_has_many`, e.g.
-    /// relying on the database's referential integrity.
+    /// <b>Exactly one primary key</b>: The type of the primary key field or
+    /// the held type if it is an `Option` (see the [derive macro attribute
+    /// `vicocomo_optional`](../derive.ActiveRecord.html#vicocomo_optional)).
     ///
-    /// For referential integrity and error handling, see [`delete()`
-    /// ](#tymethod.delete).
+    /// <b>More than one primary key</b>: A tuple of the types of the primary
+    /// keys, again with `Option` stripped.
     ///
-    fn delete(self, db: DatabaseIf) -> Result<usize, Error>;
+    type PkType;
+
+    //- Common functions ---------------------------------------------------//
+
+    /// A clone of the value of the primary key(s) (see [`PkType`
+    /// ](#associatedtype.PkType)) or `None` if any of them is `None` or
+    /// `PkType` is `()`.
+    // TODO: should it return Some(()) if PkType is ()?
+    ///
+    fn pk_value(&self) -> Option<Self::PkType>;
+
+    //- Functions for deleting models from the database --------------------//
+
+    /// Return `Ok(())` iff the corresponding database row is deleted.
+    ///
+    /// The implementation should ensure referential integrity, e.g.  relying
+    /// on the database's referential integrity.
+    ///
+    /// <b>Errors</b>
+    ///
+    /// Return [`Err(Error::Model)` ](../error/enum.Error.html#variant:Model)
+    /// if
+    /// - self has no primary key, or
+    /// - the model implements [`BeforeDelete`](trait.BeforeDelete.html) and
+    ///   `before_delete()` returns an error.
+    ///
+    /// For referential integrity and other error handling, see
+    /// [`delete_batch()`](#tymethod.delete_batch).
+    ///
+    fn delete(self, db: DatabaseIf) -> Result<(), Error>;
 
     /// Return `Ok(batch.len())` iff each key in `batch` identifies a database
     /// row that is deleted.
     ///
-    /// `batch` should be a slice of primary key values.  If there are more
-    /// than one primary key column, `PkType` is a tuple in the order they are
-    /// declared in the struct.
+    /// `batch` should be a slice of primary key values, see [`PkType`
+    /// ](#associatedtype.PkType).
     ///
-    /// Return [`Err(Error::CannotDelete)`
-    /// ](../error/enum.Error.html#variant:CannotDelete) for the first of the
-    /// objects referred to in `batch` that
+    /// The implementation should not call [`before_delete()`
+    /// ](trait.BeforeDelete.html#tymethod.before_delete). You have to use
+    /// [`delete()`](#tymethod.delete) for that.
+    ///
+    /// <b>Errors</b>
+    ///
+    /// Return [`Err(Error::Model)`](../error/enum.Error.html#variant:Model)
+    /// for the first of the objects referred to in `batch` that
     /// - does not exist in the database, or
     /// - cannot be deleted because of a database foreign key constraint, or
-    /// - uses [`before_delete()`
-    ///   ](trait.BeforeDelete.html#tymethod.before_delete) which returns an
-    ///   error.
+    /// - cannot be deleted for application specific reasons.
     ///
-    fn delete_batch(db: DatabaseIf, batch: &[PkType])
-        -> Result<usize, Error>;
-}
+    /// Return `Err(Error::Other("not-available")' if `PkType` is `()`.
+    ///
+    /// Forward other database errors as [`Error::Database`
+    /// ](../error/enum.Error.html#variant:Database).
+    ///
+    fn delete_batch(
+        db: DatabaseIf,
+        batch: &[Self::PkType],
+    ) -> Result<usize, Error>;
 
-/// A hook called by the `delete()` function implemented by the [`Delete`
-/// ](../derive.Delete.html) derive macro.
-///
-pub trait BeforeDelete {
-    /// Do whatever necessary before deleting `self` from the database.
-    ///
-    /// An `Err` return value means that `self` cannot be deleted, and
-    /// [`delete()`](trait.Delete.html#tymethod.delete) should return `Err`
-    /// as well.  `before_delete()` should *not* handle objects related to
-    /// `self` by [`HasMany`
-    /// ](../../vicocomo_active_record/derive.HasMany.html) associations.
-    /// Those should be handled by [`delete()`
-    /// ](trait.Delete.html#tymethod.delete) directly.
-    ///
-    /// On error return, the variant should be a `Error::CannotDelete`
-    /// indicating the offending field(s) and what the problem is.
-    ///
-    fn before_delete(&mut self, db: DatabaseIf) -> Result<(), Error>;
-}
+    //- Functions for retrieving models from the database ------------------//
 
-/// Functions for retrieving models from the database.
-///
-/// Some functions are useful also for tables that have no primary key, e.g.
-/// views.  In that case `PkType` should be `()`.
-///
-#[allow(unused_variables)]
-pub trait Find<PkType>: Sized {
     /// Find an object in the database by primary key(s).
     ///
     /// `db` is the database connection object.
     ///
-    /// `pk` is the primary key.  If there are more than one primary key
-    /// column, `PkType` should be a tuple in the order they are declared in
-    /// the struct.
+    /// `pk` is the primary key value(s), see [`PkType`
+    /// ](#associatedtype.PkType).
     ///
-    /// The default implementaion returns `None`.
+    /// Return `None` if `PkType` is `()`.
     ///
-    fn find(db: DatabaseIf, pk: &PkType) -> Option<Self> {
-        None
-    }
+    fn find(db: DatabaseIf, pk: &Self::PkType) -> Option<Self>;
 
     /// Find this object in the database by primary key.
     ///
     /// `db` is the database connection object.
     ///
-    /// The default implementaion returns `None`.
+    /// Return `None` if `PkType` is `()`.
     ///
-    fn find_equal(&self, db: DatabaseIf) -> Option<Self> {
-        None
-    }
+    fn find_equal(&self, db: DatabaseIf) -> Option<Self>;
 
     /// Return a vector with all records in the table in the default order.
     ///
     /// `db` is the database connection object.
+    ///
+    /// <b>Errors</b>
+    ///
+    /// Forwards database errors as [`Error::Database`
+    /// ](../error/enum.Error.html#variant:Database).
     ///
     fn load(db: DatabaseIf) -> Result<Vec<Self>, Error>;
 
@@ -166,34 +141,43 @@ pub trait Find<PkType>: Sized {
     /// `query` is a [`Query`](struct.Query.html), see that and
     /// [`QueryBld`](struct.QueryBld.html).
     ///
+    /// <b>Errors</b>
+    ///
+    /// Forwards database errors as [`Error::Database`
+    /// ](../error/enum.Error.html#variant:Database).
+    ///
     fn query(db: DatabaseIf, query: &Query) -> Result<Vec<Self>, Error>;
 
-    /// Return an [`Error::Database`
-    /// ](../error/enum.Error.html#variant.Database) if there is no object in
-    /// the database whith the given primary key(s).  See [`find()`
-    /// ](trait.Find.html#method.find).
+    /// Return an [`Error::Model`](../error/enum.Error.html#variant.Model) if
+    /// there is no object in the database whith the given primary key(s). See
+    /// [`find()`](#tymethod.find).
     ///
-    /// The default implementaion uses `find()` in the obvious way.
+    /// The default implementaion uses `find()` in the obvious way. If
+    /// `PkType` is `()` this means that it always returns `Err(_)`.
     ///
     fn validate_exists(
         db: DatabaseIf,
-        pk: &PkType,
+        pk: &Self::PkType,
         msg: &str,
     ) -> Result<(), Error> {
         match Self::find(db, pk) {
             Some(_) => Ok(()),
-            None => Err(Error::database(None, msg)),
+            None => Err(Error::Model(ModelError {
+                error: ModelErrorKind::NotFound,
+                model: "Self".to_string(),
+                general: Some(msg.to_string()),
+                field_errors: Vec::new(),
+                assoc_errors: Vec::new(),
+            })),
         }
     }
 
-    /// Return an [`Error::Database`
-    /// ](../error/enum.Error.html#variant.Database) if this object is already
-    /// stored in the database.  See [`find_equal()`
-    /// ](trait.Find.html#method.find_equal).
+    /// Return an [`Error::Model`](../error/enum.Error.html#variant.Model) if
+    /// this object is already stored in the database. See [`find_equal()`
+    /// ](#tymethod.find_equal).
     ///
-    /// The default implementaion uses `find_equal()` in the obvious way.
-    /// Note that the default `find_equal()` will make the default
-    /// `validate_unique()` return `Ok(())`.
+    /// The default implementaion uses `find_equal()` in the obvious way. If
+    /// `PkType` is `()` this means that it always returns `Ok(())`.
     ///
     fn validate_unique(
         &self,
@@ -201,27 +185,28 @@ pub trait Find<PkType>: Sized {
         msg: &str,
     ) -> Result<(), Error> {
         match self.find_equal(db) {
-            Some(_) => Err(Error::database(None, msg)),
+            Some(_) => Err(Error::Model(ModelError {
+                error: ModelErrorKind::NotUnique,
+                model: "Self".to_string(),
+                general: Some(msg.to_string()),
+                field_errors: Vec::new(),
+                assoc_errors: Vec::new(),
+            })),
             None => Ok(()),
         }
     }
-}
 
-/// Functions for saving new or old objects to the database.
-///
-#[allow(unused_variables)]
-pub trait Save: Sized {
+    //- Functions for saving new or old objects to the database ------------//
+
     /// Try to INSERT a row in the database from `self` and update `self` from
     /// the inserted row after insert.
     ///
-    /// The default implementation calls
-    /// [`insert_batch()`](trait.Save.html#tymethod.insert_batch).
-    ///
-    /// It is an error if `self` has a primary key that exists in the
-    /// database.
-    ///
-    /// For referential integrity and error handling, see [`insert_batch()`
+    /// The default implementation calls [`insert_batch()`
     /// ](#tymethod.insert_batch).
+    ///
+    /// <b>Errors</b>
+    ///
+    /// See [`insert_batch()`](#tymethod.insert_batch).
     ///
     fn insert(&mut self, db: DatabaseIf) -> Result<(), Error> {
         *self = Self::insert_batch(db, std::slice::from_mut(self))?
@@ -233,21 +218,28 @@ pub trait Save: Sized {
     /// Try to INSERT a number of rows in the database from `data` and return
     /// new model structs updated from the inserted rows after insert.
     ///
-    /// The implementation by [`#[derive(vicocomo::Save)]`
-    /// ](../derive.Save.html) ensures that any field with the attribute
-    /// `vicocomo_optional` will be sent to the database only if it is `Some`.
+    /// Note that the implementation by the derive macro ensures that any
+    /// field with the attribute [`vicocomo_optional`
+    /// ](../derive.ActiveRecord.html#vicocomo_optional) will be sent to the
+    /// database only if it is `Some`.
     ///
-    /// It is an error if any of the data has a primary key that exists in the
-    /// database.
+    /// Ensure that either none (on `Err(_)` return) or all of the models in
+    /// `data` are inserted.
     ///
-    /// Return [`Err(Error::CannotSave)`
-    /// ](../error/enum.Error.html#variant:CannotSave) for the first of the
-    /// objects in `data` that
-    /// - has a primary key that exists in the database, or
-    /// - has an invalid remote [`BelongsTo`](../derive.BelongsTo.html)
-    ///   reference (e.g. relying on the database's referential integrity), or
+    /// <b>Errors</b>
+    ///
+    /// Return [`Err(Error::Model)`](../error/enum.Error.html#variant:Model)
+    /// for the first of the objects in `data` that
+    /// - has a given primary key that is invalid or already present in the
+    ///   database, or
+    /// - has an invalid remote reference (e.g. relying on the database's
+    ///   referential integrity), or
     /// - uses [`before_save()`](trait.BeforeSave.html#tymethod.before_save)
-    ///   which returns an error.
+    ///   which returns an error, or
+    /// - for application specific reasons.
+    ///
+    /// Forward other database errors as [`Error::Database`
+    /// ](../error/enum.Error.html#variant:Database).
     ///
     fn insert_batch(
         db: DatabaseIf,
@@ -256,34 +248,52 @@ pub trait Save: Sized {
 
     /// Save the object's data to the database.
     ///
-    /// If a row with the object's primary key exists in the database, this
-    /// should be equivalent to [`update()`](trait.Save.html#tymethod.update).
-    /// If not, this should be equivalent to [`insert()`
-    /// ](trait.Save.html#method.insert).
+    /// If a row with an object's primary key exists in the database, this
+    /// should be equivalent to [`update()`](#tymethod.update).
+    /// If not, this should be equivalent to [`insert()`](#method.insert).
     ///
-    /// The default implementation tries first `update()`, then `insert()`.
+    /// The default implementation uses the [`pk_value()`](#tymethod.pk_value)
+    /// and [`find()`](#tymethod.find) methods to decide whether to `update()`
+    /// or `insert()`.
+    ///
+    /// <b>Errors</b>
+    ///
+    /// See [`update()`](#tymethod.update) and [`insert()`](#method.insert).
     ///
     fn save(&mut self, db: DatabaseIf) -> Result<(), Error> {
-        self.update(db).or_else(|_e| self.insert(db))
+        match self.pk_value() {
+            Some(pk) if Self::find(db, &pk).is_some() => self.update(db),
+            _ => self.insert(db),
+        }
     }
 
     /// Try to UPDATE a row in the database from `self` and update self from
     /// the updated row after update.
     ///
-    /// It is an error if `self` lacks a primary key or has one that does not
-    /// exist in the database.
+    /// Note that the implementation by the derive macro ensures that any
+    /// field with the attribute [`vicocomo_optional`
+    /// ](../derive.ActiveRecord.html#vicocomo_optional) will be sent to the
+    /// database only if it is `Some`.
     ///
-    /// The implementation should ensure referential integrity if the
-    /// implementor derives [`BelongsTo`](../derive.BelongsTo.html), see
-    /// [`insert()`](#method.insert).
+    /// The implementation should ensure referential integrity, see
+    /// [`insert_batch()`](#tymethod.insert_batch).
     ///
-    /// Return [`Err(Error::CannotSave)`
-    /// ](../error/enum.Error.html#variant:CannotSave) if `self`
+    /// <b>Errors</b>
+    ///
+    /// Return [`Err(Error::Model)`](../error/enum.Error.html#variant:Model)
+    /// if `self`
     /// - does not have a primary key that exists in the database, or
-    /// - has an invalid remote [`BelongsTo`](../derive.BelongsTo.html)
-    ///   reference (e.g. relying on the database's referential integrity), or
+    /// - has an invalid remote reference (e.g. relying on the database's
+    ///   referential integrity), or
     /// - uses [`before_save()`](trait.BeforeSave.html#tymethod.before_save)
-    ///   which returns an error.
+    ///   which returns an error, or
+    /// - for application specific reasons.
+    ///
+    /// Return `Err(Error::Other("not-available")' if `PkType` is `()`.
+    ///
+    /// Return [`Err(Error::Database)`
+    /// ](../error/enum.Error.html#variant:Database) if the database update
+    /// fails for some other reason.
     ///
     fn update(&mut self, db: DatabaseIf) -> Result<(), Error>;
 
@@ -294,12 +304,25 @@ pub trait Save: Sized {
     /// `self` is unchanged.
     ///
     /// <b>Note</b> that this function updates directly to the database and
-    /// should ignore the visibility of the fields in `self` corresponding to
-    /// the `cols`.
+    /// should
+    /// - not call [`before_save()`
+    ///   ](trait.BeforeSave.html#tymethod.before_save),
+    /// - ignore the visibility of the fields in `self` corresponding to the
+    ///   `cols`,
+    /// - send data to the database ignoring `vicocomo_optional` attributes,
+    ///   and
+    /// - forward database errors without conversion.
+    ///
+    /// <b>Errors</b>
+    ///
+    /// Return [`Err(Error::Model)`](../error/enum.Error.html#variant:Model)
+    /// if `self` does not have a primary key.
+    ///
+    /// Return `Err(Error::Other("not-available")' if `PkType` is `()`.
     ///
     /// Return [`Err(Error::Database)`
     /// ](../error/enum.Error.html#variant:Database) if the database update
-    /// fails.
+    /// fails for some other reason.
     ///
     fn update_columns(
         &mut self,
@@ -308,30 +331,57 @@ pub trait Save: Sized {
     ) -> Result<(), Error>;
 }
 
-/// A hook called by functions implemented by the [`Save`
-/// ](../derive.Save.html) derive macro.
+/// A hook that may be called by the [`delete()` function
+/// ](trait.ActiveRecord.html#tymethod.delete), e.g. if implemented by the
+/// [`ActiveRecord` derive macro](../derive.ActiveRecord.html).
+///
+pub trait BeforeDelete {
+    /// Do whatever necessary before deleting `self` from the database.
+    ///
+    /// An `Err` return value means that `self` cannot be deleted, and
+    /// [`delete()`](trait.ActiveRecord.html#tymethod.delete) should return
+    /// `Err` as well. `before_delete()` should *not* handle referential
+    /// integrity for one-to-many associations. Those should be handled by
+    /// [`delete()`](trait.ActiveRecord.html#tymethod.delete) directly.
+    ///
+    /// <b>Errors</b>
+    ///
+    /// On error return, the variant should be a [`Model`
+    /// ](../error/enum.Error.html#variant:Model) indicating the offending
+    /// field(s) or associations(s) and what the problem is.
+    ///
+    fn before_delete(&mut self, db: DatabaseIf) -> Result<(), Error>;
+}
+
+/// A hook called by the [`insert()`](trait.ActiveRecord.html#method.insert)
+/// and [`update()`](trait.ActiveRecord.html#tymethod.update) functions as
+/// implemented by the [`ActiveRecord` derive macro
+/// ](../derive.ActiveRecord.html).
 ///
 pub trait BeforeSave {
     /// Do whatever necessary before saving `self` to the database.
     ///
     /// An `Err` return value means that `self` cannot be saved, and
-    /// [`insert()`](trait.Save.html#tymethod.insert),
-    /// [`save()`](trait.Save.html#tymethod.save), and
-    /// [`update()`](trait.Save.html#tymethod.update) should return `Err` as
-    /// well. `before_save()` should *not* handle referential integrity for
-    /// [`BelongsTo`](../derive.BelongsTo.html) associations.  Those should be
-    /// handled by [`insert()`](trait.Save.html#tymethod.insert), [`save()`
-    /// ](trait.Save.html#tymethod.save), and [`update()`
-    /// ](trait.Save.html#tymethod.update) directly.
+    /// [`insert()`](trait.ActiveRecord.html#tymethod.insert),
+    /// [`save()`](trait.ActiveRecord.html#tymethod.save), and
+    /// [`update()`](trait.ActiveRecord.html#tymethod.update) should return
+    /// `Err` as well. `before_save()` should *not* handle referential
+    /// integrity for many-to-one associations.  Those should be handled by
+    /// [`insert()`](trait.ActiveRecord.html#tymethod.insert), [`save()`
+    /// ](trait.ActiveRecord.html#tymethod.save), and [`update()`
+    /// ](trait.ActiveRecord.html#tymethod.update) directly.
     ///
-    /// On error return, the variant should be an `Error::CannotSave`
-    /// indicating the offending field(s) and what the problem is.
+    /// <b>Errors</b>
+    ///
+    /// On error return, the variant should be an [`Error::Model`
+    /// ](../error/enum.Error.html#variant:Model) indicating the offending
+    /// field(s) or associations(s) and what the problem is.
     ///
     fn before_save(&mut self, db: DatabaseIf) -> Result<(), Error>;
 }
 
-/// Builds a [`Query`](struct.Query.html) for [`Find::query()`
-/// ](trait.Find.html#tymethod.query).
+/// Builds a [`Query`](struct.Query.html) for [`ActiveRecord::query()`
+/// ](trait.ActiveRecord.html#tymethod.query).
 ///
 /// Example:
 ///
@@ -414,6 +464,7 @@ impl QueryBld {
     // public methods w/o receiver - - - - - - - - - - - - - - - - - - - - - -
 
     /// Create a query builder.
+    ///
     pub fn new() -> Self {
         Self(
             Query {
@@ -622,10 +673,11 @@ impl QueryBld {
 }
 
 /// A reusable query for
-/// [`Find::query()`](trait.Find.html#tymethod.query), see [`QueryBld`
-/// ](struct.QueryBld.html) for how to build.
+/// [`ActiveRecord::query()`](trait.ActiveRecord.html#tymethod.query), see
+/// [`QueryBld`](struct.QueryBld.html) for how to build.
 ///
-/// The fields are public because you need them to implement `Find::query()`.
+/// The fields are public because you need them to implement
+/// `ActiveRecord::query()`.
 ///
 #[derive(Clone, Debug)]
 pub struct Query {
@@ -690,11 +742,11 @@ impl Query {
     }
 }
 
-/// Represents the ordering of the objects returned by [`Find::query()`
-/// ](trait.Find.html#tymethod.query).
+/// Represents the ordering of the objects returned by
+/// [`ActiveRecord::query()`](trait.ActiveRecord.html#tymethod.query).
 ///
 /// The variants are public because you need them to implement
-/// `Find::query()`.
+/// `ActiveRecord::query()`.
 ///
 #[derive(Clone, Debug)]
 pub enum Order {

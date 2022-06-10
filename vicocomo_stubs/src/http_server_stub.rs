@@ -4,11 +4,21 @@ use ::std::{cell::RefCell, collections::HashMap};
 use ::vicocomo::{Error, HttpServer};
 
 pub struct HttpServerStub {
-    pub params: RefCell<HashMap<String, String>>,
-    pub path_vals: RefCell<HashMap<String, String>>,
-    pub request: RefCell<Request>,
-    pub response: RefCell<Response>,
-    pub session: RefCell<HashMap<String, String>>,
+    params: RefCell<HashMap<String, String>>,
+    path_vals: RefCell<HashMap<String, String>>,
+    request: RefCell<Request>,
+    response: RefCell<Response>,
+    session: RefCell<HashMap<String, String>>,
+}
+
+macro_rules! set_map {
+    ($map:expr, $vals:expr) => {{
+        let mut map = $map.borrow_mut();
+        map.clear();
+        for (par, val) in $vals {
+            map.insert(par.to_string(), val.to_string());
+        }
+    }};
 }
 
 impl HttpServerStub {
@@ -29,6 +39,23 @@ impl HttpServerStub {
             }),
             session: RefCell::new(HashMap::new()),
         }
+    }
+
+    pub fn get_response(&self) -> Response {
+        self.response.borrow().clone()
+    }
+
+    pub fn set_params(&self, vals: &[(&str, &str)]) {
+        set_map!(self.params, vals)
+    }
+
+    pub fn set_path_vals(&self, vals: &[(&str, &str)]) {
+        set_map!(self.path_vals, vals)
+    }
+
+    pub fn set_request(&self, req: Request) {
+        let mut request = self.request.borrow_mut();
+        *request = req;
     }
 }
 
@@ -116,6 +143,7 @@ impl HttpServer for HttpServerStub {
     }
 }
 
+#[derive(Clone)]
 pub struct Request {
     pub scheme: String,
     pub host: String,
@@ -124,6 +152,7 @@ pub struct Request {
     pub body: String,
 }
 
+#[derive(Clone)]
 pub struct Response {
     pub status: ResponseStatus,
     pub text: String,
@@ -155,6 +184,7 @@ impl Response {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum ResponseStatus {
     Error,
     NoResponse,

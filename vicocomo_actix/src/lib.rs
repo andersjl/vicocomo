@@ -1,7 +1,7 @@
 //! (Ab)use `actix-web` as the web server for a vicocomo application.
 //!
 //! Implements [`vicocomo::HttpServer`
-//! ](../vicocomo/http_server/trait.HttpServer.html) for [`actix-web`
+//! ](../vicocomo/http/server/trait.HttpServer.html) for [`actix-web`
 //! ](https://crates.io/crates/actix-web).
 //!
 
@@ -78,8 +78,18 @@ impl<'a, 'd> AxServer<'a, 'd> {
         }
     }
 
+    #[cfg(debug_assertions)]
+    pub fn peek(&self) -> String {
+        format!("{:?}", self.response.borrow())
+    }
+
     pub fn response(self) -> ::actix_web::HttpResponse {
         self.response.borrow().get()
+    }
+
+    #[cfg(debug_assertions)]
+    pub fn response_status(&self) -> String {
+        format!("{:?}", self.response.borrow().status)
     }
 }
 
@@ -161,6 +171,7 @@ impl HttpServer for AxServer<'_, '_> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 enum ResponseStatus {
     InternalServerError,
     NoResponse,
@@ -168,6 +179,7 @@ enum ResponseStatus {
     Redirect,
 }
 
+#[derive(Clone, Debug)]
 struct Response {
     status: ResponseStatus,
     text: String,
@@ -189,17 +201,16 @@ impl Response {
         use ::actix_web::{http::header, HttpResponse};
         match self.status {
             ResponseStatus::InternalServerError => {
-                HttpResponse::InternalServerError().body(&self.text)
+                HttpResponse::InternalServerError().body(self.text.clone())
             }
             ResponseStatus::NoResponse => HttpResponse::InternalServerError()
                 .body("Internal server error: No response"),
             ResponseStatus::Ok => HttpResponse::Ok()
                 .content_type("text/html; charset=utf-8")
-                .body(&self.text),
+                .body(self.text.clone()),
             ResponseStatus::Redirect => HttpResponse::Found()
-                .header(header::LOCATION, self.text.clone())
+                .append_header((header::LOCATION, self.text.clone()))
                 .finish()
-                .into_body(),
         }
     }
 

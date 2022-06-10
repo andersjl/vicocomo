@@ -1,14 +1,13 @@
-use super::models::setup_many_to_many;
-use ::vicocomo::{DatabaseIf, DbValue, QueryBld};
+use super::models::reset_many_to_many;
+use ::vicocomo::{is_error, DatabaseIf};
 
 pub fn test_many_to_many(db: DatabaseIf) {
-    /*let (m, _m2, _dp, bp, np) =*/
-    super::models::setup(db);
-    //let s = single_pk(db, 1);
+    use ::vicocomo::{DbValue, QueryBld};
+    super::models::reset_db(db);
 
     println!("\nmany-to-many associations -------------------------------\n");
 
-    let (pa, pb, sa, sb) = setup_many_to_many(db);
+    let (_dp, pa, pb, sa, sb) = reset_many_to_many(db);
     println!("connect ..");
     assert!(pa.connect_to_single_pk(db, &sa).is_ok());
     assert!(pa.connect_to_single_pk(db, &sa).is_err());
@@ -17,10 +16,12 @@ pub fn test_many_to_many(db: DatabaseIf) {
     assert!(pa.single_pks(db, None).unwrap().len() == 2);
     println!("    OK");
     println!("find filtered ..");
-    let pa_sb_assoc =
-        "Ok([SinglePk { id: Some(2), name: Some(\"child-b\"), data: None, \
-        un1: Some(4711), un2: 102 }])";
-    assert!(
+    let pa_sb_assoc = format!(
+        "Ok([SinglePk {{ id: Some({}), name: Some(\"child-b\"), data: None, \
+        opt: Some(4711), un2: 102 }}])",
+        sb.id.unwrap(),
+    );
+    assert_eq!(
         format!(
             "{:?}",
             pa.single_pks(
@@ -31,7 +32,8 @@ pub fn test_many_to_many(db: DatabaseIf) {
                     .query()
                     .as_ref(),
             ),
-        ) == pa_sb_assoc
+        ),
+        pa_sb_assoc,
     );
     println!("    OK");
     println!("DB error connecting twice ..");
@@ -50,5 +52,11 @@ pub fn test_many_to_many(db: DatabaseIf) {
         format!("{:?}", pa.disconnect_from_single_pk(db, &sa)) == "Ok(1)"
     );
     assert!(format!("{:?}", pa.single_pks(db, None)) == pa_sb_assoc);
+    println!("    OK");
+
+    println!("changing children -> Err(NYI) ..");
+    let res = pa.save_single_pks(db, &[]);
+    assert!(res.is_err());
+    assert!(is_error!(&res.err().unwrap(), Other("NYI")));
     println!("    OK");
 }

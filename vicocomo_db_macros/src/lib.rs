@@ -36,10 +36,10 @@ mod db_value_convert;
 ///
 /// # For `vicocomo` maintainers only
 ///
-/// In the module [`::vicocomo::database`](database/index.html), use the macro
-/// variant
+/// In the module [`::vicocomo::database`](../vicocomo/database/index.html),
+/// use the macro variant
 ///
-/// `db_value_convert { no_option_type, `*other-type*`,` *variant*`, [
+/// `db_value_convert { in_db_value_module, `*other-type*`,` *variant*`, [
 /// `*from-db-expr*`, [ `*into-db-expr* `] ] }`
 ///
 /// to add pre-defined conversions for new types.  This implements

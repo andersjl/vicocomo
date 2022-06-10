@@ -16,7 +16,7 @@ use ::proc_macro::TokenStream;
 /// Implements [`SessionModel`
 /// ](../vicocomo/session_model/trait.SessionModel.html#tymethod.key).
 ///
-/// ### If `#[vicocomo_session_model_accessors]
+/// ### If `#[vicocomo_session_model_accessors]`
 ///
 /// The object must be a `struct` with named fields. For each field:
 ///
@@ -25,7 +25,7 @@ use ::proc_macro::TokenStream;
 /// Get a clone of the current field value in the session
 ///
 /// `pub fn set_`*field id*`(&mut self, srv: `[`HttpServerIf`
-/// ](../vicocomo/http_server/struct.HttpServerIf.html)`, val: &`*field
+/// ](../vicocomo/http/server/struct.HttpServerIf.html)`, val: &`*field
 /// type*`) -> Result<(), `[`Error`](../vicocomo/error/enum.Error.html)`>`
 ///
 /// Set the field value in the session to a clone of `val`.

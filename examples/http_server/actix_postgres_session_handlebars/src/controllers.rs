@@ -14,12 +14,27 @@ impl Static {
         struct Data {
             content: Option<String>,
             hej: &'static str,
-            i: &'static str,
+            i: i32,
             array: JsonValue,
             empty: JsonValue,
             more: Option<&'static str>,
             partial: String,
         }
+        assert!(
+            srv.session_set(
+                "just_to_ensure_we_can_have_more_than_one_session_key",
+                &42,
+            ).is_ok(),
+        );
+        assert!(
+            srv.session_set(
+                "test",
+                &match srv.session_get::<i32>("test") {
+                    Some(i) => i + 1,
+                    None => 0,
+                },
+            ).is_ok(),
+        );
         render_template(
             srv,
             teng,
@@ -27,7 +42,7 @@ impl Static {
             &Data {
                 content: Some("partial".to_string()),
                 hej: "hopp",
-                i: "lingonskogen",
+                i: srv.session_get("test").unwrap(),
                 array: json!(["ett", "två"]),
                 empty: json!([]),
                 more: Some("mera"),

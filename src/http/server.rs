@@ -1,6 +1,7 @@
 //! Structs and traits implemented by HTTP server adapter and used by web
 //! application developers.
 //!
+
 use crate::Error;
 use ::core::{
     convert::TryFrom,
@@ -84,6 +85,8 @@ impl<'a> HttpServerIf<'a> {
         self.0.req_path_val(par)
     }
 
+    /// TODO: should return an iterator
+    ///
     /// If registered as `"a/<p1>/<p2>"` and the HTTP path of the request is
     /// `"a/42/Hello"`, this will collect as
     /// ```text
@@ -108,7 +111,11 @@ impl<'a> HttpServerIf<'a> {
         self.0.req_url()
     }
 
-    /// Set the body of the response
+    /// Set the body of the response.
+    ///
+    /// It is OK to call any number of the `resp_*` methods and to call the
+    /// same method more than once. The response should be as defined in the
+    /// last call.
     ///
     pub fn resp_body(&self, txt: &str) {
         self.0.resp_body(txt)
@@ -116,17 +123,29 @@ impl<'a> HttpServerIf<'a> {
 
     /// Generate an internal server error response, replacing the body.
     ///
+    /// It is OK to call any number of the `resp_*` methods and to call the
+    /// same method more than once. The response should be as defined in the
+    /// last call.
+    ///
     pub fn resp_error(&self, err: Option<&Error>) {
         self.0.resp_error(err)
     }
 
     /// Generate an OK response, using the body.
     ///
+    /// It is OK to call any number of the `resp_*` methods and to call the
+    /// same method more than once. The response should be as defined in the
+    /// last call.
+    ///
     pub fn resp_ok(&self) {
         self.0.resp_ok()
     }
 
     /// Generate a redirect response, ignoring the body.
+    ///
+    /// It is OK to call any number of the `resp_*` methods and to call the
+    /// same method more than once. The response should be as defined in the
+    /// last call.
     ///
     pub fn resp_redirect(&self, url: &str) {
         self.0.resp_redirect(url)
@@ -808,6 +827,8 @@ pub trait HttpServer {
     ///
     fn req_path_val(&self, par: &str) -> Option<String>;
 
+    /// TODO: should return an iterator
+    ///
     /// See [`HttpServerIf::req_path_vals()`
     /// ](struct.HttpServerIf.html#method.req_path_vals).
     ///
@@ -863,52 +884,6 @@ pub trait HttpServer {
     /// already JSON-serialized on entry.
     ///
     fn session_set(&self, key: &str, value: &str) -> Result<(), Error>;
-}
-
-/// # For HTTP server adapter developers only
-///
-/// Methods to store a session.  Use in a server specific [`config`
-/// ](struct.Config.html) macro to enable session store plugin options.
-///
-pub trait Session {
-    /// Clear the entire session.
-    ///
-    fn clear(&self);
-
-    /// Retreive the value for `key` or `None` if not present.
-    ///
-    fn get(&self, key: &str) -> Option<String>;
-
-    /// Remove the `key`-value pair.
-    ///
-    fn remove(&self, key: &str);
-
-    /// Set a `value` for `key`.
-    ///
-    fn set(&self, key: &str, value: &str) -> Result<(), Error>;
-}
-
-/// # For HTTP server adapter developers only
-///
-/// An implementation of [`Session`](trait.Session.html) that does
-/// nothing and returns `()`, `None`, or [`Error`](../error/enum.Error.html).
-///
-#[derive(Clone, Copy, Debug)]
-pub struct NullSession;
-
-impl Session for NullSession {
-    fn clear(&self) {
-        ()
-    }
-    fn get(&self, _key: &str) -> Option<String> {
-        None
-    }
-    fn remove(&self, _key: &str) {
-        ()
-    }
-    fn set(&self, _key: &str, _value: &str) -> Result<(), Error> {
-        Err(Error::other("no session store defined"))
-    }
 }
 
 // - - TemplEng and friends  - - - - - - - - - - - - - - - - - - - - - - - - -

@@ -1,73 +1,9 @@
 use ::chrono::{NaiveDate, NaiveDateTime};
-use ::vicocomo::DatabaseIf;
+use ::vicocomo::{ActiveRecord, DatabaseIf};
 pub use {
     default_parent::DefaultParent, multi_pk::MultiPk,
     other_parent::NonstandardParent, single_pk::SinglePk,
 };
-
-pub fn multi_pk_templ() -> MultiPk {
-    MultiPk {
-        id: None,
-        id2: 1,
-        bool_mand: false,
-        bool_mand_nul: None,
-        f32_mand: 0.0,
-        f32_opt: None,
-        f64_mand: 0.0,
-        f64_opt_nul: None,
-        i32_mand: 0,
-        i32_opt_nul: None,
-        // the DefaultParent with id 2 must not be deleted!
-        default_parent_id: 2,
-        other_parent_id: None,
-        // NonstandardParent with pk "bonus nonstandard" must not be deleted!
-        bonus_parent: "bonus nonstandard".to_string(),
-        date_mand: NaiveDate::from_num_days_from_ce(0),
-        date_time_mand: NaiveDateTime::from_timestamp(0, 0),
-        string_mand: String::new(),
-        u32_mand: 0,
-        u64_mand: 0,
-        usize_mand: 0,
-    }
-}
-
-pub fn setup_many_to_many(
-    db: DatabaseIf,
-) -> (
-    default_parent::DefaultParent,
-    default_parent::DefaultParent,
-    single_pk::SinglePk,
-    single_pk::SinglePk,
-) {
-    use ::vicocomo::Save;
-    let mut pa = DefaultParent {
-        id: None,
-        name: "parent-a".to_string(),
-    };
-    pa.save(db).unwrap();
-    let mut pb = DefaultParent {
-        id: None,
-        name: "parent-b".to_string(),
-    };
-    pb.save(db).unwrap();
-    let mut sa = single_pk::SinglePk {
-        id: None,
-        name: Some("child-a".to_string()),
-        data: None,
-        un1: None,
-        un2: 101,
-    };
-    sa.save(db).unwrap();
-    let mut sb = single_pk::SinglePk {
-        id: None,
-        name: Some("child-b".to_string()),
-        data: None,
-        un1: None,
-        un2: 102,
-    };
-    sb.save(db).unwrap();
-    (pa, pb, sa, sb)
-}
 
 // belongs-to associations:
 //     MultiPk -> BonusParent
@@ -85,14 +21,7 @@ pub fn setup_many_to_many(
 //     DefaultParent <- joins -> SinglePk
 
 pub mod default_parent {
-    #[derive(
-        Clone,
-        Debug,
-        vicocomo::Delete,
-        vicocomo::Find,
-        vicocomo::HasMany,
-        vicocomo::Save,
-    )]
+    #[derive(Clone, Debug, ::vicocomo::ActiveRecord)]
     #[vicocomo_has_many(remote_type = "MultiPk", on_delete = "cascade")]
     #[vicocomo_has_many(remote_type = "SinglePk", join_table = "joins")]
     pub struct DefaultParent {
@@ -106,15 +35,7 @@ pub mod default_parent {
 pub mod multi_pk {
     use chrono::{NaiveDate, NaiveDateTime};
 
-    #[derive(
-        Clone,
-        Debug,
-        PartialEq,
-        ::vicocomo::BelongsTo,
-        ::vicocomo::Delete,
-        ::vicocomo::Find,
-        ::vicocomo::Save,
-    )]
+    #[derive(Clone, Debug, PartialEq, ::vicocomo::ActiveRecord)]
     pub struct MultiPk {
         #[vicocomo_optional]
         #[vicocomo_primary]
@@ -133,7 +54,7 @@ pub mod multi_pk {
         #[vicocomo_optional]
         pub i32_opt_nul: Option<Option<i32>>,
         #[vicocomo_belongs_to()]
-        pub default_parent_id: i64,
+        pub default_parent_id: Option<i64>,
         #[vicocomo_belongs_to(
             remote_pk = "pk mandatory",
             remote_type = "crate::models::other_parent::NonstandardParent"
@@ -166,22 +87,19 @@ pub mod multi_pk {
                 )
             )
         }
-        pub fn pks(selves: &Vec<Self>) -> String {
-            format!("{:?}", selves.iter().map(|m| m.pk()).collect::<Vec<_>>())
-        }
+    }
+}
+
+pub mod no_pk {
+    #[derive(::vicocomo::ActiveRecord, Clone, Debug)]
+    pub struct NoPk {
+        #[vicocomo_order_by(0, "desc")]
+        pub data: i32,
     }
 }
 
 pub mod other_parent {
-    #[derive(
-        Clone,
-        Debug,
-        vicocomo::BelongsTo,
-        vicocomo::Delete,
-        vicocomo::Find,
-        vicocomo::HasMany,
-        vicocomo::Save,
-    )]
+    #[derive(Clone, Debug, ::vicocomo::ActiveRecord)]
     #[vicocomo_has_many(
         on_delete = "forget",
         remote_fk_col = "other_parent_id",
@@ -196,6 +114,7 @@ pub mod other_parent {
         remote_type = "crate::models::other_parent::NonstandardParent"
     )]
     pub struct NonstandardParent {
+        #[vicocomo_required]
         #[vicocomo_primary]
         pub pk: String,
         #[vicocomo_belongs_to(
@@ -207,9 +126,8 @@ pub mod other_parent {
 }
 
 pub mod single_pk {
-    #[derive(
-        Clone, Debug, ::vicocomo::Delete, ::vicocomo::Find, ::vicocomo::Save,
-    )]
+    #[derive(Clone, Debug, ::vicocomo::ActiveRecord)]
+    #[vicocomo_before_delete]
     #[vicocomo_before_save]
     pub struct SinglePk {
         #[vicocomo_optional]
@@ -217,14 +135,39 @@ pub mod single_pk {
         pub id: Option<u32>,
         #[vicocomo_order_by(2, "asc")]
         #[vicocomo_optional]
+        #[vicocomo_required]
         #[vicocomo_unique = "uni-lbl"]
         pub name: Option<String>,
+        #[vicocomo_presence_validator]
         pub data: Option<f32>,
         #[vicocomo_optional]
-        pub un1: Option<i32>,
+        pub opt: Option<i32>,
         #[vicocomo_unique = "uni-lbl"]
         #[vicocomo_order_by(1, "desc")]
+        #[vicocomo_required]
         pub un2: i32,
+    }
+
+    impl ::vicocomo::BeforeDelete for SinglePk {
+        fn before_delete(
+            &mut self,
+            _db: ::vicocomo::DatabaseIf,
+        ) -> Result<(), ::vicocomo::Error> {
+            if self.name.as_ref().map(|n| n == "immortal").unwrap_or(false) {
+                Err(::vicocomo::Error::Model(::vicocomo::ModelError {
+                    error: ::vicocomo::ModelErrorKind::CannotDelete,
+                    model: "SinglePk".to_string(),
+                    general: None,
+                    field_errors: vec![(
+                        "name".to_string(),
+                        vec!["Some(\"immortal\")".to_string()],
+                    )],
+                    assoc_errors: Vec::new(),
+                }))
+            } else {
+                Ok(())
+            }
+        }
     }
 
     impl ::vicocomo::BeforeSave for SinglePk {
@@ -233,12 +176,183 @@ pub mod single_pk {
             _db: ::vicocomo::DatabaseIf,
         ) -> Result<(), ::vicocomo::Error> {
             if self.name.as_ref().map(|n| n.is_empty()).unwrap_or(false) {
-                Err(::vicocomo::Error::invalid_input("name empty"))
+                Err(::vicocomo::Error::Model(::vicocomo::ModelError {
+                    error: ::vicocomo::ModelErrorKind::CannotSave,
+                    model: "SinglePk".to_string(),
+                    general: None,
+                    field_errors: vec![(
+                        "name".to_string(),
+                        vec!["Some(\"\")".to_string()],
+                    )],
+                    assoc_errors: Vec::new(),
+                }))
             } else {
                 Ok(())
             }
         }
     }
+}
+
+pub mod view {
+    #[derive(::vicocomo::ActiveRecord, Clone, Debug)]
+    pub struct View {
+        pub default_parent_id: u32,
+        pub count: usize,
+    }
+}
+
+pub fn empty_db(db: DatabaseIf) {
+    if db.exec("SELECT COUNT(*) FROM joins", &[]).is_ok() {
+        assert!(db.exec("DELETE FROM joins", &[]).is_ok());
+    }
+    if db.exec("SELECT COUNT(*) FROM multi_pks", &[]).is_ok() {
+        assert!(db.exec("DELETE FROM multi_pks", &[]).is_ok());
+    }
+    if db.exec("SELECT COUNT(*) FROM single_pks", &[]).is_ok() {
+        assert!(db.exec("DELETE FROM single_pks", &[]).is_ok());
+    }
+    if db.exec("SELECT COUNT(*) FROM default_parents", &[]).is_ok() {
+        assert!(db.exec("DELETE FROM default_parents", &[]).is_ok());
+    }
+    if db
+        .exec("SELECT COUNT(*) FROM nonstandard_parents", &[])
+        .is_ok()
+    {
+        assert!(db.exec("DELETE FROM nonstandard_parents", &[]).is_ok());
+    }
+}
+
+pub fn find_or_insert_default_parent(
+    db: DatabaseIf,
+    name: &str,
+) -> DefaultParent {
+    use ::vicocomo::QueryBld;
+
+    let name = name.to_string();
+    let mut found = DefaultParent::query(
+        db,
+        &QueryBld::new()
+            .col("name")
+            .eq(Some(&name.clone().into()))
+            .query()
+            .unwrap(),
+    )
+    .unwrap();
+    if found.len() == 1 {
+        found.drain(..).next().unwrap()
+    } else {
+        let mut p = DefaultParent { id: None, name };
+        assert!(p.insert(db).is_ok());
+        p
+    }
+}
+
+pub fn find_or_insert_nonstandard_parent(
+    db: DatabaseIf,
+    name: &str,
+) -> NonstandardParent {
+    let name = name.to_string();
+    if let Some(p) = NonstandardParent::find(db, &name) {
+        p
+    } else {
+        let mut p = NonstandardParent {
+            pk: name,
+            nonstandard_parent_id: None,
+        };
+        assert!(p.insert(db).is_ok());
+        p
+    }
+}
+
+pub fn find_or_insert_single_pk(
+    db: DatabaseIf,
+    name: &str,
+    un2: i32,
+) -> SinglePk {
+    let name = name.to_string();
+    if let Some(s) = SinglePk::find_by_name_and_un2(db, &name, &un2) {
+        s
+    } else {
+        let mut s = single_pk::SinglePk {
+            id: None,
+            name: if name.is_empty() {
+                None
+            } else {
+                Some(name.to_string())
+            },
+            data: None,
+            opt: None,
+            un2: un2,
+        };
+        assert!(s.insert(db).is_ok());
+        s
+    }
+}
+
+pub fn multi_pk_templ(dp: &DefaultParent) -> MultiPk {
+    MultiPk {
+        id: None,
+        id2: 1,
+        bool_mand: false,
+        bool_mand_nul: None,
+        f32_mand: 0.0,
+        f32_opt: None,
+        f64_mand: 0.0,
+        f64_opt_nul: None,
+        i32_mand: 0,
+        i32_opt_nul: None,
+        default_parent_id: dp.id,
+        other_parent_id: None,
+        // NonstandardParent with pk "bonus nonstandard" must not be deleted!
+        bonus_parent: "bonus nonstandard".to_string(),
+        date_mand: NaiveDate::from_num_days_from_ce(0),
+        date_time_mand: NaiveDateTime::from_timestamp(0, 0),
+        string_mand: String::new(),
+        u32_mand: 0,
+        u64_mand: 0,
+        usize_mand: 0,
+    }
+}
+
+pub fn reset_db(
+    db: DatabaseIf,
+) -> (
+    MultiPk,
+    MultiPk,
+    DefaultParent,
+    NonstandardParent,
+    NonstandardParent,
+) {
+    empty_db(db);
+    find_or_insert_default_parent(db, "default filler");
+    let dp = find_or_insert_default_parent(db, "used default");
+    let bp = find_or_insert_nonstandard_parent(db, "bonus nonstandard");
+    let np = find_or_insert_nonstandard_parent(db, "nonstandard");
+    let mut m = multi_pk_templ(&dp);
+    let mut m2 = m.clone();
+    m2.id2 = 2;
+    let _ = m.save(db);
+    let _ = m2.save(db);
+    (m, m2, dp, bp, np)
+}
+
+pub fn reset_many_to_many(
+    db: DatabaseIf,
+) -> (
+    default_parent::DefaultParent,
+    default_parent::DefaultParent,
+    default_parent::DefaultParent,
+    single_pk::SinglePk,
+    single_pk::SinglePk,
+) {
+    let (_m, _m2, dp, _bp, _np) = reset_db(db);
+    (
+        dp,
+        find_or_insert_default_parent(db, "parent-a"),
+        find_or_insert_default_parent(db, "parent-b"),
+        find_or_insert_single_pk(db, "child-a", 101),
+        find_or_insert_single_pk(db, "child-b", 102),
+    )
 }
 
 pub fn setup(
@@ -250,115 +364,107 @@ pub fn setup(
     NonstandardParent,
     NonstandardParent,
 ) {
-    use ::vicocomo::{Find, Save};
-
-    db.exec("DROP TABLE IF EXISTS joins", &[]).unwrap();
-    db.exec("DROP TABLE IF EXISTS multi_pks", &[]).unwrap();
-    db.exec("DROP TABLE IF EXISTS joins", &[]).unwrap();
-    db.exec("DROP TABLE IF EXISTS single_pks", &[]).unwrap();
-    db.exec("DROP TABLE IF EXISTS default_parents", &[])
-        .unwrap();
-    db.exec("DROP TABLE IF EXISTS nonstandard_parents", &[])
-        .unwrap();
-    db.exec(
-        "
-        CREATE TABLE default_parents
-        (   id    BIGSERIAL PRIMARY KEY
-        ,   name  TEXT NOT NULL
-        )",
-        &[],
-    )
-    .unwrap();
-    db.exec(
-        "
-        CREATE TABLE single_pks
-        (   id    BIGSERIAL PRIMARY KEY
-        ,   name  TEXT NOT NULL DEFAULT 'default'
-        ,   data  FLOAT(53)
-        ,   un1   BIGINT DEFAULT 4711
-        ,   un2   BIGINT NOT NULL
-        ,   UNIQUE(un1, un2)
-        )",
-        &[],
-    )
-    .unwrap();
-    db.exec(
-        "
-        CREATE TABLE joins
-        (   default_parent_id  BIGINT NOT NULL
-                REFERENCES default_parents ON DELETE CASCADE
-        ,   single_pk_id       BIGINT NOT NULL
-                REFERENCES single_pks ON DELETE CASCADE
-        ,   PRIMARY KEY(default_parent_id, single_pk_id)
-        )",
-        &[],
-    )
-    .unwrap();
-    db.exec(
-        "
-        CREATE TABLE nonstandard_parents
-        (   pk                     TEXT PRIMARY KEY
-        ,   nonstandard_parent_id  TEXT
-                REFERENCES nonstandard_parents ON DELETE RESTRICT
-        )",
-        &[],
-    )
-    .unwrap();
-    db.exec(
-        "
-        CREATE TABLE multi_pks
-        (   id                 BIGINT NOT NULL DEFAULT 1
-        ,   id2                BIGINT
-        ,   bool_mand          BIGINT NOT NULL
-        ,   bool_mand_nul      BIGINT
-        ,   f32_mand           FLOAT(53) NOT NULL
-        ,   f32_opt            FLOAT(53) NOT NULL DEFAULT 1.0
-        ,   f64_mand           FLOAT(53) NOT NULL
-        ,   f64_opt_nul        FLOAT(53) DEFAULT 1.0
-        ,   i32_mand           BIGINT NOT NULL
-        ,   i32_opt_nul        BIGINT DEFAULT 1
-        ,   default_parent_id  BIGINT NOT NULL
-                REFERENCES default_parents ON DELETE CASCADE
-        ,   other_parent_id    TEXT
-                REFERENCES nonstandard_parents ON DELETE SET NULL
-        ,   bonus_parent       TEXT NOT NULL REFERENCES nonstandard_parents
-        ,   date_mand          BIGINT NOT NULL
-        ,   date_time_mand     BIGINT NOT NULL
-        ,   string_mand        TEXT NOT NULL
-        ,   u32_mand           BIGINT NOT NULL
-        ,   u64_mand           BIGINT NOT NULL
-        ,   usize_mand         BIGINT NOT NULL
-        ,   PRIMARY KEY(id, id2)
-        )",
-        &[],
-    )
-    .unwrap();
-    db.exec(
-        "
-        INSERT INTO default_parents (name)
-            VALUES ('default filler'), ('used default')
-        ",
-        &[],
-    )
-    .unwrap();
-    db.exec(
-        "
-        INSERT INTO nonstandard_parents (pk, nonstandard_parent_id)
-            VALUES ('nonstandard', NULL) , ('bonus nonstandard', NULL)
-        ",
-        &[],
-    )
-    .unwrap();
-    let dp = DefaultParent::find(db, &2).unwrap();
-    let mut m = multi_pk_templ();
-    let mut m2 = m.clone();
-    m2.id2 = 2;
-    m.set_default_parent(&dp).unwrap();
-    m2.set_default_parent(&dp).unwrap();
-    m.save(db).unwrap();
-    m2.save(db).unwrap();
-    let bp = NonstandardParent::find(db, &"bonus nonstandard".to_string())
-        .unwrap();
-    let np = NonstandardParent::find(db, &"nonstandard".to_string()).unwrap();
-    (m, m2, dp, bp, np)
+    assert!(db.exec("DROP VIEW if exists views", &[]).is_ok());
+    assert!(db.exec("DROP TABLE if exists joins", &[]).is_ok());
+    assert!(db.exec("DROP TABLE if exists multi_pks", &[]).is_ok());
+    assert!(db.exec("DROP TABLE if exists default_parents", &[]).is_ok());
+    assert!(db
+        .exec("DROP TABLE if exists nonstandard_parents", &[])
+        .is_ok());
+    assert!(db.exec("DROP TABLE if exists no_pks", &[]).is_ok());
+    assert!(db.exec("DROP TABLE if exists single_pks", &[]).is_ok());
+    assert!(db
+        .exec(
+            "
+            CREATE TABLE default_parents
+            (   id    BIGSERIAL PRIMARY KEY
+            ,   name  TEXT NOT NULL
+            )",
+            &[],
+        )
+        .is_ok());
+    assert!(db
+        .exec(
+            "
+            CREATE TABLE single_pks
+            (   id    BIGSERIAL PRIMARY KEY
+            ,   name  TEXT NOT NULL DEFAULT 'default'
+            ,   data  FLOAT(53)
+            ,   opt   BIGINT DEFAULT 4711
+            ,   un2   BIGINT NOT NULL
+            ,   UNIQUE(name, un2)
+            )",
+            &[],
+        )
+        .is_ok());
+    assert!(db
+        .exec(
+            "
+            CREATE TABLE joins
+            (   default_parent_id  BIGINT NOT NULL
+                    REFERENCES default_parents ON DELETE CASCADE
+            ,   single_pk_id       BIGINT NOT NULL
+                    REFERENCES single_pks ON DELETE CASCADE
+            ,   PRIMARY KEY(default_parent_id, single_pk_id)
+            )",
+            &[],
+        )
+        .is_ok());
+    assert!(db
+        .exec(
+            "
+            CREATE TABLE nonstandard_parents
+            (   pk                     TEXT PRIMARY KEY
+            ,   nonstandard_parent_id  TEXT
+                    REFERENCES nonstandard_parents ON DELETE RESTRICT
+            )",
+            &[],
+        )
+        .is_ok());
+    assert!(db
+        .exec(
+            "
+            CREATE TABLE multi_pks
+            (   id                 BIGINT NOT NULL DEFAULT 1
+            ,   id2                BIGINT
+            ,   bool_mand          BIGINT NOT NULL
+            ,   bool_mand_nul      BIGINT
+            ,   f32_mand           FLOAT(53) NOT NULL
+            ,   f32_opt            FLOAT(53) NOT NULL DEFAULT 1.0
+            ,   f64_mand           FLOAT(53) NOT NULL
+            ,   f64_opt_nul        FLOAT(53) DEFAULT 1.0
+            ,   i32_mand           BIGINT NOT NULL
+            ,   i32_opt_nul        BIGINT DEFAULT 1
+            ,   default_parent_id  BIGINT
+                    REFERENCES default_parents ON DELETE CASCADE
+            ,   other_parent_id    TEXT
+                    REFERENCES nonstandard_parents ON DELETE SET NULL
+            ,   bonus_parent      TEXT NOT NULL REFERENCES nonstandard_parents
+            ,   date_mand          BIGINT NOT NULL
+            ,   date_time_mand     BIGINT NOT NULL
+            ,   string_mand        TEXT NOT NULL
+            ,   u32_mand           BIGINT NOT NULL
+            ,   u64_mand           BIGINT NOT NULL
+            ,   usize_mand         BIGINT NOT NULL
+            ,   PRIMARY KEY(id, id2)
+            )",
+            &[],
+        )
+        .is_ok());
+    assert!(db
+        .exec("CREATE TABLE no_pks(data BIGINT NOT NULL)", &[])
+        .is_ok(),);
+    assert!(db
+        .exec(
+            "
+            CREATE OR REPLACE VIEW views AS
+                SELECT default_parent_id, COUNT(single_pk_id)
+                FROM default_parents JOIN joins
+                    ON default_parents.id = joins.default_parent_id
+                GROUP BY default_parent_id
+            ;",
+            &[],
+        )
+        .is_ok());
+    reset_db(db)
 }

@@ -4,7 +4,7 @@ use ::proc_macro2::Span;
 use ::quote::ToTokens;
 use ::syn::{
     punctuated::Punctuated, token::Comma, Attribute, Data, DeriveInput,
-    Field, Fields, Ident,
+    Field, Fields, Ident, LitStr, Type,
 };
 
 #[doc(hidden)]
@@ -12,6 +12,14 @@ pub fn tokens_to_string<T: ToTokens>(obj: &T) -> String {
     let mut ts = proc_macro2::TokenStream::new();
     obj.to_tokens(&mut ts);
     ts.to_string()
+}
+
+#[doc(hidden)]
+pub fn type_to_ident(typ: &Type) -> Option<Ident> {
+    match typ {
+        Type::Path(tp) => tp.path.segments.last().map(|p| p.ident.clone()),
+        _ => None,
+    }
 }
 
 #[doc(hidden)]
@@ -96,6 +104,11 @@ where
         &get_string_from_attr(attrs, attr_name, struct_id, default),
         Span::call_site(),
     )
+}
+
+#[doc(hidden)]
+pub fn id_to_litstr(id: &Ident) -> LitStr {
+    LitStr::new(&id.to_string(), Span::call_site())
 }
 
 #[doc(hidden)]

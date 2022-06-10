@@ -1,12 +1,16 @@
-pub fn test_crate(crate_dir: &str, show_stdout: bool) {
+pub fn test_crate(crate_dir: &str, show_stdout: bool, cargo_cmd: &str) {
     use ::std::process::Command;
 
+    Command::new("cargo").current_dir(crate_dir).arg("update").output().ok();
     let output = Command::new("cargo")
         .current_dir(crate_dir)
-        .arg("run")
+        .arg(cargo_cmd)
         .arg("--quiet")
         .output()
-        .expect(&format!("*** 'cd {}; cargo run' failed", crate_dir));
+        .expect(&format!(
+            "*** 'cd {}; cargo {}' failed",
+            crate_dir, cargo_cmd,
+        ));
     let exit_code = output.status.code();
     if exit_code.is_none() || exit_code.unwrap() != 0 {
         if show_stdout {
@@ -32,12 +36,12 @@ pub fn test_crate(crate_dir: &str, show_stdout: bool) {
 
 #[macro_export]
 macro_rules! test_http_server {
-    ($server_path:expr, $(  $request:expr, $test:expr),* $(,)?) => {
+    ($server_path:expr, $show:expr, $(  $request:expr, $test:expr),* $(,)?) => {
         {
             let mut reqs = Vec::new();
         $(  reqs.push($request); )*
             let mut resps =
-                $crate::test_utils::run_http_server($server_path, reqs);
+                $crate::test_utils::run_http_server($server_path, $show, reqs);
         $(  $test(&resps.drain(..1).next().unwrap()); )*
             println!("OK");
         }
@@ -46,6 +50,7 @@ macro_rules! test_http_server {
 
 pub fn run_http_server(
     server_dir: &str,
+    show_build: bool,
     requests: Vec<TestRequest>,
 ) -> Vec<TestResponse> {
     use ::std::process::Command;
@@ -53,28 +58,37 @@ pub fn run_http_server(
     use ::std::time::Duration;
 
     let mut result: Vec<TestResponse> = Vec::new();
-    let mut cargo_build = Command::new("cargo");
-    let mut cargo_run = Command::new("cargo");
     println!("building {} ... ", server_dir);
-    if let Ok(mut build) = cargo_build
+    Command::new("cargo").current_dir(server_dir).arg("update").output().ok();
+    let build_output = Command::new("cargo")
         .current_dir(server_dir)
         .arg("build")
         .arg("--quiet")
-        .spawn()
-    {
-        build.wait().expect("*** cargo build was not running");
-        println!("    OK");
-    } else {
-        println!("*** cargo build did not start");
+        .output()
+        .expect("build failed");
+    match build_output.status.code() {
+        Some(code) if code == 0 => (),
+        _ => if show_build {
+            eprintln!(
+                "build output: {}",
+                String::from_utf8(build_output.stdout)
+                    .unwrap_or(String::new())
+                    .as_str(),
+            );
+        }
     }
+    let _ = Command::new("rm")
+        .arg("tmp/__test-cookies.txt")
+        .output();
+    println!("    OK");
     println!("running {} ... ", server_dir);
-    if let Ok(mut run) = cargo_run
+    if let Ok(mut run) = Command::new("cargo")
         .current_dir(server_dir)
         .arg("run")
         .arg("--quiet")
         .spawn()
     {
-        sleep(Duration::from_secs(1));
+        sleep(Duration::from_secs(2));
         for req in requests {
             result.push(req.fetch_response());
         }
@@ -89,6 +103,7 @@ pub fn run_http_server(
 pub struct TestRequest {
     url: String,
     data: Vec<String>,
+    cookies: bool,
     get: bool,
     redir: bool,
     headers: Vec<String>,
@@ -99,10 +114,16 @@ impl TestRequest {
         Self {
             url: url.to_string(),
             data: Vec::new(),
+            cookies: false,
             get: true,
             redir: true,
             headers: Vec::new(),
         }
+    }
+
+    pub fn cookies(mut self) -> Self {
+        self.cookies = true;
+        self
     }
 
     pub fn data(mut self, name: &str, value: &str) -> Self {
@@ -126,21 +147,30 @@ impl TestRequest {
         lazy_static! {
             static ref OUTPUT: Regex = Regex::new(
                 r#"((?s).*)"\n__variables__\nstatus: (.*)\nredirect: (.*)""#,
-            ).unwrap();
+            )
+            .unwrap();
         }
+
         use ::std::process::Command;
         let mut curl = Command::new("curl");
         curl.arg("--silent");
         for header in self.headers {
             curl.arg("--header").arg(&format!("\"{}\"", header));
         }
-        curl.arg("--write-out").arg(
-            "\"\
-                \n__variables__\
-                \nstatus: %{response_code}\
-                \nredirect: %{redirect_url}\
-            \"",
-        );
+        curl.arg("--write-out")
+            .arg(
+                "\"\
+                    \n__variables__\
+                    \nstatus: %{response_code}\
+                    \nredirect: %{redirect_url}\
+                \"",
+            );
+        if self.cookies {
+            curl.arg("--cookie-jar")
+                .arg("tmp/__test-cookies.txt")
+                .arg("--cookie")
+                .arg("tmp/__test-cookies.txt");
+        }
         if self.get {
             curl.arg("--get");
         }
@@ -150,9 +180,9 @@ impl TestRequest {
         for item in self.data {
             curl.arg("--data-urlencode").arg(&format!("\"{}\"", item));
         }
-        let output = String::from_utf8(
-            curl.arg(&self.url).output().unwrap().stdout,
-        ).unwrap();
+        let output =
+            String::from_utf8(curl.arg(&self.url).output().unwrap().stdout)
+                .unwrap();
         let parts = OUTPUT.captures(&output).unwrap();
         TestResponse {
             body: parts.get(1).unwrap().as_str().to_string(),
@@ -187,4 +217,3 @@ impl TestResponse {
         self.status.as_str()
     }
 }
-
