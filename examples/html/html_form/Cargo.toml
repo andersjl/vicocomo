@@ -1,6 +1,6 @@
 [package]
 name = "vicocomo_example_html_form"
-version = "0.2.0"
+version = "0.2.0-1"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2018"
 

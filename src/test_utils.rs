@@ -63,6 +63,7 @@ pub fn run_http_server(
     let build_output = Command::new("cargo")
         .current_dir(server_dir)
         .arg("build")
+        .arg("--release")
         .arg("--quiet")
         .output()
         .expect("build failed");
@@ -85,6 +86,7 @@ pub fn run_http_server(
     if let Ok(mut run) = Command::new("cargo")
         .current_dir(server_dir)
         .arg("run")
+        .arg("--release")
         .arg("--quiet")
         .spawn()
     {

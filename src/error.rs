@@ -632,6 +632,7 @@ pub struct ModelError {
     pub assoc_errors: Vec<(String, Vec<String>)>,
 }
 
+#[cfg(debug_assertions)]
 impl ModelError {
     #[doc(hidden)] // used by the macro is_error
     pub fn fld_errors_include(
