@@ -19,14 +19,19 @@ impl<'a> DatabaseIf<'a> {
 
     /// Begin a transaction.
     ///
-    pub fn begin(&self) -> Result<(), Error> {
+    pub fn begin(self) -> Result<(), Error> {
         self.0.begin()
     }
 
     /// Commit the present transaction.
     ///
-    pub fn commit(&self) -> Result<(), Error> {
-        self.0.commit()
+    /// On error rollback() before returning error.
+    ///
+    pub fn commit(self) -> Result<(), Error> {
+        self.0.commit().map_err(|e| {
+            let _ = self.0.rollback();
+            e
+        })
     }
 
     /// Execute an SQL statement.
@@ -38,12 +43,13 @@ impl<'a> DatabaseIf<'a> {
     ///
     /// Returns the number of affected rows.
     ///
-    pub fn exec(
-        &self,
-        sql: &str,
-        values: &[DbValue],
-    ) -> Result<usize, Error> {
-        self.0.exec(sql, values)
+    /// On error rollback() before returning error.
+    ///
+    pub fn exec(self, sql: &str, values: &[DbValue]) -> Result<usize, Error> {
+        self.0.exec(sql, values).map_err(|e| {
+            let _ = self.0.rollback();
+            e
+        })
     }
 
     /// Execute an SQL query and return the result.
@@ -59,20 +65,25 @@ impl<'a> DatabaseIf<'a> {
     ///
     /// Returns the result as a vector of vectors of `DbValue`.
     ///
+    /// On error rollback() before returning error.
+    ///
     pub fn query(
-        &self,
+        self,
         sql: &str,
         values: &[DbValue],
         types: &[DbType],
     ) -> Result<Vec<Vec<DbValue>>, Error> {
-        self.0.query(sql, values, types)
+        self.0.query(sql, values, types).map_err(|e| {
+            let _ = self.0.rollback();
+            e
+        })
     }
 
     /// Query for one single value from one single column. See [`query()`
     /// ](#method.query). Ignores errors.
     ///
     pub fn query_column(
-        &self,
+        self,
         sql: &str,
         values: &[DbValue],
         typ: DbType,
@@ -84,18 +95,11 @@ impl<'a> DatabaseIf<'a> {
             }
         }
         result
-        /*
-        self.query(sql, values, &[typ])
-            .ok()
-            .and_then(|db_result| db_result.first())
-            .and_then(|db_row| db_row.first())
-            .map(|db_val| db_val.clone())
-        */
     }
 
     /// Rollback the present transaction.
     ///
-    pub fn rollback(&self) -> Result<(), Error> {
+    pub fn rollback(self) -> Result<(), Error> {
         self.0.rollback()
     }
 }

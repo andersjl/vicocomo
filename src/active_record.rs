@@ -616,19 +616,19 @@ impl QueryBld {
         ne, "<>"
     }
 
+    /// Remove the ORDER clause, e.g. to avoid default ordering.
+    ///
+    pub fn no_order(mut self) -> Self {
+        self.0.order = Order::NoOrder;
+        self
+    }
+
     /// Set the number of objects to skip.
     ///
     /// `offset` is the offset to use.
     ///
     pub fn offset(mut self, offset: usize) -> Self {
         self.0.offset = Some(offset);
-        self
-    }
-
-    /// Remove the ORDER clause, e.g. to avoid default ordering.
-    ///
-    pub fn no_order(mut self) -> Self {
-        self.0.order = Order::NoOrder;
         self
     }
 

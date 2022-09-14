@@ -1,31 +1,25 @@
 //! A stub implementation of `vicococmo::HttpServer`
 
 use ::std::{cell::RefCell, collections::HashMap};
-use ::vicocomo::{Error, HttpServer};
+use ::vicocomo::{AppConfigVal, Error, HttpServer};
 
-pub struct HttpServerStub {
-    params: RefCell<HashMap<String, String>>,
-    path_vals: RefCell<HashMap<String, String>>,
+#[derive(Clone, Debug)]
+pub struct Server {
+    config: RefCell<HashMap<String, AppConfigVal>>,
+    params: RefCell<HashMap<String, Vec<String>>>,
+    route_pars: RefCell<HashMap<String, String>>,
     request: RefCell<Request>,
     response: RefCell<Response>,
     session: RefCell<HashMap<String, String>>,
+    static_routes: RefCell<HashMap<String, String>>,
 }
 
-macro_rules! set_map {
-    ($map:expr, $vals:expr) => {{
-        let mut map = $map.borrow_mut();
-        map.clear();
-        for (par, val) in $vals {
-            map.insert(par.to_string(), val.to_string());
-        }
-    }};
-}
-
-impl HttpServerStub {
+impl Server {
     pub fn new() -> Self {
-        Self {
+        let result = Self {
+            config: RefCell::new(HashMap::new()),
             params: RefCell::new(HashMap::new()),
-            path_vals: RefCell::new(HashMap::new()),
+            route_pars: RefCell::new(HashMap::new()),
             request: RefCell::new(Request {
                 scheme: String::new(),
                 host: String::new(),
@@ -38,50 +32,107 @@ impl HttpServerStub {
                 text: String::new(),
             }),
             session: RefCell::new(HashMap::new()),
+            static_routes: RefCell::new(HashMap::new()),
+        };
+        result.defaults();
+        result
+    }
+
+    pub fn add_config(&self, attr: &str, val: AppConfigVal) {
+        self.config.borrow_mut().insert(attr.to_string(), val);
+    }
+
+    pub fn defaults(&self) {
+        macro_rules! null_string {
+            () => {
+                AppConfigVal::Str(String::new())
+            };
         }
+        let mut map = self.config.borrow_mut();
+        map.clear();
+        map.insert("file_root".to_string(), null_string!());
+        map.insert("strip_mtime".to_string(), AppConfigVal::Bool(false));
+        map.insert("url_root".to_string(), null_string!());
     }
 
     pub fn get_response(&self) -> Response {
         self.response.borrow().clone()
     }
 
-    pub fn set_params(&self, vals: &[(&str, &str)]) {
-        set_map!(self.params, vals)
+    pub fn set_config(&self, vals: &[(&str, &AppConfigVal)]) {
+        self.defaults();
+        let mut map = self.config.borrow_mut();
+        for (par, val) in vals {
+            map.insert(par.to_string(), (*val).clone());
+        }
     }
 
-    pub fn set_path_vals(&self, vals: &[(&str, &str)]) {
-        set_map!(self.path_vals, vals)
+    pub fn set_params(&self, vals: &[(&str, &str)]) {
+        let mut map = self.params.borrow_mut();
+        map.clear();
+        for (par, val) in vals {
+            map.get_mut(*par)
+                .map(|arr| arr.push(val.to_string()))
+                .unwrap_or_else(|| {
+                    map.insert(par.to_string(), vec![val.to_string()]);
+                });
+        }
+    }
+
+    pub fn set_route_pars(&self, vals: &[(&str, &str)]) {
+        let mut map = self.route_pars.borrow_mut();
+        map.clear();
+        for (par, val) in vals {
+            map.insert(par.to_string(), val.to_string());
+        }
     }
 
     pub fn set_request(&self, req: Request) {
         let mut request = self.request.borrow_mut();
         *request = req;
     }
+
+    pub fn set_static_routes(&self, vals: &[(&str, &str)]) {
+        let mut map = self.static_routes.borrow_mut();
+        map.clear();
+        for (par, val) in vals {
+            map.insert(par.to_string(), val.to_string());
+        }
+    }
 }
 
-impl HttpServer for HttpServerStub {
+impl HttpServer for Server {
+    fn app_config(&self, id: &str) -> Option<AppConfigVal> {
+        self.config.borrow().get(id).map(|v| v.clone())
+    }
+
     fn param_val(&self, name: &str) -> Option<String> {
-        self.params.borrow().get(name).map(|v| v.to_string())
+        self.params
+            .borrow()
+            .get(name)
+            .map(|v| v.first().unwrap().clone())
     }
 
     fn param_vals(&self) -> Vec<(String, String)> {
-        self.params
-            .borrow()
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect()
+        let mut result: Vec<(String, String)> = Vec::new();
+        for (par, arr) in self.params.borrow().iter() {
+            for val in arr {
+                result.push((par.to_string(), val.to_string()));
+            }
+        }
+        result
     }
 
     fn req_path(&self) -> String {
         self.request.borrow().path.to_string()
     }
 
-    fn req_path_val(&self, par: &str) -> Option<String> {
-        self.path_vals.borrow().get(par).map(|v| v.to_string())
+    fn req_route_par_val(&self, par: &str) -> Option<String> {
+        self.route_pars.borrow().get(par).map(|v| v.to_string())
     }
 
-    fn req_path_vals(&self) -> Vec<(String, String)> {
-        self.path_vals
+    fn req_route_par_vals(&self) -> Vec<(String, String)> {
+        self.route_pars
             .borrow()
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -95,12 +146,12 @@ impl HttpServer for HttpServerStub {
     fn req_url(&self) -> String {
         let mut result = String::new();
         if !self.request.borrow().scheme.is_empty() {
-            result = result + &self.request.borrow().scheme + "//:";
+            result = result + &self.request.borrow().scheme + "://";
         }
         if !self.request.borrow().host.is_empty() {
             result += &self.request.borrow().host;
         }
-        result = result + "/" + &self.request.borrow().path;
+        result = result + &self.request.borrow().path;
         if !self.request.borrow().parameters.is_empty() {
             result = result + "?" + &self.request.borrow().parameters;
         }
@@ -113,6 +164,10 @@ impl HttpServer for HttpServerStub {
 
     fn resp_error(&self, err: Option<&Error>) {
         self.response.borrow_mut().set_error(err);
+    }
+
+    fn resp_file(&self, file_path: &str) {
+        self.response.borrow_mut().file(file_path);
     }
 
     fn resp_ok(&self) {
@@ -141,9 +196,16 @@ impl HttpServer for HttpServerStub {
             .insert(key.to_string(), value.to_string());
         Ok(())
     }
+
+    fn url_path_to_dir(&self, url_path: &str) -> Option<String> {
+        self.static_routes
+            .borrow()
+            .get(url_path)
+            .map(|s| s.to_string())
+    }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Request {
     pub scheme: String,
     pub host: String,
@@ -152,13 +214,27 @@ pub struct Request {
     pub body: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Response {
     pub status: ResponseStatus,
     pub text: String,
 }
 
 impl Response {
+    fn file(&mut self, file_path: &str) {
+        self.status = ResponseStatus::File;
+        self.text = file_path.to_string();
+    }
+
+    fn ok(&mut self) {
+        self.status = ResponseStatus::Ok;
+    }
+
+    fn redirect(&mut self, url: &str) {
+        self.status = ResponseStatus::Redirect;
+        self.text = url.to_string();
+    }
+
     fn set_body(&mut self, txt: &str) {
         self.text = txt.to_string();
     }
@@ -173,19 +249,11 @@ impl Response {
             }
         );
     }
-
-    fn ok(&mut self) {
-        self.status = ResponseStatus::Ok;
-    }
-
-    fn redirect(&mut self, url: &str) {
-        self.status = ResponseStatus::Redirect;
-        self.text = url.to_string();
-    }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum ResponseStatus {
+    File,
     Error,
     NoResponse,
     Ok,

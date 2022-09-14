@@ -1,5 +1,5 @@
 mod controllers {
-    use ::vicocomo::{DatabaseIf, HttpServerIf, TemplEngIf };
+    use ::vicocomo::{DatabaseIf, HttpServerIf, TemplEngIf};
 
     pub struct Static;
 
@@ -29,11 +29,12 @@ mod controllers {
 }
 
 mod models {
-    use ::vicocomo::{DatabaseIf, HttpServerIf };
+    use ::vicocomo::{DatabaseIf, HttpServerIf};
 
     #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
     pub enum UserRole {
-        Superuser
+        Superuser,
+        User,
     }
 
     impl vicocomo::UserRole for UserRole {
@@ -49,7 +50,7 @@ mod models {
 
 ::vicocomo_actix::config! {
     app_config {
-        role_enum: true,
+        role_variants: [User],
         unauthorized_route: "/njet",
     },
     plug_in(Session) {
@@ -70,7 +71,7 @@ mod models {
         logout { path: "/logout" },
         njet { path: "/njet" },
     },
-    authorize("/") { get: Superuser },
+    authorize("/") { get: User },
 }
 
 fn main() -> std::io::Result<()> {

@@ -75,9 +75,8 @@
 ///
 #[macro_export]
 macro_rules! t {
-    ($key: expr $( , $name: literal : $value: expr )* $( , )? ) => {
+    ($key:expr $( , $name:literal : $value:expr )* $( , )? ) => {
         {
-            let texts = &$crate::texts::TEXTS;
             let mut params: Vec<(&str, &str)> = Vec::new();
         $(
             let val = $value.to_string();

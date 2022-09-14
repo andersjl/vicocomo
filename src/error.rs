@@ -2,6 +2,7 @@
 //!
 
 use crate::texts::get_text;
+use std::fmt::Display;
 
 pub const SQLSTATE_FOREIGN_KEY_VIOLATION: &'static str = "23503";
 pub const SQLSTATE_UNIQUE_VIOLATION: &'static str = "23505";
@@ -47,7 +48,7 @@ pub enum Error {
 impl Error {
     /// Create an `Error::Database`.
     ///
-    pub fn database(sqlstate: Option<&str>, text: &str) -> Self {
+    pub fn database<T: Display>(sqlstate: Option<&str>, text: T) -> Self {
         Self::Database(DatabaseError {
             sqlstate: sqlstate.map(|c| c.to_string()),
             text: text.to_string(),
@@ -56,7 +57,7 @@ impl Error {
 
     /// Create an `Error::InvalidInput`.
     ///
-    pub fn invalid_input(text: &str) -> Self {
+    pub fn invalid_input<T: Display>(text: T) -> Self {
         Self::InvalidInput(text.to_string())
     }
 
@@ -187,19 +188,19 @@ impl Error {
 
     /// Create an `Error::Other`.
     ///
-    pub fn other(text: &str) -> Self {
+    pub fn other<T: Display>(text: T) -> Self {
         Self::Other(text.to_string())
     }
 
     /// Create an `Error::Render`.
     ///
-    pub fn render(text: &str) -> Self {
+    pub fn render<T: Display>(text: T) -> Self {
         Self::Render(text.to_string())
     }
 
     /// Create an `Error::ThisCannotHappen`.
     ///
-    pub fn this_cannot_happen(text: &str) -> Self {
+    pub fn this_cannot_happen<T: Display>(text: T) -> Self {
         Self::ThisCannotHappen(text.to_string())
     }
 
@@ -386,7 +387,6 @@ impl Error {
 /// ));
 ///
 /// ```
-#[cfg(debug_assertions)]
 #[macro_export]
 macro_rules! is_error {
     (   $error:expr, $variant:ident $( , )?
@@ -574,7 +574,7 @@ impl std::error::Error for Error {}
 ///     "error--Other\nerror--Other--whatever",
 /// );
 /// ```
-impl std::fmt::Display for Error {
+impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.format(false).join("\n"))
     }
@@ -632,7 +632,6 @@ pub struct ModelError {
     pub assoc_errors: Vec<(String, Vec<String>)>,
 }
 
-#[cfg(debug_assertions)]
 impl ModelError {
     #[doc(hidden)] // used by the macro is_error
     pub fn fld_errors_include(

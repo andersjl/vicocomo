@@ -1,7 +1,11 @@
 pub fn test_crate(crate_dir: &str, show_stdout: bool, cargo_cmd: &str) {
-    use ::std::process::Command;
+    use std::process::Command;
 
-    Command::new("cargo").current_dir(crate_dir).arg("update").output().ok();
+    Command::new("cargo")
+        .current_dir(crate_dir)
+        .arg("update")
+        .output()
+        .ok();
     let output = Command::new("cargo")
         .current_dir(crate_dir)
         .arg(cargo_cmd)
@@ -53,13 +57,17 @@ pub fn run_http_server(
     show_build: bool,
     requests: Vec<TestRequest>,
 ) -> Vec<TestResponse> {
-    use ::std::process::Command;
-    use ::std::thread::sleep;
-    use ::std::time::Duration;
+    use std::process::Command;
+    use std::thread::sleep;
+    use std::time::Duration;
 
     let mut result: Vec<TestResponse> = Vec::new();
     println!("building {} ... ", server_dir);
-    Command::new("cargo").current_dir(server_dir).arg("update").output().ok();
+    Command::new("cargo")
+        .current_dir(server_dir)
+        .arg("update")
+        .output()
+        .ok();
     let build_output = Command::new("cargo")
         .current_dir(server_dir)
         .arg("build")
@@ -69,18 +77,18 @@ pub fn run_http_server(
         .expect("build failed");
     match build_output.status.code() {
         Some(code) if code == 0 => (),
-        _ => if show_build {
-            eprintln!(
-                "build output: {}",
-                String::from_utf8(build_output.stdout)
-                    .unwrap_or(String::new())
-                    .as_str(),
-            );
+        _ => {
+            if show_build {
+                eprintln!(
+                    "build output: {}",
+                    String::from_utf8(build_output.stdout)
+                        .unwrap_or(String::new())
+                        .as_str(),
+                );
+            }
         }
     }
-    let _ = Command::new("rm")
-        .arg("tmp/__test-cookies.txt")
-        .output();
+    let _ = Command::new("rm").arg("tmp/__test-cookies.txt").output();
     println!("    OK");
     println!("running {} ... ", server_dir);
     if let Ok(mut run) = Command::new("cargo")
@@ -144,8 +152,8 @@ impl TestRequest {
     }
 
     pub fn fetch_response(self) -> TestResponse {
-        use ::lazy_static::lazy_static;
-        use ::regex::Regex;
+        use lazy_static::lazy_static;
+        use regex::Regex;
         lazy_static! {
             static ref OUTPUT: Regex = Regex::new(
                 r#"((?s).*)"\n__variables__\nstatus: (.*)\nredirect: (.*)""#,
@@ -153,20 +161,19 @@ impl TestRequest {
             .unwrap();
         }
 
-        use ::std::process::Command;
+        use std::process::Command;
         let mut curl = Command::new("curl");
         curl.arg("--silent");
         for header in self.headers {
             curl.arg("--header").arg(&format!("\"{}\"", header));
         }
-        curl.arg("--write-out")
-            .arg(
-                "\"\
+        curl.arg("--write-out").arg(
+            "\"\
                     \n__variables__\
                     \nstatus: %{response_code}\
                     \nredirect: %{redirect_url}\
                 \"",
-            );
+        );
         if self.cookies {
             curl.arg("--cookie-jar")
                 .arg("tmp/__test-cookies.txt")

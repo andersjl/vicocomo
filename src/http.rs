@@ -4,5 +4,5 @@
 pub mod server;
 pub mod session;
 
-pub use server::{HttpServer, HttpServerIf};
+pub use server::{AppConfigVal, HttpServer, HttpServerIf};
 pub use session::{DbSession, NullSession, Session};

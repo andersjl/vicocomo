@@ -1,6 +1,6 @@
 //! # Actix web application configuration and generation
 
-use ::proc_macro::TokenStream;
+use proc_macro::TokenStream;
 
 /// A macro that uses [`vicocomo::http::server::Config`
 /// ](../vicocomo/http/server/struct.Config.html) to implement `actix_main()`.
@@ -21,10 +21,8 @@ use ::proc_macro::TokenStream;
 /// - <b>`Database`</b>: Still using `CookieSessionStore` to store a session
 ///   ID, the actual session data is stored in the database. This requires
 ///   that the plugin `DbConn` is defined, and that the database has a table
-///   named `"__vicocomo__sessions"` to store the sessions. The table should
-///   have three columns, `id` storing a 64 bit integer primary key, `data`
-///   storing the serialized session data as an unlimited ascii text, and
-///   `time` storing the last access time as a 64 bit integer.
+///   named `"__vicocomo__sessions"` to store the sessions, see [`DbSession`
+///   ](../vicocomo/http/session/struct.DbSession.html).
 ///
 ///   For `Database`, the value may be an array `[Database, `*max age*`]`,
 ///   where *max age* indicates a duration after which untouched session data
@@ -76,11 +74,10 @@ use ::proc_macro::TokenStream;
 ///     },
 ///     plug_in(TemplEng) {
 ///         def: (
-///             ::vicocomo_handlebars::HbTemplEng<'_>,
-///             ::vicocomo_handlebars::HbTemplEng::new(None),
+///             vicocomo_handlebars::HbTemplEng<'_>,
+///             vicocomo_handlebars::HbTemplEng::new(None),
 ///         ),
 ///     },
-///     route(static) { home { path: "/" }},
 ///     app_config { role_enum: true },
 ///     authorize("/*") { get: Public, post: Authorized },
 /// }
@@ -94,14 +91,14 @@ use ::proc_macro::TokenStream;
 ///
 #[proc_macro]
 pub fn config(input: TokenStream) -> TokenStream {
-    use ::case::CaseExt;
-    use ::proc_macro2::Span;
-    use ::quote::{format_ident, quote};
-    use ::syn::{
+    use case::CaseExt;
+    use proc_macro2::Span;
+    use quote::{format_ident, quote};
+    use syn::{
         parse_macro_input, parse_quote, punctuated::Punctuated, token, Expr,
         FnArg, Ident, LitInt, LitStr, Path, Type,
     };
-    use ::vicocomo::{Config, ConfigAttrVal, Handler};
+    use vicocomo::{Config, ConfigAttrVal, Handler};
 
     const ERROR_SESSION: &'static str =
         "expected None, Cookie, Database, or [Database, <max age>]";
@@ -112,6 +109,7 @@ pub fn config(input: TokenStream) -> TokenStream {
         plug_ins,
         app_config,
         routes,
+        mut static_routes,
         not_found: _,
     } = parse_macro_input!(input as Config);
     let (db_type, db_init) = plug_ins.get("DbConn").unwrap();
@@ -136,7 +134,7 @@ pub fn config(input: TokenStream) -> TokenStream {
                         _ => (),
                     }
                 }
-                ConfigAttrVal::Array(a) => {
+                ConfigAttrVal::Arr(a) => {
                     if a.len() == 2 && a[0].to_string() == "Database" {
                         let mut age = a[1].to_string();
                         if age.len() > 1 {
@@ -177,7 +175,7 @@ pub fn config(input: TokenStream) -> TokenStream {
                 if app_config
                     .get("role_variants")
                     .map(|cav| {
-                        cav.get_array_strings()
+                        cav.get_id_strings()
                             .unwrap()
                             .contains(&"Disabled".to_string())
                     })
@@ -193,21 +191,28 @@ pub fn config(input: TokenStream) -> TokenStream {
     let mut handler_fn_vec: Vec<Ident> = Vec::new();
     let mut http_meth_vec: Vec<Ident> = Vec::new();
     let mut http_path_vec: Vec<LitStr> = Vec::new();
-    let mut name_vec: Vec<LitStr> = Vec::new();
     let mut hndl_pars_vec: Vec<Punctuated<FnArg, token::Comma>> = Vec::new();
     let mut authorize_expr_vec: Vec<Expr> = Vec::new();
     let mut controller_vec: Vec<Path> = Vec::new();
     let mut contr_meth_vec: Vec<Ident> = Vec::new();
-    let mut path_pars_expr_vec: Vec<Expr> = Vec::new();
+    let mut route_pars_expr_vec: Vec<Expr> = Vec::new();
     let mut hndl_pars_min: Punctuated<FnArg, token::Comma> = parse_quote!(
-        db_extr: ::actix_web::web::Data<#db_type>,
+        conf_extr:
+            actix_web::web::Data<
+                std::collections::HashMap<String, vicocomo::AppConfigVal>,
+            >,
+        stro_extr:
+            actix_web::web::Data<std::collections::HashMap<String, String>>
     );
+    hndl_pars_min.push(parse_quote!(
+        db_extr: actix_web::web::Data<#db_type>
+    ));
     let mut session_middleware: Vec<Expr> = Vec::new();
     let mut session: Expr = parse_quote!(None);
     let mut session_db: Expr = parse_quote!(None);
     let mut session_prune = LitInt::new("0", Span::call_site());
     if has_session {
-        hndl_pars_min.push(parse_quote!(sess: ::actix_session::Session));
+        hndl_pars_min.push(parse_quote!(sess: actix_session::Session));
         session_middleware.push(plug_ins.get("Session").unwrap().1.clone());
         session = parse_quote!(Some(sess));
         if db_session != SESSION_DB_NONE {
@@ -215,10 +220,8 @@ pub fn config(input: TokenStream) -> TokenStream {
             session_prune = LitInt::new(&db_session, Span::call_site());
         }
     }
-    hndl_pars_min.push(parse_quote!(
-        teng: ::actix_web::web::Data<#templ_type>
-    ));
-    hndl_pars_min.push(parse_quote!(ax_req: ::actix_web::HttpRequest));
+    hndl_pars_min.push(parse_quote!(teng: actix_web::web::Data<#templ_type>));
+    hndl_pars_min.push(parse_quote!(ax_req: actix_web::HttpRequest));
     hndl_pars_min.push(parse_quote!(body: String));
     for contr_path in routes.keys() {
         let contr_path_snake = contr_path
@@ -231,7 +234,7 @@ pub fn config(input: TokenStream) -> TokenStream {
             let Handler {
                 http_method,
                 route,
-                route_par_count,
+                route_par_names,
                 authorized,
                 contr_method,
             } = handler;
@@ -245,17 +248,18 @@ pub fn config(input: TokenStream) -> TokenStream {
                 &route.replace("<", "{").replace(">", "}"),
                 Span::call_site(),
             ));
-            name_vec.push(LitStr::new(&route, Span::call_site()));
             let mut hndl_pars = hndl_pars_min.clone();
-            let mut path_pars_expr: Expr = parse_quote!(Vec::new());
-            if *route_par_count > 0 {
-                path_pars_expr = parse_quote!(path_par_vals
-                    .iter()
-                    .enumerate()
-                    .map(|(ix, val)| (format!("p{}", ix + 1), val.clone()))
-                    .collect());
+            let mut route_pars_expr: Expr = parse_quote!(Vec::new());
+            if !route_par_names.is_empty() {
+                route_pars_expr = parse_quote!(
+                    [ #( #route_par_names ),* ]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .zip(route_par_vals.drain(..))
+                        .collect()
+                );
                 hndl_pars.push(parse_quote!(
-                    path_par_vals: ::actix_web::web::Path<Vec<String>>
+                    mut route_par_vals: actix_web::web::Path<Vec<String>>
                 ));
             }
             let authorize_expr: Expr = match authorized {
@@ -263,7 +267,7 @@ pub fn config(input: TokenStream) -> TokenStream {
                     let allow = a.allow.clone();
                     let allow_slice: Expr = parse_quote!(&[ #( #allow ),* ]);
                     let mut cond: Expr = parse_quote!(
-                        <#role_enum as ::vicocomo::UserRole>::is_authorized(
+                        <#role_enum as vicocomo::UserRole>::is_authorized(
                             #allow_slice,
                             db_if,
                             srv_if,
@@ -278,9 +282,9 @@ pub fn config(input: TokenStream) -> TokenStream {
                     }
                     parse_quote!(
                         if !(#cond) {
-                            return ::actix_web::HttpResponse::Found()
+                            return actix_web::HttpResponse::Found()
                                 .append_header((
-                                    ::actix_web::http::header::LOCATION,
+                                    actix_web::http::header::LOCATION,
                                     #unauthorized_route.clone(),
                                 ))
                                 .finish()
@@ -289,7 +293,7 @@ pub fn config(input: TokenStream) -> TokenStream {
                 }
                 None => parse_quote!(()),
             };
-            path_pars_expr_vec.push(path_pars_expr);
+            route_pars_expr_vec.push(route_pars_expr);
             hndl_pars_vec.push(hndl_pars);
             authorize_expr_vec.push(authorize_expr);
             controller_vec.push(contr_path.clone());
@@ -298,30 +302,76 @@ pub fn config(input: TokenStream) -> TokenStream {
     }
     // TODO: use not_found from Config and fix the signature of the default
     let not_found_handler: Path = parse_quote!(crate::not_found);
+    let mut static_url = Vec::new();
+    let mut static_dir = Vec::new();
+    let mut static_expr: Vec<Expr> = Vec::new();
+    let strip_mtime =
+        app_config.get("strip_mtime").unwrap().get_bool().unwrap();
+    for (url, dir) in static_routes.drain(..) {
+        let url_lit = LitStr::new(&url, Span::call_site());
+        static_url.push(url_lit.clone());
+        let dir_lit = LitStr::new(&dir, Span::call_site());
+        static_dir.push(dir_lit.clone());
+        static_expr.push(if strip_mtime {
+            let url_file = LitStr::new(&(url + "/{file}"), Span::call_site());
+            parse_quote!(
+                route(
+                    #url_file,
+                    actix_web::web::get().to(
+                        __vicocomo__handlers::static_file_handler
+                    )
+                )
+            )
+        } else {
+            parse_quote!(
+                service(actix_files::Files::new(
+                    #url_lit,
+                    #dir_lit,
+                ))
+            )
+        });
+    }
+    let mut conf_key = Vec::new();
+    let mut conf_val: Vec<Expr> = Vec::new();
+    for (key, val) in app_config {
+        if let Some(expr) = val.to_app_config_val_expr() {
+            conf_key.push(LitStr::new(&key, Span::call_site()));
+            conf_val.push(expr);
+        }
+    }
     TokenStream::from(quote! {
 
         #[actix_rt::main]
         pub async fn actix_main() -> std::io::Result<()> {
-            let database_ref = ::actix_web::web::Data::new(#db_init);
-            let templ_ref = ::actix_web::web::Data::new(#templ_init);
-            let port_str = ::std::env::var("PORT").unwrap_or_default();
-            ::actix_web::HttpServer::new(move || {
-                ::actix_web::App::new()
+            #[cfg(debug_assertions)]
+            eprintln!("debugging");
+            use std::collections::HashMap;
+            let mut conf: HashMap<String, vicocomo::AppConfigVal> =
+                HashMap::new();
+        #(  conf.insert(#conf_key.to_string(), #conf_val); )*
+            let mut stro: HashMap<String, String> = HashMap::new();
+        #(  stro.insert(#static_url.to_string(), #static_dir.to_string()); )*
+            let conf_ref = actix_web::web::Data::new(conf);
+            let stro_ref = actix_web::web::Data::new(stro);
+            let database_ref = actix_web::web::Data::new(#db_init);
+            let templ_ref = actix_web::web::Data::new(#templ_init);
+            let port_str = std::env::var("PORT").unwrap_or_default();
+            actix_web::HttpServer::new(move || {
+                actix_web::App::new()
+                    .app_data(conf_ref.clone())
+                    .app_data(stro_ref.clone())
                     .app_data(database_ref.clone())
                     .app_data(templ_ref.clone())
-                #(  .wrap(#session_middleware))*
+                #(  .wrap(#session_middleware) )*
                 #(
-                    .service(
-                        ::actix_web::web::resource(#http_path_vec)
-                        .name(#name_vec)
-                        .route(
-                            ::actix_web::web::#http_meth_vec()
-                            .to(__vicocomo__handlers::#handler_fn_vec)
-                        )
+                    .route(
+                        #http_path_vec,
+                        actix_web::web::#http_meth_vec()
+                        .to(__vicocomo__handlers::#handler_fn_vec)
                     )
                 )*
-                    .service(::actix_files::Files::new("/", "./static"))
-                    .default_service(::actix_web::web::route().to(
+                #(  .#static_expr )*
+                    .default_service(actix_web::web::route().to(
                         __vicocomo__handlers::not_found
                     ))
             })
@@ -334,44 +384,73 @@ pub fn config(input: TokenStream) -> TokenStream {
         }
 
         fn not_found(
-            method: &::actix_web::http::Method,
-            uri: &::actix_web::http::uri::Uri,
-        ) -> ::actix_web::HttpResponse {
-            ::actix_web::HttpResponse::NotFound()
+            method: &actix_web::http::Method,
+            uri: &actix_web::http::uri::Uri,
+        ) -> actix_web::HttpResponse {
+            actix_web::HttpResponse::NotFound()
                 .content_type("text; charset=utf-8")
                 .body(format!("404 Not Found: {} {}", method, uri))
         }
 
         #[allow(non_snake_case)]
         mod __vicocomo__handlers {
-            use ::vicocomo::Controller;
-            #(
-                pub async fn #handler_fn_vec(
-                    #hndl_pars_vec
-                ) -> ::actix_web::HttpResponse {
-                    let db_arc = db_extr.into_inner();
-                    let db_if = ::vicocomo::DatabaseIf::new(db_arc.as_ref());
-                    let te_arc = teng.into_inner();
-                    let te_if = ::vicocomo::TemplEngIf::new(te_arc.as_ref());
-                    let path_pars: Vec<(String, String)> = #path_pars_expr_vec;
-                    let server = ::vicocomo_actix::AxServer::new(
-                        &ax_req,
-                        body.as_str(),
-                        path_pars.as_slice(),
-                        #session,
-                        #session_db,
-                        #session_prune,
-                    );
-                    let srv_if = ::vicocomo::HttpServerIf::new(&server);
-                    #authorize_expr_vec;
-                    #controller_vec::#contr_meth_vec(db_if, srv_if, te_if);
-                    server.response()
-                }
-            )*
+            use vicocomo::Controller;
+        #(
+            pub async fn #handler_fn_vec(
+                #hndl_pars_vec
+            ) -> ::actix_web::HttpResponse {
+                let conf = conf_extr.into_inner();
+                let stro = stro_extr.into_inner();
+                let db_arc = db_extr.into_inner();
+                let db_if = vicocomo::DatabaseIf::new(db_arc.as_ref());
+                let te_arc = teng.into_inner();
+                let te_if = vicocomo::TemplEngIf::new(te_arc.as_ref());
+                let route_pars: Vec<(String, String)> =
+                    #route_pars_expr_vec;
+                let server = vicocomo_actix::AxServer::new(
+                    &conf,
+                    &stro,
+                    &ax_req,
+                    body.as_str(),
+                    route_pars.as_slice(),
+                    #session,
+                    #session_db,
+                    #session_prune,
+                );
+                let srv_if = vicocomo::HttpServerIf::new(&server);
+                #authorize_expr_vec;
+                #controller_vec::#contr_meth_vec(db_if, srv_if, te_if);
+                server.response()
+            }
+        )*
+            pub async fn static_file_handler(
+                conf_extr: actix_web::web::Data<
+                    std::collections::HashMap<String, vicocomo::AppConfigVal>,
+                >,
+                stro_extr: actix_web::web::Data<
+                    std::collections::HashMap<String, String>,
+                >,
+                ax_req: actix_web::HttpRequest,
+            ) -> actix_web::HttpResponse {
+                let conf = conf_extr.into_inner();
+                let stro = stro_extr.into_inner();
+                let server = vicocomo_actix::AxServer::new(
+                    &conf,
+                    &stro,
+                    &ax_req,
+                    "",
+                    &[],
+                    None,
+                    None,
+                    0,
+                );
+                vicocomo::HttpServerIf::new(&server).static_file_handler();
+                server.response()
+            }
 
             pub async fn not_found(
-                req: ::actix_web::HttpRequest
-            ) -> ::actix_web::HttpResponse {
+                req: actix_web::HttpRequest
+            ) -> actix_web::HttpResponse {
                 #not_found_handler(req.method(), req.uri())
             }
         }

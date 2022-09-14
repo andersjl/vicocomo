@@ -1,5 +1,5 @@
 mod controllers {
-    use ::vicocomo::{DatabaseIf, HttpServerIf, TemplEngIf };
+    use ::vicocomo::{DatabaseIf, HttpServerIf, TemplEngIf};
 
     pub struct Static;
 
@@ -18,11 +18,23 @@ mod controllers {
             srv.resp_body(&format!("{}", count));
             srv.resp_ok();
         }
+
+        pub fn init(db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
+            let _ = db.exec("DROP TABLE IF EXISTS __vicocomo__sessions", &[]);
+            srv.resp_body("deleted session DB table");
+            srv.resp_ok();
+        }
     }
 }
 
 ::vicocomo_actix::config! {
-    app_config { session: [Database, h1] },
+    app_config {
+        session: [Database, h1],
+        create_session_table:
+            "CREATE TABLE __vicocomo__sessions(\
+                id BIGINT, data TEXT, time BIGINT\
+            )",
+    },
     plug_in(DbConn) {
         def: (
             vicocomo_postgres::PgConn,
@@ -55,6 +67,7 @@ mod controllers {
         ),
     },
     route(Static) { home { path: "/" } },
+    route(Static) { init { path: "/init" } },
 }
 
 fn main() -> std::io::Result<()> {

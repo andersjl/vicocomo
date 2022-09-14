@@ -48,7 +48,8 @@ impl PasswordDigest for BcryptDigest {
         )?))
     }
 
-    /// Unwraps [`bcrypt::verify()`]() turning errors to `false`.
+    /// Wraps [`bcrypt::verify()`](../bcrypt/fn.verify.html) turning errors to
+    /// `false`.
     ///
     fn authenticate(&self, password: &str) -> bool {
         match verify(password, &self.0) {

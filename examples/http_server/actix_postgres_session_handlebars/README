@@ -1,1 +1,0 @@
-Ensure that a Postgres user, password, and database as defined in .env exists

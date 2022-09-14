@@ -52,23 +52,25 @@ use ::chrono::{Duration, Local, NaiveDateTime};
 use ::rand::{thread_rng, Rng};
 use std::{collections::HashMap, convert::TryFrom};
 
-const SESSION_INSERT: &'static str =
+const INSERT: &'static str =
     "INSERT INTO __vicocomo__sessions (id, data, time) VALUES ($1, $2, $3)";
-const SESSION_PRUNE: &'static str =
+const PRUNE: &'static str =
     "DELETE FROM __vicocomo__sessions WHERE time < $1";
-const SESSION_ROW_COUNT: &'static str =
-    "SELECT COUNT(id) FROM __vicocomo__sessions";
-const SESSION_SELECT: &'static str =
+const ROW_COUNT: &'static str = "SELECT COUNT(id) FROM __vicocomo__sessions";
+const SELECT: &'static str =
     "SELECT data FROM __vicocomo__sessions WHERE id = $1";
-const SESSION_TOUCH: &'static str =
+const TOUCH: &'static str =
     "UPDATE __vicocomo__sessions SET time = $2 WHERE id = $1";
-const SESSION_UPDATE: &'static str =
+const UPDATE: &'static str =
     "UPDATE __vicocomo__sessions SET data = $2, time = $3 WHERE id = $1";
 
 /// # For HTTP server adapter developers only
 ///
 /// Intended for implementing a [`Session`](trait.Session.html) that stores
-/// all data in a database table `"__vicocomo__sessions"`.
+/// all data in a database table `"__vicocomo__sessions"`.  The table has
+/// three columns, `id` storing a 64 bit integer primary key, `data` storing
+/// the serialized session data as an unlimited UTF-8 text, and `time` storing
+/// the last access time as a 64 bit integer.
 ///
 pub struct DbSession<'d> {
     db: DatabaseIf<'d>,
@@ -88,22 +90,31 @@ impl<'d> DbSession<'d> {
     /// `prune`, if positive, removes all session data older than that many
     /// seconds from the database, possibly including the one with `id`.
     ///
+    /// `create_sql`, if `Some(_)`, is an SQL string used on error to try to
+    /// create a table for storing session data in the database. E.g., for
+    /// Postgres the following should work:
+    /// `CREATE TABLE __vicocomo__sessions(id BIGINT, data TEXT, time BIGINT)`.
+    ///
     /// On success, the returned object always has a valid [`id`](#method.id)
     /// corresponding to a session stored in the database. If `id` was `Some`
     /// it is never changed. If it was `None` a random one is generated and an
     /// empty session is stored. In that case, the caller is responsible for
     /// persisting the new `id`.
     ///
-    /// Returns `Error::Other("cannot-create-db-session")` on failure.
+    /// Returns `Error::Other("cannot-create-db-session")` on failure,
+    /// translated with one [`parameter`](../../texts/index.html), the error
+    /// reported from the database.
     ///
     pub fn new(
         db: DatabaseIf<'d>,
         id: Option<i64>,
         prune: i64,
+        create_sql: Option<&str>,
     ) -> Result<Self, Error> {
+        use crate::t;
         if prune > 0 {
             let count = db
-                .query_column(SESSION_ROW_COUNT, &[], DbType::Int)
+                .query_column(ROW_COUNT, &[], DbType::Int)
                 .and_then(|count| i64::try_from(count.clone()).ok())
                 .unwrap_or(0);
             // The frequency calling this function is ~ the number of users ~
@@ -111,7 +122,7 @@ impl<'d> DbSession<'d> {
             // frequency independent of the number of users:
             if count > 0 && thread_rng().gen_range(0..count) == 0 {
                 let _ = db.exec(
-                    SESSION_PRUNE,
+                    PRUNE,
                     &[(now() - Duration::seconds(prune)).into()],
                 );
             }
@@ -120,34 +131,44 @@ impl<'d> DbSession<'d> {
         let id = id
             .map(|old_id| {
                 cache = db
-                    .query_column(
-                        SESSION_SELECT,
-                        &[old_id.into()],
-                        DbType::Text,
-                    )
+                    .query_column(SELECT, &[old_id.into()], DbType::Text)
                     .and_then(|data| String::try_from(data.clone()).ok())
                     .and_then(|map_str| serde_json::from_str(&map_str).ok());
                 old_id
             })
             .unwrap_or_else(|| thread_rng().gen());
-        let cache = match cache {
-            Some(c) => {
-                touch(db, id);
-                c
-            }
-            None => {
+        if cache.is_some() {
+            let _ = db.exec(TOUCH, &[id.into(), now().into()]);
+        } else {
+            let mut tried_create = false;
+            loop {
                 match db.exec(
-                    SESSION_INSERT,
+                    INSERT,
                     &[id.into(), "{}".to_string().into(), now().into()],
                 ) {
-                    Ok(count) if count == 1 => HashMap::new(),
+                    Ok(count) => {
+                        if count == 1 {
+                            cache = Some(HashMap::new());
+                            break;
+                        } else {
+                            return Err(Error::this_cannot_happen(""));
+                        }
+                    }
+                    Err(e) if create_sql.is_none() || tried_create => {
+                        return Err(Error::other(&t!(
+                            "cannot-create-db-session",
+                            "p1": &e.to_string(),
+                        )));
+                    }
                     _ => {
-                        return Err(Error::other("cannot-create-db-session"))
+                        let _ = db.exec(create_sql.unwrap(), &[]);
+                        tried_create = true;
+                        continue;
                     }
                 }
             }
-        };
-        Ok(Self { db, id, cache })
+        }
+        Ok(Self { db, id, cache: cache.unwrap() })
     }
 
     /// Clear session data with [`id`](#method.id) from the database and the
@@ -185,7 +206,7 @@ impl<'d> DbSession<'d> {
     pub fn update(&self) -> Result<(), Error> {
         self.db
             .exec(
-                SESSION_UPDATE,
+                UPDATE,
                 &[
                     self.id.into(),
                     map_error!(Other, ::serde_json::to_string(&self.cache))?
@@ -205,8 +226,4 @@ impl<'d> DbSession<'d> {
 
 fn now() -> NaiveDateTime {
     Local::now().naive_utc()
-}
-
-fn touch(db: DatabaseIf, id: i64) {
-    let _ = db.exec(SESSION_TOUCH, &[id.into(), now().into()]);
 }

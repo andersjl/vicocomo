@@ -13,7 +13,6 @@ impl PgConn {
     }
 
     fn error(&self, err: &tokio_postgres::error::Error) -> Error {
-        self.rollback().unwrap_or(());
         Error::Database(DatabaseError {
             sqlstate: err.code().map(|c| c.code().to_string()),
             text: err.to_string(),
@@ -26,13 +25,9 @@ macro_rules! from_values {
         &$values
             .iter()
             .map(|val| match val {
-                DbValue::Float(v) => {
-                    v as &(dyn postgres_types::ToSql + Sync)
-                }
-                DbValue::Int(v) => v as &(dyn ::postgres_types::ToSql + Sync),
-                DbValue::Text(v) => {
-                    v as &(dyn postgres_types::ToSql + Sync)
-                }
+                DbValue::Float(v) => v as &(dyn postgres_types::ToSql + Sync),
+                DbValue::Int(v) => v as &(dyn postgres_types::ToSql + Sync),
+                DbValue::Text(v) => v as &(dyn postgres_types::ToSql + Sync),
                 DbValue::NulFloat(v) => {
                     v as &(dyn postgres_types::ToSql + Sync)
                 }

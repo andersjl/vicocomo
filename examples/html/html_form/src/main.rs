@@ -1,11 +1,11 @@
-use ::chrono::NaiveDate;
-use ::serde::{Deserialize, Serialize};
-use ::serde_json::{json, Value as JsonValue};
-use ::vicocomo::{
+use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value as JsonValue};
+use vicocomo::{
     assert_html_form, model_error, Error, HtmlForm, HtmlInput, HttpServerIf,
     InputType, SessionModel,
 };
-use ::vicocomo_stubs::HttpServerStub;
+use vicocomo_stubs::Server;
 
 #[derive(Clone, Debug, HtmlForm)]
 struct BigForm {
@@ -76,7 +76,7 @@ impl SessionForm {
         submitted: &JsonValue,
         validator: &dyn Fn(&Self) -> Result<(), Error>,
     ) -> Option<Self> {
-        let server_stub = HttpServerStub::new();
+        let server_stub = Server::new();
         let server = HttpServerIf::new(&server_stub);
 
         let mut form = Self::new();
@@ -332,7 +332,7 @@ fn main() {
     // CheckBox, Radio, Select, and SelectMult need an (option, value) list
     big.sel.set_options(&[("a", 1), ("b", 42)]);
     big.rad.set_options(&[("a", 1), ("b", -42)]);
-    big.mul.set_options(&[("a", 1), ("b", ::std::i64::MIN)]);
+    big.mul.set_options(&[("a", 1), ("b", std::i64::MIN)]);
     big.chk
         .set_options(&[("a", "x".to_string()), ("b", "y".to_string())]);
     // setting a value to something not among the options => None / empty
@@ -609,7 +609,7 @@ fn main() {
 
     println!("\nwith SessionStore - - - - - - - - - - - - - - - - - - - -\n");
 
-    let server_stub = HttpServerStub::new();
+    let server_stub = Server::new();
     let server = HttpServerIf::new(&server_stub);
 
     let mut sess_form: SessionForm;

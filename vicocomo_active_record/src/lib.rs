@@ -260,7 +260,7 @@ mod save;
 ///
 /// - <b>One-to-many associations:</b>  The table storing the remote object
 ///   should have a foreign key declaration corresponding to the
-///   `on_delete = "`*one of *`cascade`*, *`forget`*, or *`restrict"`
+///   `on_delete = "`*one of `cascade`, `forget`, or `restrict`*`"`
 ///   name-value pair, in the obvious way.
 ///
 /// - <b>Many-to-many associations:</b>  The join table should have foreign

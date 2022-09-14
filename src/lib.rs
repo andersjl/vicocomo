@@ -28,8 +28,8 @@ pub use html::input::{HtmlForm, HtmlInput, InputType};
 pub use html::utils::*;
 pub use http::{
     server::{
-        Config, ConfigAttrVal, Handler, HttpMethod, HttpServer, HttpServerIf,
-        NullTemplEng, TemplEng, TemplEngIf,
+        AppConfigVal, Config, ConfigAttrVal, Handler, HttpMethod, HttpServer,
+        HttpServerIf, NullTemplEng, TemplEng, TemplEngIf,
     },
     session::{DbSession, NullSession, Session},
 };

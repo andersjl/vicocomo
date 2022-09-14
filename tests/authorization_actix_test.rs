@@ -2,7 +2,7 @@ use vicocomo::test_http_server;
 use vicocomo::test_utils::{TestRequest, TestResponse};
 
 #[test]
-fn test() {
+fn test_authorization_actix() {
     test_http_server!(
         "../vicocomo/examples/authorization/actix",
         false,

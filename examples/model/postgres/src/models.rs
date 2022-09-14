@@ -377,8 +377,9 @@ pub fn setup(
         .exec(
             "
             CREATE TABLE default_parents
-            (   id    BIGSERIAL PRIMARY KEY
+            (   id    BIGSERIAL
             ,   name  TEXT NOT NULL
+            ,   PRIMARY KEY(id)
             )",
             &[],
         )

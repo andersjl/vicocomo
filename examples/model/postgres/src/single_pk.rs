@@ -481,11 +481,7 @@ pub fn test_single_pk(db: DatabaseIf) {
     let res = s.update(db);
     assert!(is_error!(
         &res.err().unwrap(),
-        Model(
-            CannotSave,
-            "SinglePk", None,
-            "un2", ["required"],
-        ),
+        Model(CannotSave, "SinglePk", None, "un2", ["required"]),
     ));
     println!("    OK");
 
