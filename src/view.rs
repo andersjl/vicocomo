@@ -44,7 +44,7 @@ pub fn make_href(
 ) -> Result<String, Error> {
     use regex::Regex;
     lazy_static::lazy_static! {
-        static ref PATH_LAST: Regex = Regex::new(r"/([^./]+)$").unwrap();
+        static ref PATH_LAST: Regex = Regex::new(r"(?:/)?([^./]+)$").unwrap();
     }
     let ext = ext.unwrap_or_else(|| {
         PATH_LAST

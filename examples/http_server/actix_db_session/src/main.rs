@@ -30,10 +30,7 @@ mod controllers {
 ::vicocomo_actix::config! {
     app_config {
         session: [Database, h1],
-        create_session_table:
-            "CREATE TABLE __vicocomo__sessions(\
-                id BIGINT, data TEXT, time BIGINT\
-            )",
+        create_session_table: true,
     },
     plug_in(DbConn) {
         def: (

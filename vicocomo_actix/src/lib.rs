@@ -36,23 +36,24 @@ impl<'conf, 'req, 'dbif, 'stro> AxServer<'conf, 'req, 'dbif, 'stro> {
     ) -> Self {
         use lazy_static::lazy_static;
         use regex::Regex;
-        use urlencoding::decode;
+        use vicocomo::decode_url_parameter;
         lazy_static! {
             static ref QUERY: Regex =
                 Regex::new(r"([^&=]+=[^&=]+&)*[^&=]+=[^&=]+").unwrap();
         }
         let mut param_vals: HashMap<String, Vec<String>> = HashMap::new();
-        let uri_vals = request.uri().query().and_then(|q| decode(q).ok());
+        let uri_vals =
+            request.uri().query().and_then(|q| decode_url_parameter(q).ok());
         let body_vals = QUERY
             .captures(&req_body)
             .and_then(|c| c.get(0))
-            .and_then(|m| decode(m.as_str()).ok());
+            .and_then(|m| decode_url_parameter(m.as_str()).ok());
         for key_value in match uri_vals {
             Some(u) => match body_vals {
                 Some(b) => u + "&" + &b,
                 None => u,
             },
-            None => body_vals.unwrap_or(String::new()),
+            None => body_vals.unwrap_or_else(|| String::new()),
         }
         .split('&')
         {
@@ -71,7 +72,19 @@ impl<'conf, 'req, 'dbif, 'stro> AxServer<'conf, 'req, 'dbif, 'stro> {
         }
         let create_session_table_sql = app_config
             .get("create_session_table")
-            .and_then(|val| val.str());
+            .and_then(|val| {
+                val.str().or_else(|| {
+                    if val.bool().unwrap_or(false) {
+                        Some(
+                            "CREATE TABLE __vicocomo__sessions(\
+                                id BIGINT, data TEXT, time BIGINT\
+                            )".to_string()
+                        )
+                    } else {
+                        None
+                    }
+                })
+            });
         Self {
             app_config,
             param_vals,

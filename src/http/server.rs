@@ -118,8 +118,9 @@ impl<'a> HttpServerIf<'a> {
     }
 
     /// The value of the parameter with `name` in the URL (get) or body (post)
-    /// deserialized from a URL-decoded string.  For structured parameters,
-    /// use [`param_json()`](#method.param_json)
+    /// deserialized from a URL-decoded string.
+    ///
+    /// For structured parameters, use [`param_json()`](#method.param_json).
     ///
     pub fn param_val<T>(self, name: &str) -> Option<T>
     where
@@ -127,7 +128,11 @@ impl<'a> HttpServerIf<'a> {
     {
         self.0
             .param_val(name)
-            .and_then(|s| serde_json::from_str(&s).ok())
+            .and_then(|s| {
+                serde_json::from_str(&s)
+                    .or_else(|_| serde_json::from_str(&format!("\"{s}\"")))
+                    .ok()
+            })
     }
 
     /// The path part of the request, without scheme, host, or parameters.
@@ -150,7 +155,8 @@ impl<'a> HttpServerIf<'a> {
     where
         T: DeserializeOwned,
     {
-        self.0.req_route_par_val(par).and_then(|s| {
+        self.0.req_route_par_val(par)
+            .and_then(|s| {
             serde_json::from_str(&s)
                 .or_else(|_| {
                     serde_json::from_str(&("\"".to_string() + &s + "\""))
@@ -483,12 +489,15 @@ impl<'a> TemplEngIf<'a> {
 ///
 /// Optional, default `crate::controllers`.
 ///
-/// ### `create_session_table`s
+/// ### `create_session_table`
 ///
 /// A string literal that is the SQL to create a table to store HTTP session
 /// data. The [HTTP server adapter uses this
 /// ](../session/struct.DbSession#method.new) to create the table if it does
 /// not exist.
+///
+/// `create_session_table: true` gives the default value
+/// `"CREATE TABLE __vicocomo__sessions(id BIGINT, data TEXT, time BIGINT)"`.
 ///
 /// ### `file_root`
 ///

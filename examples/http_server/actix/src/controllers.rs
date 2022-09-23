@@ -1,7 +1,22 @@
 use chrono::NaiveDate;
 use vicocomo::{
-    t, view::render_template, DatabaseIf, HttpServerIf, TemplEngIf,
+    t, view::render_template, Controller, DatabaseIf, HttpServerIf,
+    TemplEngIf,
 };
+
+pub struct Dynamic;
+
+impl Controller for Dynamic {
+    //fn create(_db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
+    fn index(_db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
+        srv.resp_body(&format!("{}\n{}\n",
+            //srv.req_body(),
+            srv.req_url(),
+            srv.param_val::<String>("foo").unwrap().as_str(),
+        ));
+        srv.resp_ok();
+    }
+}
 
 pub struct Static;
 
@@ -45,8 +60,6 @@ impl Static {
             href: String,
         }
         if srv.req_path().contains("redirect") {
-            //let timestamp = chrono::Utc::now().timestamp().to_string();
-            //std::fs::write("public/txt/timestamp.txt", &timestamp).unwrap();
             match make_href(srv, "static/txt", "timestamp", None) {
                 Ok(href) => render_template(
                     srv,

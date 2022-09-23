@@ -27,20 +27,21 @@ use ::std::{
 ///
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HtmlInput<V> {
-    typ: InputType,
-    vals: Vec<V>,
-    // first option w/o value in select tag, localized by render()
-    prpt: Option<String>,
-    // the String is localized by render()
-    opts: Vec<(String, V)>,
-    // if we render more than one tag, this is a template, see render()
-    tag: HtmlTag,
-    // the tag label if any, localized by render()
-    lab: Option<String>,
-    // localized by render()
-    errs: Vec<String>,
+    embed: Vec<HtmlTag>,
     // if Some(_), render() will add this class unless errs.is_empty()
     err_cls: Option<String>,
+    // localized by render()
+    errs: Vec<String>,
+    // the tag label if any, localized by render()
+    lab: Option<String>,
+    // the String is localized by render()
+    opts: Vec<(String, V)>,
+    // first option w/o value in select tag, localized by render()
+    prpt: Option<String>,
+    // if we render more than one tag, this is a template, see render()
+    tag: HtmlTag,
+    typ: InputType,
+    vals: Vec<V>,
 }
 
 impl<V> HtmlInput<V>
@@ -55,14 +56,15 @@ where
     ///
     pub fn new(ty: InputType, name: &str) -> Self {
         Self {
+            embed: Vec::new(),
+            err_cls: Some("vicocomo_errors".to_string()),
+            errs: Vec::new(),
+            lab: None,
+            opts: Vec::new(),
+            prpt: None,
+            tag: ty.tag(name),
             typ: ty,
             vals: Vec::new(),
-            prpt: None,
-            opts: Vec::new(),
-            tag: ty.tag(name),
-            lab: None,
-            errs: Vec::new(),
-            err_cls: Some("vicocomo_errors".to_string()),
         }
     }
 
@@ -74,6 +76,15 @@ where
     ///
     pub fn add_attr_vals(&mut self, attr: &str, value: &str) {
         self.tag.add_attr_vals(attr, value);
+    }
+
+    /// Make [`render()`](#method.render) output the (each) input as inner
+    /// HTML to `embedding`.
+    ///
+    /// Repeted calls add more embedding.
+    ///
+    pub fn add_embedding(&mut self, embedding: HtmlTag) {
+        self.embed.push(embedding);
     }
 
     /// Append error text lines formatted from an error, see
@@ -230,7 +241,11 @@ where
     /// The <b>tag</b> is a JSON `String`. It inlcudes inner HTML and end tag
     /// for [`Select`](enum.InputType.html#variant.Select), [`SelectMult`
     /// ](enum.InputType.html#variant.SelectMult), and [`Textarea`
-    /// ](enum.InputType.html#variant.Textarea).
+    /// ](enum.InputType.html#variant.Textarea). If the input is embedded (see
+    /// [`add_embedding()`](#method.add_embedding)), the embedding is repeated
+    /// for each tag generated for [`Checkbox`
+    /// ](enum.InputType.html#variant.Checkbox) and [`Radio`
+    /// ](enum.InputType.html#variant.Radio).
     ///
     /// The `id` attribute of the generated tag is as set with
     /// [`set_attr("id", _)`](#method.set_attr). If not set, the default is
@@ -595,18 +610,27 @@ where
         result.insert("label".to_string(), Self::rend_label(tag, lab));
         result.insert(
             "tag".to_string(),
-            JsonValue::String(
-                if !self.errs.is_empty() && self.err_cls.is_some() {
+            JsonValue::String({
+                let errors = !self.errs.is_empty() && self.err_cls.is_some();
+                let embed = !self.embed.is_empty();
+                if errors || embed {
                     let mut cloned = tag.clone();
-                    cloned.add_attr_vals(
-                        "class",
-                        self.err_cls.as_ref().unwrap(),
-                    );
+                    if errors {
+                        cloned.add_attr_vals(
+                            "class",
+                            self.err_cls.as_ref().unwrap(),
+                        );
+                    }
+                    for embedding in &self.embed {
+                        let mut embedding = embedding.clone();
+                        embedding.push_tag(cloned);
+                        cloned = embedding;
+                    }
                     cloned.to_string()
                 } else {
                     tag.to_string()
-                },
-            ),
+                }
+            }),
         );
         JsonValue::Object(result)
     }
@@ -921,7 +945,7 @@ impl InputType {
 /// ### Rendering
 /// ```
 /// use ::serde_json::json;
-/// use ::vicocomo::{HtmlForm, HtmlInput};
+/// use ::vicocomo::{HtmlForm, HtmlInput, HtmlTag};
 ///
 /// #[derive(Clone, HtmlForm)]
 /// struct SmallForm {
@@ -937,6 +961,7 @@ impl InputType {
 /// let mut small = SmallForm::with_labels(Some("pre"));
 ///
 /// small.rad.set_options(&[("a", 1), ("b", -42)]);
+/// small.rad.add_embedding(HtmlTag::new("td"));
 /// small.mul.set_options(&[("p", 1), ("z", 0), ("n", -1)]);
 ///
 /// assert!(small
@@ -978,11 +1003,11 @@ impl InputType {
 ///             "data": [
 ///                 {
 ///                   "label": r#"<label for="rad--1">a</label>"#,
-///                   "tag": r#"<input type="radio" id="rad--1" name="rad" value="1">"#,
+///                   "tag": r#"<td><input type="radio" id="rad--1" name="rad" value="1"></td>"#,
 ///                 },
 ///                 {
 ///                   "label": r#"<label for="rad---42">b</label>"#,
-///                   "tag": r#"<input type="radio" id="rad---42" name="rad" value="-42" checked>"#,
+///                   "tag": r#"<td><input type="radio" id="rad---42" name="rad" value="-42" checked></td>"#,
 ///                 }
 ///             ],
 ///         },

@@ -1,11 +1,11 @@
 [package]
 name = "vicocomo_bcrypt"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-bcrypt = "0.13"
-lazy_static = "1.4"
+bcrypt = "0.13.0"
+lazy_static = "1.4.0"
 vicocomo = { path = ".." }
 

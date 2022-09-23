@@ -1,10 +1,23 @@
 use crate::Error;
+use lazy_static::lazy_static;
 
-lazy_static::lazy_static! {
-    static ref WHITE: ::regex::Regex = regex::Regex::new(r"\s*").unwrap();
-}
 pub fn blacken(s: &str) -> String {
+    lazy_static! {
+        static ref WHITE: regex::Regex = regex::Regex::new(r"\s*").unwrap();
+    }
     WHITE.replace_all(s, "").to_string()
+}
+
+/// Change `"+"` to `"%20"`, then [`urlencoding::decode()`
+/// ](https://docs.rs/urlencoding/latest/urlencoding/fn.decode.html).
+///
+pub fn decode_url_parameter(par: &str) -> Result<String, Error> {
+    lazy_static! {
+        static ref PLUS: regex::Regex = regex::Regex::new(r"\+").unwrap();
+    }
+    urlencoding::decode(&PLUS.replace_all(par, "%20"))
+        .map(|s| s.to_string())
+        .map_err(|e| Error::invalid_input(&e.to_string()))
 }
 
 /// - leave an empty string alone

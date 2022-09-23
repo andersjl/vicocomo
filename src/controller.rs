@@ -3,18 +3,18 @@
 
 use crate::{DatabaseIf, HttpServerIf};
 
-/// Forward the request to `crate::views::$views::$handler()` with the same
+/// Forward the request to `crate::views::$view::$handler()` with the same
 /// signature as the controller method.
 ///
 #[macro_export]
 macro_rules! delegate_to_view {
-    ( $handler: ident, $views: ident $( , )? ) => {
+    ( $handler: ident, $view: ident $( , )? ) => {
         fn $handler(
             db: $crate::DatabaseIf,
             srv: $crate::HttpServerIf,
             teng: $crate::TemplEngIf,
         ) {
-            crate::views::$views::$handler(db, srv, teng);
+            crate::views::$view::$handler(db, srv, teng);
         }
     };
 }

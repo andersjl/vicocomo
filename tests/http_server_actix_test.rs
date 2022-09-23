@@ -94,6 +94,24 @@ fn test_http_server_actix() {
                 r.body(),
             );
         },
+        //TestRequest::new("http://localhost:3000/test/dynamic")
+            //.post("foo", "a+b c"),
+        TestRequest::new("http://localhost:3000/test/dynamic?foo=a%2Bb+c"),
+        |r: &TestResponse| {
+            assert_eq!(
+                r.status(),
+                "200",
+                "\n{}\n",
+                r.body(),
+            );
+            assert_eq!(
+                r.body(),
+                //"foo=a%2Bb+c\na+b c\n",
+                "/test/dynamic?foo=a%2Bb+c\na+b c\n",
+                "got\n{}\n",
+                r.body(),
+            );
+        },
         TestRequest::new(
             "http://localhost:3000/test/static/static-1234567890.html",
         ),

@@ -1,13 +1,13 @@
 [package]
 name = "vicocomo_handlebars"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-futures = "0.3.21"
-handlebars = { version = "4.3", features = ["dir_source"] }
-serde = { version = "1.0.137", features = ["derive"] }
-serde_json = "1.0.81"
+futures = "0.3.24"
+handlebars = { version = "4.3.4", features = ["dir_source"] }
+serde = { version = "1.0.144", features = ["derive"] }
+serde_json = "1.0.85"
 vicocomo = { path = ".." }
 

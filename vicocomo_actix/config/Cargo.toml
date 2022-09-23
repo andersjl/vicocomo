@@ -1,18 +1,18 @@
 [package]
 name = "vicocomo_actix_config"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
-edition = "2018"
+edition = "2021"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-case = "1"
-proc-macro2 = "1.0.39"
-quote = "1.0.18"
-regex = "1.5.6"
-syn = { version = "1.0.95", features = ["extra-traits"] }
+case = "1.0.0"
+proc-macro2 = "1.0.43"
+quote = "1.0.21"
+regex = "1.6.0"
+syn = { version = "1.0.99", features = ["extra-traits"] }
 vicocomo = { path = "../.." }
 vicocomo_derive_utils = { path = "../../vicocomo_derive_utils" }
 

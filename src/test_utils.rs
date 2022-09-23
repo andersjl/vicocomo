@@ -40,7 +40,7 @@ pub fn test_crate(crate_dir: &str, show_stdout: bool, cargo_cmd: &str) {
 
 #[macro_export]
 macro_rules! test_http_server {
-    ($server_path:expr, $show:expr, $(  $request:expr, $test:expr),* $(,)?) => {
+    ($server_path:expr, $show:expr, $( $request:expr, $test:expr),* $(,)?) => {
         {
             let mut reqs = Vec::new();
         $(  reqs.push($request); )*
@@ -169,10 +169,10 @@ impl TestRequest {
         }
         curl.arg("--write-out").arg(
             "\"\
-                    \n__variables__\
-                    \nstatus: %{response_code}\
-                    \nredirect: %{redirect_url}\
-                \"",
+                \n__variables__\
+                \nstatus: %{response_code}\
+                \nredirect: %{redirect_url}\
+            \"",
         );
         if self.cookies {
             curl.arg("--cookie-jar")
@@ -189,9 +189,9 @@ impl TestRequest {
         for item in self.data {
             curl.arg("--data-urlencode").arg(&format!("\"{}\"", item));
         }
+        curl.arg(&self.url);
         let output =
-            String::from_utf8(curl.arg(&self.url).output().unwrap().stdout)
-                .unwrap();
+            String::from_utf8(curl.output().unwrap().stdout).unwrap();
         let parts = OUTPUT.captures(&output).unwrap();
         TestResponse {
             body: parts.get(1).unwrap().as_str().to_string(),

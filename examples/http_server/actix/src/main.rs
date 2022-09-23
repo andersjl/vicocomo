@@ -18,6 +18,8 @@ mod controllers;
         file { path: "/file/<filename>" },
         date { path: "/date/<date>" },
     },
+    //route(Dynamic) { create },
+    route(Dynamic) { index },
     route_static("static") { fs_path: "" },
     route_static("static/txt") { fs_path: "txt" },
 }
