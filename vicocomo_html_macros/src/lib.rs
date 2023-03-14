@@ -64,7 +64,7 @@ pub fn html_form(input: TokenStream) -> TokenStream {
     html_form::html_form_impl(input)
 }
 
-/// Implement the [`PathTag`](../../vicocomo/html/utils/trait.PathTag.html)
+/// Implement the [`PathTag`](../vicocomo/html/utils/trait.PathTag.html)
 /// and `Display` traits and a constructor for a struct.
 ///
 #[proc_macro_derive(

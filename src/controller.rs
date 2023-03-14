@@ -3,8 +3,9 @@
 
 use crate::{DatabaseIf, HttpServerIf};
 
-/// Forward the request to `crate::views::$view::$handler()` with the same
-/// signature as the controller method.
+/// Use in your [`Controller`](controller/trait.Controller.html)
+/// implementation to forward the request to `crate::views::$view::$handler()`
+/// with the same signature as the controller method.
 ///
 #[macro_export]
 macro_rules! delegate_to_view {

@@ -34,6 +34,10 @@
 //!     "some text with (first) two (second) parameters",
 //! );
 //! assert_eq!(
+//!     t!("parameterized", "p2": "(second)"),
+//!     "some text with p1: ? two (second) parameters",
+//! );
+//! assert_eq!(
 //!     t!("beginning-w-par", "par": "parameter"),
 //!     "parameter before text",
 //! );

@@ -305,8 +305,8 @@ pub fn multi_pk_templ(dp: &DefaultParent) -> MultiPk {
         other_parent_id: None,
         // NonstandardParent with pk "bonus nonstandard" must not be deleted!
         bonus_parent: "bonus nonstandard".to_string(),
-        date_mand: NaiveDate::from_num_days_from_ce(0),
-        date_time_mand: NaiveDateTime::from_timestamp(0, 0),
+        date_mand: NaiveDate::from_num_days_from_ce_opt(0).unwrap(),
+        date_time_mand: NaiveDateTime::from_timestamp_opt(0, 0).unwrap(),
         string_mand: String::new(),
         u32_mand: 0,
         u64_mand: 0,

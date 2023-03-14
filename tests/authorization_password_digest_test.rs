@@ -1,8 +1,10 @@
 #[test]
 fn test_authorization_password_digest() {
-    vicocomo::test_utils::test_crate(
+    ljumvall_test_utils::test_crate(
         "../vicocomo/examples/authorization/password_digest",
+        &["run"],
         false,
-        "run",
+        false,
+        ljumvall_test_utils::TestCrateOutput::None,
     );
 }

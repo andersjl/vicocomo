@@ -14,6 +14,8 @@ mod save;
 /// ](../vicocomo/active_record/trait.ActiveRecord.html) trait for a `struct`
 /// with named fields.
 ///
+/// ## Example
+///
 /// ```text
 /// #[derive(ActiveRecord)]
 /// #[vicocomo_table_name = "example_table"]  // default "examples"
@@ -56,7 +58,7 @@ mod save;
 ///
 /// ## Struct attributes
 ///
-/// See this [example](index.html).
+/// See above [example](#example).
 ///
 /// ### `vicocomo_before_delete`
 ///
@@ -153,7 +155,7 @@ mod save;
 ///
 /// ## Field attributes
 ///
-/// See this [example](index.html).
+/// See above [example](#example).
 ///
 /// ### `vicocomo_belongs_to(` ... `)`
 ///
@@ -254,7 +256,7 @@ mod save;
 /// saving or deleting!</b>
 ///
 /// Referential integrity should be handled by the database as follows. If it
-/// does, the genereated code will transform the database foreign key
+/// does, the generated code will transform the database foreign key
 /// violation errors to [`Error::Model`
 /// ](../vicocomo/error/enum.Error.html#variant.Model).
 ///

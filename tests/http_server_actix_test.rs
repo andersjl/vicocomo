@@ -1,6 +1,6 @@
-use ::regex::Regex;
-use ::vicocomo::test_http_server;
-use ::vicocomo::test_utils::{TestRequest, TestResponse};
+use regex::Regex;
+use ljumvall_test_utils::test_http_server;
+use ljumvall_test_utils::{TestRequest, TestResponse};
 
 #[test]
 fn test_http_server_actix() {

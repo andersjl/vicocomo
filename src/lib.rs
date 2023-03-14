@@ -7,7 +7,6 @@ pub mod flash;
 pub mod html;
 pub mod http;
 pub mod session_model;
-pub mod test_utils;
 pub mod texts;
 pub mod utils;
 pub mod view;

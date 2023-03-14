@@ -79,7 +79,7 @@ pub fn test_multi_pk(db: DatabaseIf) {
     m.i32_mand = -32;
     m.i32_opt_nul = Some(Some(-32));
     m.default_parent_id = df.id;
-    m.date_mand = NaiveDate::from_num_days_from_ce(1);
+    m.date_mand = NaiveDate::from_num_days_from_ce_opt(1).unwrap();
     m.string_mand = "hello".to_string();
     m.u32_mand = 32;
     m.u64_mand = 64;

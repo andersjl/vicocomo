@@ -70,7 +70,8 @@ impl Static {
                         path: srv.req_path(),
                         url: srv.req_url(),
                         partial: format!("header-{}", t!("lang")),
-                        date: NaiveDate::from_num_days_from_ce(737843),
+                        date: NaiveDate::from_num_days_from_ce_opt(737843)
+                            .unwrap(),
                         href,
                     },
                 ),

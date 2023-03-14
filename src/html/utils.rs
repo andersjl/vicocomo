@@ -144,7 +144,7 @@ impl fmt::Display for HtmlTagInner {
 // --- PathTag ---------------------------------------------------------------
 
 /// A tag with a URL-valued attribute but no content.  See the
-/// [`PathTag`](../../vicocomo_html_macros/derive.PathTag.html) derive.
+/// [`PathTag`](../vicocomo_html_macros/derive.PathTag.html) derive.
 ///
 pub trait PathTag {
     /// Set (replace) the path attribute value of the tag.
@@ -227,7 +227,7 @@ impl fmt::Display for PathTagData {
 
 /// An encapsuled vector of [ScriptTag](struct.ScriptTag.html)-turned-strings.
 ///
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Scripts(Vec<String>);
 impl Scripts {
     pub fn new() -> Self {
@@ -239,6 +239,8 @@ impl Scripts {
     }
 
     /*
+     * Not needed using Handlebars templates. The visibilty resriction on the
+     * encapsulated Vec is lost when serializing.
         pub fn iter(&self) -> ::std::slice::Iter<String> {
             self.0.iter()
         }
@@ -255,7 +257,7 @@ pub struct ScriptTag(HtmlTag);
 
 /// An encapsuled vector of [StyleTag](struct.StyleTag.html)-turned-strings.
 ///
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Styles(Vec<String>);
 impl Styles {
     pub fn new() -> Self {
@@ -267,6 +269,8 @@ impl Styles {
     }
 
     /*
+     * Not needed using Handlebars templates. The visibilty resriction on the
+     * encapsulated Vec is lost when serializing.
         pub fn iter(&self) -> ::std::slice::Iter<String> {
             self.0.iter()
         }

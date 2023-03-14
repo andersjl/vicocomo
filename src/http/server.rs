@@ -428,7 +428,7 @@ impl<'a> TemplEngIf<'a> {
     ) -> Result<String, Error> {
         self.0.render(
             tmpl,
-            &::serde_json::to_value(data)
+            &serde_json::to_value(data)
                 .map_err(|e| Error::render(&e.to_string()))?,
         )
     }
@@ -449,7 +449,7 @@ impl<'a> TemplEngIf<'a> {
 /// <b>HTTP server adapter developers:</b> It is your responsibility to ensure
 /// that this documentation is implemented by your adapter! There is an
 /// implementation for [`actix-web`](https://crates.io/crates/actix-web) [here
-/// ](../../vicocomo_actix/macro.config.html).
+/// ](../../../vicocomo_actix/macro.config.html).
 ///
 // TODO: named routes and url_for().
 //

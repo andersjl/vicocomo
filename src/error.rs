@@ -458,8 +458,8 @@ macro_rules! is_error {
 ///
 /// `$fld_error` are the error texts for the field.  May be empty.
 ///
-/// `$assoc` is the name of a [`HasMany`
-/// ](vicocomo_active_record/derive.HasMany.html) association as a string
+/// `$assoc` is the name of a [has-many
+/// ](derive.ActiveRecord.html#vicocomo_has_many--) association as a string
 /// literal.
 ///
 /// `$ass_error` are the error texts for the association.  May be empty.
@@ -624,8 +624,8 @@ pub struct ModelError {
     ///
     pub field_errors: Vec<(String, Vec<String>)>,
 
-    /// Errors referring to [`HasMany`
-    /// ](../../vicocomo_active_record/derive.HasMany.html) associations.
+    /// Errors referring to [has-many
+    /// ](../derive.ActiveRecord.html#vicocomo_has_many--) associations.
     ///
     /// `(`*association name*`, `*error texts*`)`.
     ///

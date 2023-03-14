@@ -2,7 +2,7 @@
 //! helper types for querying the objects in the database.
 //!
 //! The trait [`ActiveRecord`](trait.ActiveRecord.html) has a [derive macro
-//! ](../../vicocomo_active_record/index.html) with the same name.
+//! ](../../vicocomo_active_record/derive.ActiveRecord.html) with the same name.
 
 use crate::Error;
 use crate::{
@@ -14,13 +14,13 @@ use crate::{
 /// [Patterns of Enterprise Application Architecture
 /// ](https://martinfowler.com/eaaCatalog/activeRecord.html).
 ///
-/// There is a [derive macro](../../vicocomo_active_record/index.html).
-/// The trait should be used as an interface to a *thin* wrapping of the
-/// database! Avoid coding elaborate business rules etc in methods of the
-/// deriving `struct`. Use [contexts
-/// ](https://en.wikipedia.org/wiki/Data,_context_and_interaction) for that.
-/// *Especially* if the logic involves more than one `ActiveRecord` class, or
-/// classes with no direct relation to the database.
+/// There is a [derive macro
+/// ](../../vicocomo_active_record/derive.ActiveRecord.html). The trait should
+/// be used as an interface to a *thin* wrapping of the database! Avoid coding
+/// elaborate business rules etc in methods of the deriving `struct`. Use
+/// [contexts](https://en.wikipedia.org/wiki/Data,_context_and_interaction)
+/// for that. *Especially* if the logic involves more than one `ActiveRecord`
+/// class, or classes with no direct relation to the database.
 ///
 /// Note that the derive macro implements a number of functions that are *not*
 /// in the trait! These are mainly functions for either side of one-to-many or

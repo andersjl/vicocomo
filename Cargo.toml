@@ -1,25 +1,28 @@
 [package]
 name = "vicocomo"
-version = "0.4.0"
+version = "0.4.2"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2021"
 
 [dependencies]
 case = "1.0.0"
-chrono = { version = "0.4.22", features = ["serde"] }
-itertools = "0.10.4"
+chrono = { version = "0.4.23", features = ["serde"] }
+itertools = "0.10.5"
 lazy_static = "1.4.0"
-proc-macro2 = "1.0.43"
-quote = "1.0.21"
+proc-macro2 = "1.0.51"
+quote = "1.0.23"
 rand = "0.8.5"
-regex = "1.6.0"
-serde = { version = "1.0.144", features = ["derive"] }
-serde_json = "1.0.85"
-syn = { version = "1.0.99", features = ["full", "extra-traits"] }
-v_htmlescape = "0.15.8"
+regex = "1.7.1"
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = "1.0.93"
+syn = { version = "1.0.107", features = ["full", "extra-traits"] }
 urlencoding = "2.1.2"
+v_htmlescape = "0.15.8"
 vicocomo_active_record = { path = "vicocomo_active_record" }
 vicocomo_db_macros = { path = "vicocomo_db_macros" }
 vicocomo_derive_utils = { path = "vicocomo_derive_utils" }
 vicocomo_html_macros = { path = "vicocomo_html_macros" }
 vicocomo_session_model = { path = "vicocomo_session_model" }
+
+[dev-dependencies]
+ljumvall_test_utils = { path = "../ljumvall_test_utils" }

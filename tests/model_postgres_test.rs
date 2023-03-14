@@ -1,8 +1,10 @@
 #[test]
 fn test_model_postgres() {
-    vicocomo::test_utils::test_crate(
+    ljumvall_test_utils::test_crate(
         "../vicocomo/examples/model/postgres",
+        &["run"],
         false,
-        "run",
+        false,
+        ljumvall_test_utils::TestCrateOutput::None,
     );
 }

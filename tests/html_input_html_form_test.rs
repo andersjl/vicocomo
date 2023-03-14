@@ -1,8 +1,10 @@
 #[test]
 fn test_html_html_form() {
-    ::vicocomo::test_utils::test_crate(
+    ljumvall_test_utils::test_crate(
         "../vicocomo/examples/html/html_form",
+        &["run"],
         false,
-        "run",
+        false,
+        ljumvall_test_utils::TestCrateOutput::None,
     );
 }

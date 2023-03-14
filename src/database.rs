@@ -242,21 +242,21 @@ db_value_convert! {
     in_db_value_module,
     NaiveDate,
     Int,
-    NaiveDate::from_num_days_from_ce(value as i32),
+    NaiveDate::from_num_days_from_ce_opt(value as i32).unwrap(),
     other.num_days_from_ce() as i64,
 }
 db_value_convert! {
     in_db_value_module,
     NaiveDateTime,
     Int,
-    NaiveDateTime::from_timestamp(value, 0),
+    NaiveDateTime::from_timestamp_opt(value, 0).unwrap(),
     other.timestamp(),
 }
 db_value_convert! {
     in_db_value_module,
     NaiveTime,
     Int,
-    NaiveTime::from_num_seconds_from_midnight(value as u32, 0),
+    NaiveTime::from_num_seconds_from_midnight_opt(value as u32, 0).unwrap(),
     other.num_seconds_from_midnight() as i64,
 }
 db_value_convert! { in_db_value_module, String, Text }

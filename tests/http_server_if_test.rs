@@ -1,8 +1,10 @@
 #[test]
 fn test_http_server_if() {
-    vicocomo::test_utils::test_crate(
+    ljumvall_test_utils::test_crate(
         "../vicocomo/examples/http_server/if",
+        &["run"],
         false,
-        "run",
+        false,
+        ljumvall_test_utils::TestCrateOutput::None,
     );
 }
