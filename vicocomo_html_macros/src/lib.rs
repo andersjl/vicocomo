@@ -45,7 +45,7 @@ mod path_tag;
 /// The item that derives `HtmlForm` must be a `struct` with named fields.
 ///
 /// It must have one field declared exactly (modulo visibility) as
-/// ```
+/// ```text
 /// errors: Vec<String>,
 /// ```
 /// The fields in the struct that correspond to HTML form input elements

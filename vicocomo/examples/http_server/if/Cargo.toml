@@ -1,0 +1,13 @@
+[workspace]
+
+[package]
+name = "vicocomo_example_http_server_if"
+version = "0.5.0"
+authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
+edition = "2021"
+
+[dependencies]
+chrono = "0.4.23"
+serde_json = "1.0.93"
+vicocomo = { path = "../../.." }
+vicocomo_stubs = { path = "../../../../vicocomo_stubs" }

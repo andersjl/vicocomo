@@ -1,29 +1,34 @@
 //! (Ab)use `actix-web` as the web server for a vicocomo application.
 //!
 //! Implements [`vicocomo::HttpServer`
-//! ](../vicocomo/http/server/trait.HttpServer.html) for [`actix-web`
+//! ](../vicocomo/http/config/trait.HttpServer.html) for [`actix-web`
 //! ](https://crates.io/crates/actix-web).
 //!
+//! An application developer should not have to use this crate, the macro
+//! [`config`](macro.config.html) generates code that does.
 
 mod session;
 
 use session::Session;
 use std::{cell::RefCell, collections::HashMap};
-use vicocomo::{AppConfigVal, DatabaseIf, Error, HttpServer};
+use vicocomo::{
+    AppConfigVal, DatabaseIf, Error, HttpParamVals, HttpResponse,
+    HttpResponseStatus, HttpServer, HttpStatus,
+};
 pub use vicocomo_actix_config::config;
 
-pub struct AxServer<'conf, 'req, 'dbif, 'stro> {
+pub struct AxServer<'conf, 'req, 'stro> {
     app_config: &'conf HashMap<String, AppConfigVal>,
-    param_vals: HashMap<String, Vec<String>>,
+    param_vals: HttpParamVals,
     req_body: String,
     request: &'req actix_web::HttpRequest,
-    response: RefCell<Response>,
+    response: RefCell<AxResponse>,
     route_pars: HashMap<String, String>,
-    session: Option<RefCell<Session<'dbif>>>,
+    session: Option<RefCell<Session>>,
     static_routes: &'stro HashMap<String, String>,
 }
 
-impl<'conf, 'req, 'dbif, 'stro> AxServer<'conf, 'req, 'dbif, 'stro> {
+impl<'conf, 'req, 'stro> AxServer<'conf, 'req, 'stro> {
     pub fn new(
         app_config: &'conf HashMap<String, AppConfigVal>,
         static_routes: &'stro HashMap<String, String>,
@@ -31,66 +36,19 @@ impl<'conf, 'req, 'dbif, 'stro> AxServer<'conf, 'req, 'dbif, 'stro> {
         req_body: &str,
         route_pars: &[(String, String)],
         session: Option<actix_session::Session>,
-        db: Option<DatabaseIf<'dbif>>,
+        db: Option<DatabaseIf>,
         prune: i64,
     ) -> Self {
-        use lazy_static::lazy_static;
-        use regex::Regex;
-        use vicocomo::decode_url_parameter;
-        lazy_static! {
-            static ref QUERY: Regex =
-                Regex::new(r"([^&=]+=[^&=]+&)*[^&=]+=[^&=]+").unwrap();
-        }
-        let mut param_vals: HashMap<String, Vec<String>> = HashMap::new();
-        let uri_vals =
-            request.uri().query().and_then(|q| decode_url_parameter(q).ok());
-        let body_vals = QUERY
-            .captures(&req_body)
-            .and_then(|c| c.get(0))
-            .and_then(|m| decode_url_parameter(m.as_str()).ok());
-        for key_value in match uri_vals {
-            Some(u) => match body_vals {
-                Some(b) => u + "&" + &b,
-                None => u,
-            },
-            None => body_vals.unwrap_or_else(|| String::new()),
-        }
-        .split('&')
-        {
-            if key_value.len() == 0 {
-                continue;
-            }
-            let mut k_v = key_value.split('=');
-            let key = k_v.next().unwrap();
-            let val = k_v.next().unwrap_or("");
-            match param_vals.get_mut(key) {
-                Some(vals) => vals.push(val.to_string()),
-                None => {
-                    param_vals.insert(key.to_string(), vec![val.to_string()]);
-                }
-            }
-        }
-        let create_session_table_sql = app_config
-            .get("create_session_table")
-            .and_then(|val| {
-                val.str().or_else(|| {
-                    if val.bool().unwrap_or(false) {
-                        Some(
-                            "CREATE TABLE __vicocomo__sessions(\
-                                id BIGINT, data TEXT, time BIGINT\
-                            )".to_string()
-                        )
-                    } else {
-                        None
-                    }
-                })
-            });
+        let param_vals = HttpParamVals::from_request(
+            req_body,
+            request.uri().query().unwrap_or(""),
+        );
         Self {
             app_config,
             param_vals,
             req_body: req_body.to_string(),
             request,
-            response: RefCell::new(Response::new()),
+            response: RefCell::new(AxResponse::new()),
             route_pars: route_pars
                 .iter()
                 .map(|(k, v)| (k.clone(), v.clone()))
@@ -100,8 +58,12 @@ impl<'conf, 'req, 'dbif, 'stro> AxServer<'conf, 'req, 'dbif, 'stro> {
                     actix_session,
                     db,
                     prune,
-                    create_session_table_sql.as_deref(),
+                    app_config
+                        .get("create_session_table")
+                        .and_then(|val| val.str())
+                        .as_deref(),
                 )
+                .map(|s| RefCell::new(s))
             }),
             static_routes,
         }
@@ -119,11 +81,11 @@ impl<'conf, 'req, 'dbif, 'stro> AxServer<'conf, 'req, 'dbif, 'stro> {
 
     #[cfg(debug_assertions)]
     pub fn response_status(&self) -> String {
-        format!("{:?}", self.response.borrow().status)
+        format!("{:?}", self.response.borrow().0.status)
     }
 }
 
-impl HttpServer for AxServer<'_, '_, '_, '_> {
+impl HttpServer for AxServer<'_, '_, '_> {
     fn app_config(&self, id: &str) -> Option<AppConfigVal> {
         self.app_config.get(id).map(|v| v.clone())
     }
@@ -133,13 +95,7 @@ impl HttpServer for AxServer<'_, '_, '_, '_> {
     }
 
     fn param_vals(&self) -> Vec<(String, String)> {
-        let mut result: Vec<(String, String)> = Vec::new();
-        for (key, vals) in &self.param_vals {
-            for val in vals {
-                result.push((key.clone(), val.clone()));
-            }
-        }
-        result
+        self.param_vals.vals()
     }
 
     fn req_path(&self) -> String {
@@ -166,23 +122,23 @@ impl HttpServer for AxServer<'_, '_, '_, '_> {
     }
 
     fn resp_body(&self, txt: &str) {
-        self.response.borrow_mut().body(txt);
+        self.response.borrow_mut().0.set_body(txt);
     }
 
-    fn resp_error(&self, err: Option<&vicocomo::Error>) {
-        self.response.borrow_mut().internal_server_error(err);
+    fn resp_error(&self, status: HttpStatus, err: Option<&vicocomo::Error>) {
+        self.response.borrow_mut().0.error(status, err);
     }
 
     fn resp_file(&self, file_path: &str) {
-        self.response.borrow_mut().file(file_path);
+        self.response.borrow_mut().0.file(file_path);
     }
 
     fn resp_ok(&self) {
-        self.response.borrow_mut().ok();
+        self.response.borrow_mut().0.ok();
     }
 
     fn resp_redirect(&self, url: &str) {
-        self.response.borrow_mut().redirect(url);
+        self.response.borrow_mut().0.redirect(url);
     }
 
     fn session_clear(&self) {
@@ -213,84 +169,45 @@ impl HttpServer for AxServer<'_, '_, '_, '_> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-enum ResponseStatus {
-    File,
-    InternalServerError,
-    NoResponse,
-    Ok,
-    Redirect,
-}
-
 #[derive(Clone, Debug)]
-struct Response {
-    status: ResponseStatus,
-    text: String,
-}
+struct AxResponse(HttpResponse);
 
-impl Response {
+impl AxResponse {
     fn new() -> Self {
-        Self {
-            status: ResponseStatus::NoResponse,
-            text: String::new(),
-        }
-    }
-
-    fn body(&mut self, text: &str) {
-        self.text = text.to_string();
-    }
-
-    fn file(&mut self, path: &str) {
-        self.status = ResponseStatus::File;
-        self.text = path.to_string();
-    }
-
-    fn internal_server_error(&mut self, err: Option<&vicocomo::Error>) {
-        self.status = ResponseStatus::InternalServerError;
-        self.text = format!(
-            "Internal server error: {}",
-            match err {
-                Some(e) => e.to_string(),
-                None => "Unknown".to_string(),
-            }
-        );
-    }
-
-    fn ok(&mut self) {
-        self.status = ResponseStatus::Ok;
-    }
-
-    fn redirect(&mut self, url: &str) {
-        self.status = ResponseStatus::Redirect;
-        self.text = url.to_string();
+        Self(HttpResponse::new())
     }
 }
 
-impl actix_web::Responder for Response {
+impl actix_web::Responder for AxResponse {
     type Body = actix_web::body::BoxBody;
 
     fn respond_to(
         self,
         req: &actix_web::HttpRequest,
     ) -> actix_web::HttpResponse {
-        use actix_web::{http::header, HttpResponse};
-        match self.status {
-            ResponseStatus::File => {
-                match actix_files::NamedFile::open(self.text.clone()) {
+        use actix_web::http::{header, StatusCode};
+        use actix_web::HttpResponse;
+        match self.0.status {
+            HttpResponseStatus::Error(code) => HttpResponse::build(
+                StatusCode::from_u16(code as u16)
+                    .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            )
+            .body(self.0.text.clone()),
+            HttpResponseStatus::File => {
+                match actix_files::NamedFile::open(self.0.text.clone()) {
                     Ok(resp) => resp.respond_to(req),
                     Err(e) => HttpResponse::NotFound().body(e.to_string()),
                 }
             }
-            ResponseStatus::InternalServerError => {
-                HttpResponse::InternalServerError().body(self.text.clone())
+            HttpResponseStatus::NoResponse => {
+                HttpResponse::InternalServerError()
+                    .body("Internal server error: No response")
             }
-            ResponseStatus::NoResponse => HttpResponse::InternalServerError()
-                .body("Internal server error: No response"),
-            ResponseStatus::Ok => HttpResponse::Ok()
+            HttpResponseStatus::Ok => HttpResponse::Ok()
                 .content_type("text/html; charset=utf-8")
-                .body(self.text.clone()),
-            ResponseStatus::Redirect => HttpResponse::Found()
-                .append_header((header::LOCATION, self.text.clone()))
+                .body(self.0.text.clone()),
+            HttpResponseStatus::Redirect => HttpResponse::Found()
+                .append_header((header::LOCATION, self.0.text.clone()))
                 .finish(),
         }
     }

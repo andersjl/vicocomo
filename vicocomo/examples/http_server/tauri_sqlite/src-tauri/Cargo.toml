@@ -1,0 +1,26 @@
+[workspace]
+
+[package]
+name = "vicocomo_example_http_server_tauri_sqlite"
+version = "0.5.0"
+authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
+default-run = "vicocomo_example_http_server_tauri_sqlite"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1.4.0", features = [] }
+
+[dependencies]
+rand = "0.7"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "1.4.0", features = [] }
+url = "2.4"
+vicocomo = { path = "../../../.." }
+vicocomo_example_http_server_local = { path = "../../local" }
+vicocomo_handlebars = { path = "../../../../../vicocomo_handlebars" }
+vicocomo_sqlite = { path = "../../../../../vicocomo_sqlite" }
+vicocomo_tauri = { path = "../../../../../vicocomo_tauri" }
+
+[features]
+custom-protocol = [ "tauri/custom-protocol" ]

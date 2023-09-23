@@ -1,0 +1,19 @@
+[workspace]
+
+[package]
+name = "vicocomo_example_http_server_actix_sqlite"
+version = "0.5.0"
+authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
+edition = "2021"
+
+[dependencies]
+actix-files = "0.6.2"
+actix-rt = "2.8.0"
+actix-web = "4.3.0"
+dotenv = "0.15.0"
+env_logger = "0.10.0"
+vicocomo = { path = "../../../../vicocomo" }
+vicocomo_actix = { path = "../../../../vicocomo_actix" }
+vicocomo_example_http_server_local = { path = "../local" }
+vicocomo_handlebars = { path = "../../../../vicocomo_handlebars" }
+vicocomo_sqlite = { path = "../../../../vicocomo_sqlite" }

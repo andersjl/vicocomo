@@ -1,0 +1,11 @@
+[package]
+name = "vicocomo_sqlite"
+version.workspace = true
+description.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+vicocomo = { path = "../vicocomo", version = "0.5.0" }
+

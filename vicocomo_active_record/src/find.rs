@@ -34,7 +34,7 @@ pub(crate) fn find_impl(
         &all_cols_join, table_name, default_order,
     );
     let load_models = model.rows_to_models_expr(
-        parse_quote!(db.query(#load_sql, &[], &[ #( #db_types ),* ])?),
+        parse_quote!(db.clone().query(#load_sql, &[], &[ #( #db_types ),* ])?),
     );
 
     // SELECT <all> FROM <table>
@@ -83,7 +83,7 @@ pub(crate) fn find_impl(
             fn find(db: ::vicocomo::DatabaseIf, pk: &Self::PkType)
                 -> Option<Self>
             {
-                match db.query(
+                match db.clone().query(
                     #find_pk_sql,
                     &[ #pk_db_values ],
                     &[ #( #db_types ),* ]
@@ -105,7 +105,7 @@ pub(crate) fn find_impl(
                 -> Option<Self>
             {
                 #pk_value_self_expr.and_then(|tup| {
-                    Self::find(db, &tup)
+                    Self::find(db.clone(), &tup)
                 })
             }
         ));
@@ -128,7 +128,11 @@ pub(crate) fn find_impl(
             };
             let limit = match query.limit {
                 Some(l) => format!("LIMIT {}", l),
-                None => String::new(),
+                // E.g. SQLite requires LIMIT if OFFSET
+                None if query.offset.is_some() => {
+                    "LIMIT 1000000000".to_string()
+                },
+                _ => String::new(),
             };
             let offset = match query.offset {
                 Some(l) => format!("OFFSET {}", l),
@@ -153,7 +157,7 @@ pub(crate) fn find_impl(
             let sql =
                 format!(#query_sql, filter, order, limit, offset);
             let mut found_rows =
-                db.query(&sql, &values, &[ #( #db_types ),* ])?;
+                db.clone().query(&sql, &values, &[ #( #db_types ),* ])?;
             #found_models
         }
     ));
@@ -194,7 +198,7 @@ pub(crate) fn find_impl(
         struct_fn.push(parse_quote!(
             // -- find_by_field1_and_field3(db, v1, v3) ------------------
             pub fn #find_by_id(#find_pars) -> Option<Self> {
-                match db.query(
+                match db.clone().query(
                     #find_uni_sql,
                     &[#par_vals],
                     &[ #( #db_types ),* ]

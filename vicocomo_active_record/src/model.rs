@@ -1,12 +1,12 @@
 // TODO: -> Vec<&Field> => -> Filter
-use ::proc_macro::TokenStream;
-use ::proc_macro2::Span;
-use ::std::collections::HashMap;
-use ::syn::{
+use proc_macro::TokenStream;
+use proc_macro2::Span;
+use std::collections::HashMap;
+use syn::{
     parse_quote, punctuated::Punctuated, AttrStyle, Attribute, Expr, Ident,
     Lit, LitInt, LitStr, Meta, NestedMeta, Path, Type,
 };
-use ::vicocomo_derive_utils::*;
+use vicocomo_derive_utils::*;
 
 const ATTR_BELONGS_TO_ERROR: &'static str =
     "expected #[vicocomo_belongs_to( ... )]";
@@ -131,6 +131,8 @@ pub(crate) struct Model {
     pub(crate) before_delete: bool,
     // indicates presence of the vicocomo_before_save attribute
     pub(crate) before_save: bool,
+    // indicates presence of the vicocomo_readonly attribute
+    pub(crate) readonly: bool,
     pub(crate) fields: Vec<Field>,
     pub(crate) uniques: Vec<UniqueFieldSet>,
 }
@@ -170,6 +172,8 @@ impl Model {
         let before_save: bool = attrs
             .iter()
             .any(|a| a.path.is_ident("vicocomo_before_save"));
+        let readonly: bool =
+            attrs.iter().any(|a| a.path.is_ident("vicocomo_readonly"));
         let has_many: Vec<HasMany> =
             Self::get_has_many(attrs, &struct_id.to_string());
         let mut fields = Vec::new();
@@ -495,7 +499,8 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         }
         let mut uniques = Vec::new();
         uniques.extend(unis.drain().map(|(_k, fields)| {
-            let mut find_self_args: Vec<Expr> = vec![parse_quote!(db)];
+            let mut find_self_args: Vec<Expr> =
+                vec![parse_quote!(db.clone())];
             let mut uni_fld_strs = Vec::new();
             for field in &fields {
                 let fld_id = &field.id;
@@ -528,25 +533,10 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
             has_many,
             before_delete,
             before_save,
+            readonly,
             fields,
             uniques,
         }
-    }
-
-    pub(crate) fn col_to_field_string_map(&self) -> Expr {
-        let mut col_str: Vec<Expr> = Vec::new();
-        let mut fld_str: Vec<Expr> = Vec::new();
-        for f in &self.fields {
-            let col = &f.col;
-            col_str.push(parse_quote!(#col));
-            let fld = LitStr::new(&f.id.to_string(), Span::call_site());
-            fld_str.push(parse_quote!(#fld));
-        }
-        parse_quote!({
-            let mut map = ::std::collections::HashMap::new();
-        #(  map.insert(#col_str.to_string(), #fld_str.to_string()); )*
-            map
-        })
     }
 
     pub(crate) fn field_none_err_expr(
@@ -675,7 +665,7 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         if self.before_save {
             parse_quote!({
             #(  #req_chk?; )*
-                ::vicocomo::BeforeSave::before_save(#obj, db)?;
+                ::vicocomo::BeforeSave::before_save(#obj, db.clone())?;
             })
         } else {
             parse_quote!({
@@ -865,9 +855,9 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
             .iter()
             .map(|f| {
                 if f.opt {
-                    parse_quote!(Some(val))
+                    parse_quote!(Some(vicocomo_local__val))
                 } else {
-                    parse_quote!(val)
+                    parse_quote!(vicocomo_local__val)
                 }
             })
             .collect();
@@ -887,7 +877,7 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                             .unwrap()
                             .try_into()
                         {
-                            Ok(val) => #ids = #vals,
+                            Ok(vicocomo_local__val) => #ids = #vals,
                             Err(err) => {
                                 error = Some(err);
                                 break;
@@ -932,7 +922,7 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         match fields.len() {
             0 => parse_quote!(Option::<()>::None),
             1 => {
-                let def = fields.first().unwrap().clone();
+                let def = fields.first().unwrap();
                 let id = &def.id;
                 if def.opt {
                     parse_quote!(#obj.#id.clone())

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title> Actix Sqlite Test </title>
+  </head>
+  <body>
+    <form action="/" method="post">
+      {{{ count.data.tag }}}
+      <input type="submit" name="commit" value="OK">
+    </form>
+    <form action="/delete" method="post">
+      <input type="submit" name="commit" value="Delete">
+    </form>
+    <a href="/cancel"> cancel </a>
+    <br> {{ extra }}
+  </body>
+</html>

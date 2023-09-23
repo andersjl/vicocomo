@@ -114,7 +114,7 @@ pub(crate) fn has_many_impl(
                     db: ::vicocomo::DatabaseIf,
                     remote: &#remote_type,
                 ) -> Result<usize, ::vicocomo::Error> {
-                    db.exec(#connect_sql, #join_col_vals_expr)
+                    db.clone().exec(#connect_sql, #join_col_vals_expr)
                 }
             ));
             struct_fn.push(parse_quote!(
@@ -123,7 +123,7 @@ pub(crate) fn has_many_impl(
                     db: ::vicocomo::DatabaseIf,
                     remote: &#remote_type,
                 ) -> Result<usize, ::vicocomo::Error> {
-                    db.exec(#disconnect_sql, #join_col_vals_expr)
+                    db.clone().exec(#disconnect_sql, #join_col_vals_expr)
                 }
             ));
             struct_fn.push(parse_quote!(
@@ -154,7 +154,7 @@ pub(crate) fn has_many_impl(
                         r.#remote_set_fn(&self)?;
                     }
                     let mut existing =
-                        #remote_type::#remote_all_fn(db, &self)?;
+                        #remote_type::#remote_all_fn(db.clone(), &self)?;
                     existing.sort_by(|o1, o2| {
                         o1.pk_value().cmp(&o2.pk_value())
                     });
@@ -197,7 +197,7 @@ pub(crate) fn has_many_impl(
                     }
                     if let Err(e) =
                         <#remote_type as ::vicocomo::ActiveRecord>::delete_batch(
-                            db,
+                            db.clone(),
                             delete_pks.as_slice(),
                         )
                     {
@@ -218,7 +218,7 @@ pub(crate) fn has_many_impl(
                     }
                     for ref mut tt in to_try {
                         if let Err(e) =
-                            ::vicocomo::ActiveRecord::save(tt, db)
+                            ::vicocomo::ActiveRecord::save(tt, db.clone())
                         {
                             return Err(::vicocomo::Error::Model(
                                 ::vicocomo::ModelError {
@@ -252,7 +252,7 @@ pub(crate) fn has_many_impl(
                     None => ::vicocomo::QueryBld::new(),
                 };
                 <#remote_type as ::vicocomo::ActiveRecord>::query(
-                    db,
+                    db.clone(),
                     match bld.filter(
                             #filter_assoc,
                             &[Some(#self_pk_expr.clone().into())]

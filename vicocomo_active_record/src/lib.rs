@@ -9,6 +9,7 @@ mod find;
 mod has_many;
 mod model;
 mod save;
+mod to_fro_sql;
 
 /// Derive the [`ActiveRecord`
 /// ](../vicocomo/active_record/trait.ActiveRecord.html) trait for a `struct`
@@ -146,6 +147,13 @@ mod save;
 ///     Optional, default *value of `remote_pk`* if given or `id`.
 ///
 /// See also the section on [referential integrity](#referential-integrity).
+///
+/// ### `vicocomo_readonly`
+///
+/// The database relation should not be written to, e.g. because it is a
+/// view. The functions in the [`ActiveRecord`
+/// ](../vicocomo/active_record/trait.ActiveRecord.html) trait that write to
+/// the database are not overridden.
 ///
 /// ### `vicocomo_table_name = "`*some table name*`"`
 ///
@@ -285,14 +293,13 @@ mod save;
 ///
 /// ### For each `vicocomo_belongs_to` attributed field
 ///
-/// Below, "`*Remote*`" means the `remote_type` value (or the default), and
-/// "`*name*`" means the `name` value if given, or the last segment of
+/// Below, "*Remote*" means the `remote_type` value (or the default), and
+/// "*name*" means the `name` value if given, or the last segment of
 /// `remote_type` if not, snake cased.
 ///
-/// ##### `pub fn all_belonging_to_*name*(db: DatabaseIf, remote: &*Remote*) -> Result<Vec<Self>, Error>`
+/// ##### `pub fn all_belonging_to_`*name*`(db: DatabaseIf, remote: &`*Remote*`) -> Result<Vec<Self>, Error>`
 ///
-/// Retrieve all objects in the database belonging to an instance of
-/// `*Remote*`.
+/// Retrieve all objects in the database belonging to an instance of *Remote*.
 ///
 /// `db` is the [database connection](../vicocomo/struct.DatabaseIf.html).
 ///
@@ -306,7 +313,7 @@ mod save;
 /// [`Error::Database`](../vicocomo/error/enum.Error.html#variant.Database)
 /// return if there is some database error.
 ///
-/// ##### `pub fn *name*(&self, db: DatabaseIf) -> Option<*Remote*>`
+/// ##### `pub fn `*name*`(&self, db: DatabaseIf) -> Option<`*Remote*`>`
 ///
 /// Retrive the object on the remote side of the relationship from the
 /// database.
@@ -320,7 +327,7 @@ mod save;
 ///   matching the field value, or
 /// - because of some other database error.
 ///
-/// ##### `pub fn set_*name*(&mut self, remote: &*Remote*) -> Result<(), Error>`
+/// ##### `pub fn set_`*name*`(&mut self, remote: &`*Remote*`) -> Result<(), Error>`
 ///
 /// Set the reference to an object on the remote side of the relationship.
 ///
@@ -334,14 +341,14 @@ mod save;
 /// ](../vicocomo/error/enum.Error.html#variant.Model) return if the `remote`
 /// primary key is not set.
 ///
-/// ##### `pub fn *name*_siblings(&self, db: DatabaseIf) -> Result<Vec<Self>, Error>`
+/// ##### `pub fn `*name*`_siblings(&self, db: DatabaseIf) -> Result<Vec<Self>, Error>`
 ///
 /// Retrive all owned objects in the database (including `self`) that
 /// belong to the same object as `self`.
 ///
 /// `db` is the [database connection](../vicocomo/struct.DatabaseIf.html).
 ///
-/// ##### `pub fn forget_*name*(&mut self)`
+/// ##### `pub fn forget_`*name*`(&mut self)`
 /// *Defined only if the association field is an `Option`.*
 ///
 /// Forget the reference to an object on the remote side of the
@@ -351,11 +358,11 @@ mod save;
 ///
 /// ### For each `vicocomo_has_many` struct attribute
 ///
-/// Below, "`*Remote*`" means the `remote_type` value (or the default), and
-/// "`*name*`" means the `name` value if given, or the last segment of
+/// Below, "*Remote*" means the `remote_type` value (or the default), and
+/// "*name*" means the `name` value if given, or the last segment of
 /// `remote_type` if not, snake cased.
 ///
-/// ##### `pub fn *name*s(&self, db: DatabaseIf, filter: Option<&Query>) -> Result<Vec<*Remote*>, Error>`
+/// ##### `pub fn `*name*`s(&self, db: DatabaseIf, filter: Option<&Query>) -> Result<Vec<`*Remote*`>, Error>`
 ///
 /// Find items related to `self` by the association, filtered by `filter`.
 ///
@@ -364,7 +371,7 @@ mod save;
 /// `filter`, see [`QueryBld`](model/struct.QueryBld.html). A condition to
 /// select only among the associated objects is automatically added.
 ///
-/// ##### `pub fn save_*name*s(&self, db: DatabaseIf, remotes: &[*Remote*]) -> Result<(), Error>`
+/// ##### `pub fn save_`*name*`s(&self, db: DatabaseIf, remotes: &[`*Remote*`]) -> Result<(), Error>`
 ///
 /// Set and [`save()`
 /// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.save) the
@@ -387,7 +394,7 @@ mod save;
 ///
 ///   After saving, a join table row connecting `self` to `remote` is created
 ///   if it does not exist, and join table rows connecting `self` to
-///   `*Remote*`s not in `remotes` are deleted. `*Remote*` objects are never
+///   *Remote*s not in `remotes` are deleted. *Remote* objects are never
 ///   deleted in this case.
 */
 ///
@@ -400,7 +407,7 @@ mod save;
 ///
 /// #### Functions only for many-to-many associations
 ///
-/// ##### `pub fn connect_to_*name*(&self, db: DatabaseIf, remote: &*Remote*) -> Result<usize, Error>`
+/// ##### `pub fn connect_to_`*name*`(&self, db: DatabaseIf, remote: &`*Remote*`) -> Result<usize, Error>`
 ///
 /// Insert a join table row connecting `self` to `remote`. Returns `Ok(1)` on
 /// success. Does *not* check that such a row did not exist previously!  It is
@@ -409,10 +416,10 @@ mod save;
 ///
 /// <b>Errors</b>
 ///
-/// `model_error!(NotUnique, `*model name*`:, *name* `*camel cased*`"])` is
+/// `model_error!(NotUnique, `*model name*`:, `*name camel cased*`"])` is
 /// returned if there is a unique restriction error.
 ///
-/// ##### `pub fn disconnect_from_*name*(&self, db: DatabaseIf, remote: &*Remote*) -> Result<usize, Error>`
+/// ##### `pub fn disconnect_from_`*name*`(&self, db: DatabaseIf, remote: &`*Remote*`) -> Result<usize, Error>`
 ///
 /// Delete the join table row connecting `self` to `remote`. *Returns `Ok(0)`
 /// if they are not connected*.
@@ -470,6 +477,7 @@ mod save;
         vicocomo_order_by,
         vicocomo_presence_validator,
         vicocomo_primary,
+        vicocomo_readonly,
         vicocomo_required,
         vicocomo_table_name,
         vicocomo_unique,
@@ -491,6 +499,7 @@ pub fn active_record_derive(input: TokenStream) -> TokenStream {
         has_many::has_many_impl(&model, &mut struct_fn, &mut trait_fn);
     }
     save::save_impl(&model, &mut struct_fn, &mut trait_fn);
+    to_fro_sql::to_fro_sql_impl(&model, &mut trait_fn);
 
     let struct_id = &model.struct_id;
     let pk_type = &model.pk_type();

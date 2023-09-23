@@ -1,0 +1,27 @@
+CHANGELOG
+
+0.5.0
+
+- convert to workspace
+- move vicocomo crate code to vicocomo, incl tests
+- new crates vicocomo_sqlite and vicocomo_tauri, with tests and examples
+- move example crates to vicocomo/examples
+- update dependencies versions
+
+- new trait functions to_sql() and try_from_sql() in vicocomo::ActiveRecord
+- provided trait functions returning Error in vicocomo::ActiveRecord
+- new attribute vicocomo_readonly in derive(ActiveRecord)
+
+- rewrite web session code in vicocomo and vicocomo_actix
+- move code from vicocomo_actix and vicocomo_stubs to vicocomo::http
+- vicocomo::http: Handler -> HttpHandler, DbSession -> HttpDbSession
+  new HttpParamVals, HttpRequest, HttpResponse, HttpServerImpl, HttpSession
+- restructure vicocomo/src/http
+
+- change vicocomo::DatabaseIf/TemplEngIf from &'a dyn to Arc<dyn>
+
+- rewrite vicocomo_actix web sessions bc new actix-web version
+
+- fix vicocomo::http::config authorization bug (no longer bar OK => foobar OK)
+
+- macro delegate_to_view arm with only one arg

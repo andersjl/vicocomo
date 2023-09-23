@@ -1,28 +1,28 @@
-use std::cell::RefCell;
-use vicocomo::{map_error, DatabaseIf, DbSession};
+use vicocomo::{map_error, DatabaseIf, HttpDbSession};
 pub use vicocomo_actix_config::config;
 
 const SESSION_ID_KEY: &'static str = "__vicocomo__session_id";
 
-pub(crate) enum Session<'d> {
+pub(crate) enum Session {
     Actix(::actix_session::Session),
     Db {
         axs: actix_session::Session,
-        dbs: DbSession<'d>,
+        dbs: HttpDbSession,
     },
 }
 
-impl<'d> Session<'d> {
+impl Session {
     pub(crate) fn new(
         axs: actix_session::Session,
-        db: Option<DatabaseIf<'d>>,
+        db: Option<DatabaseIf>,
         prune: i64,
         create_sql: Option<&str>,
-    ) -> Option<RefCell<Self>> {
+    ) -> Option<Self> {
         match db {
             Some(db) => {
                 let id = axs.get(SESSION_ID_KEY).ok().and_then(|opt| opt);
-                let dbs = match DbSession::new(db, id, prune, create_sql) {
+                let dbs = match HttpDbSession::new(db, id, prune, create_sql)
+                {
                     Ok(d) => d,
                     Err(e) => panic!("{}", e.to_string()),
                 };
@@ -31,9 +31,9 @@ impl<'d> Session<'d> {
                 {
                     return None;
                 }
-                Some(RefCell::new(Self::Db { axs, dbs }))
+                Some(Self::Db { axs, dbs })
             }
-            None => Some(RefCell::new(Self::Actix(axs))),
+            None => Some(Self::Actix(axs)),
         }
     }
 

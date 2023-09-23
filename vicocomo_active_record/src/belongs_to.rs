@@ -108,7 +108,7 @@ pub(crate) fn belongs_to_impl(
             ) -> Result<Vec<Self>, ::vicocomo::Error> {
                 use ::vicocomo::ActiveRecord;
                 Self::query(
-                    db,
+                    db.clone(),
                     &::vicocomo::QueryBld::new()
                         .filter(#par_filter, &[Some(#remote_pk_expr)])
                         .query()
@@ -121,7 +121,7 @@ pub(crate) fn belongs_to_impl(
                 -> Option<#remote_type>
             {
                 use ::vicocomo::ActiveRecord;
-                #remote_type::find(db, #fk_expr_opt)
+                #remote_type::find(db.clone(), #fk_expr_opt)
             }
         ));
         struct_fn.push(parse_quote!(
@@ -139,7 +139,7 @@ pub(crate) fn belongs_to_impl(
             ) -> Result<Vec<Self>, ::vicocomo::Error> {
                 use ::vicocomo::ActiveRecord;
                 Self::query(
-                    db,
+                    db.clone(),
                     &::vicocomo::QueryBld::new()
                         .filter(#par_filter, &[Some(#fk_expr_err)])
                         .query()

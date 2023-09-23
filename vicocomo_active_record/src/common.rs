@@ -30,25 +30,6 @@ pub(crate) fn common(
     let struct_lit =
         LitStr::new(&model.struct_id.to_string(), Span::call_site());
 
-    // --- __vicocomo__col_to_field_string
-
-    let col_to_field_string_map = model.col_to_field_string_map();
-
-    struct_fn.push(parse_quote!(
-        fn __vicocomo__col_to_field_string(col: &str) -> String {
-            ::lazy_static::lazy_static! {
-                static ref MAP: ::std::collections::HashMap<String, String> =
-                    #col_to_field_string_map;
-            }
-            MAP.get(col)
-                .expect(&format!(
-                    "__vicocomo__col_to_field_string: unknown column '{}'",
-                    col,
-                ))
-                .to_string()
-        }
-    ));
-
     // --- __vicocomo__first_that_has_children
 
     let mut assoc_lit = Vec::new();
@@ -76,7 +57,7 @@ pub(crate) fn common(
         #(
             if result.is_none() {
                 if let Ok(found) = #child_type::query(
-                    db,
+                    db.clone(),
                     ::vicocomo::QueryBld::new()
                         .filter(#filter, &[Some(pk.clone().into())])
                         .query()
@@ -117,7 +98,7 @@ pub(crate) fn common(
             if err.is_foreign_key_violation() {
             #(
                 if let Some(fk) = #fk_expr {
-                    if #rem_type::find(db, fk).is_none() {
+                    if #rem_type::find(db.clone(), fk).is_none() {
                         return Some(::vicocomo::Error::Model(
                             ::vicocomo::ModelError {
                                 error: ::vicocomo::ModelErrorKind::CannotSave,
@@ -139,7 +120,7 @@ pub(crate) fn common(
     } else {
         parse_quote!(if !update {
             if let Some(pk_val) = self.pk_value() {
-                if Self::find(db, &pk_val).is_some() {
+                if Self::find(db.clone(), &pk_val).is_some() {
                     return Some(Self::__vicocomo__pk_error(
                         ::vicocomo::ModelErrorKind::CannotSave,
                         self.pk_value(),
@@ -243,6 +224,7 @@ pub(crate) fn common(
         };
 
     struct_fn.push(parse_quote!(
+        #[doc(hidden)]
         fn __vicocomo__conv_save_error(
             &self,
             db: ::vicocomo::DatabaseIf,
@@ -279,6 +261,7 @@ pub(crate) fn common(
     //   - if `should_exist` is `true`: general text `"not-found"`,
     //   - if `should_exist` is `false`: general text `"unique-violation"`.
     struct_fn.push(parse_quote!(
+        #[doc(hidden)]
         fn __vicocomo__pk_error(
             kind: ::vicocomo::ModelErrorKind,
             pk: Option<<Self as ::vicocomo::ActiveRecord>::PkType>,

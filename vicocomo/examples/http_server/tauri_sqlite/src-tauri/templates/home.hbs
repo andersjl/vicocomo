@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title> Tauri Sqlite Test </title>
+    <link href="css/application.css" rel="stylesheet">
+  </head>
+  <body>
+    <form id="count-frm" action="/" method="post">
+      {{{ count.data.tag }}}
+      <input id="count-ok" type="submit" name="commit" value="OK">
+    </form>
+    <form id="delete-frm" action="/delete" method="post">
+      <input id="delete-btn" type="submit" name="commit" value="Delete">
+    </form>
+    <a id="cancel-lnk" href="/cancel"> cancel </a>
+    <div id="extra-txt" class="red"> {{ extra }} </div>
+  </body>
+</html>

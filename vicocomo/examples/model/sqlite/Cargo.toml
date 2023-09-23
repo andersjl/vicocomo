@@ -1,0 +1,13 @@
+[workspace]
+
+[package]
+name = "vicocomo_example_model_sqlite"
+version = "0.5.0"
+authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
+edition = "2021"
+
+[dependencies]
+vicocomo = { path = "../../.." }
+vicocomo_example_model_common = { path = "../common" }
+vicocomo_sqlite = { path = "../../../../vicocomo_sqlite" }
+

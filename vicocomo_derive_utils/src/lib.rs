@@ -7,6 +7,35 @@ use ::syn::{
     Field, Fields, Ident, LitStr, Type,
 };
 
+// try to convert a string of the form [dDhHmMsS]?[0-9]+ to seconds, where d,
+// h, m, s means days, hours, minutes, and seconds, respectively.
+#[doc(hidden)]
+pub fn parse_duration(duration: &str) -> Option<i64> {
+    if duration.is_empty() {
+        return None;
+    }
+    let first_char = duration.chars().next().unwrap();
+    let mut digits = duration.to_string();
+    let factor = if first_char.is_ascii_digit() {
+        1i64
+    } else {
+        let factor = match first_char {
+            'd' | 'D' => 24 * 60 * 60,
+            'h' | 'H' => 60 * 60,
+            'm' | 'M' => 60,
+            's' | 'S' => 1,
+            _ => 0,
+        };
+        if factor == 0 {
+            return None;
+        } else {
+            digits.remove(0);
+            factor
+        }
+    };
+    digits.parse::<i64>().ok().map(|i| i * factor)
+}
+
 #[doc(hidden)]
 pub fn tokens_to_string<T: ToTokens>(obj: &T) -> String {
     let mut ts = proc_macro2::TokenStream::new();

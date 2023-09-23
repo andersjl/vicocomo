@@ -1,0 +1,15 @@
+[workspace]
+
+[package]
+name = "vicocomo_example_authorization_password_digest"
+version = "0.5.0"
+authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
+edition = "2021"
+
+[dependencies]
+bcrypt = "0.14.0"
+lazy_static = "1.4.0"
+regex = "1.7.1"
+vicocomo = { path = "../../.." }
+vicocomo_bcrypt = { path = "../../../../vicocomo_bcrypt" }
+

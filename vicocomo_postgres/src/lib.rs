@@ -1,7 +1,7 @@
-//! Implement `::vicocomo::DbConn` by way of the `tokio-postgres` crate.
+//! Implement `vicocomo::DbConn` by way of the `tokio-postgres` crate.
 
-use ::futures::executor::block_on;
-use ::vicocomo::{DatabaseError, DbConn, DbType, DbValue, Error};
+use futures::executor::block_on;
+use vicocomo::{DatabaseError, DbConn, DbType, DbValue, Error};
 
 /// A wrapping of `tokio_postgres::Client` that implements `vicocomo::DbConn`.
 ///

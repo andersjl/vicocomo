@@ -8,12 +8,17 @@ pub(crate) fn save_impl(
 ) {
     use ::quote::format_ident;
 
+    if model.readonly {
+        return;
+    }
+
     let Model {
         struct_id: _,
         ref table_name,
         has_many: _,
         before_delete: _,
         before_save: _,
+        readonly: _,
         ref fields,
         uniques: _,
     } = model;
@@ -21,6 +26,7 @@ pub(crate) fn save_impl(
 
     // --- insert code fragments ---------------------------------------------
 
+    // note that the inserted columns may be a subset, so cannot fix them here
     let ins_fmt = format!(
         "INSERT INTO {} ({{}}) VALUES {{}} RETURNING {}",
         table_name,
@@ -109,6 +115,7 @@ pub(crate) fn save_impl(
         .collect();
 
     struct_fn.push(parse_quote!(
+        #[doc(hidden)]
         fn __vicocomo__handle_update_result(
             &mut self,
             db: ::vicocomo::DatabaseIf,
@@ -161,7 +168,7 @@ pub(crate) fn save_impl(
                 for these_pars in ins_pars.iter() {
                     db_pars.extend(these_pars.clone().drain(..));
                 }
-                match db.query(
+                match db.clone().query(
                     &format!(
                         #ins_fmt,
                         &ins_cols.join(", "),
@@ -180,7 +187,7 @@ pub(crate) fn save_impl(
             if let Some(err) = error {
                 for data_itm in data {
                     if let Some(mapped) =
-                        data_itm.__vicocomo__conv_save_error(db, &err, false)
+                        data_itm.__vicocomo__conv_save_error(db.clone(), &err, false)
                     {
                         return Err(mapped);
                     }
@@ -226,8 +233,8 @@ pub(crate) fn save_impl(
                 #before_update_expr;
                 #( #push_expr__self__par_ix__upd_cols__upd_pars )*
                 self.__vicocomo__handle_update_result(
-                    db,
-                    db.query(
+                    db.clone(),
+                    db.clone().query(
                         &format!(
                             #upd_fmt,
                             &upd_cols.join(", "),
@@ -237,7 +244,7 @@ pub(crate) fn save_impl(
                         &[ #( #upd_db_types ),* ],
                     )
                     .map_err(|err| {
-                        match self.__vicocomo__conv_save_error(db, &err, true) {
+                        match self.__vicocomo__conv_save_error(db.clone(), &err, true) {
                             Some(mapped) => mapped,
                             None => err,
                         }
@@ -264,8 +271,8 @@ pub(crate) fn save_impl(
                     upd_pars.push(dbv.clone());
                 };
                 self.__vicocomo__handle_update_result(
-                    db,
-                    db.query(
+                    db.clone(),
+                    db.clone().query(
                         &format!(
                             #upd_fmt,
                             &upd_col_sql.join(", "),

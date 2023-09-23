@@ -2,18 +2,20 @@
 
 use proc_macro::TokenStream;
 
-/// A macro that uses [`vicocomo::http::server::Config`
-/// ](../vicocomo/http/server/struct.Config.html) to implement `actix_main()`.
+/// A macro that uses [`vicocomo::server::Config`
+/// ](../vicocomo/http/config/struct.Config.html) to implement `actix_main()`.
 /// ```text
 /// pub fn actix_main() -> std::io::Result<()>
 /// ```
 /// ### Web sessions under Actix
 ///
-/// Implementing the trait [`vicocomo::Session`
-/// ](../vicocomo/http/server/trait.Session.html) does not work well for
-/// `actix`. Instead, `config` accepts an adapter-specific [`app_config`
-/// ](../vicocomo/http/server/struct.Config.html#level-1-app_config) attribute
-/// `session`, which can have the values
+/// `config` accepts two adapter-specific [`app_config`
+/// ](../vicocomo/http/server/struct.HttpServerIf.html#level-1-app_config)
+/// attributes:
+///
+/// #### `session`
+///
+/// Allowed values:
 /// - <b>`None`</b>: No session support.
 /// - <b>`Cookie`</b>: [`actix_session::storage::CookieSessionStore`
 ///   ](../actix_session/storage/struct.CookieSessionStore.html) is used for
@@ -21,8 +23,8 @@ use proc_macro::TokenStream;
 /// - <b>`Database`</b>: Still using `CookieSessionStore` to store a session
 ///   ID, the actual session data is stored in the database. This requires
 ///   that the plugin `DbConn` is defined, and that the database has a table
-///   named `"__vicocomo__sessions"` to store the sessions, see [`DbSession`
-///   ](../vicocomo/http/session/struct.DbSession.html).
+///   named `"__vicocomo__sessions"` to store the sessions, see
+///   [`HttpDbSession`](../vicocomo/http/config/struct.HttpDbSession.html).
 ///
 ///   For `Database`, the value may be an array `[Database, `*max age*`]`,
 ///   where *max age* indicates a duration after which untouched session data
@@ -30,14 +32,27 @@ use proc_macro::TokenStream;
 ///   days. The identifier should begin with `d`, `h`, `m`, or `s` for days,
 ///   hours, minutes, or seconds, followed by a number of decimal digits.
 ///
-/// Unless `session` is `None`, you *also* have to define the plug-in
-/// `Session` in a non-standard way, see the example below.
+/// #### `session_middleware`
+///
+/// Unless `session` is `None`, you also have to define this attribute as a
+/// tuple `(actix_session::SessionMiddleware, `*an expression evaluating to
+/// `SessionMiddleware`*`)`. See the example below.
 ///
 /// # Usage
 /// ```text
 /// config! {
 ///     app_config {
 ///         session: Database,
+///         session_middleware: (
+///             actix_session::SessionMiddleware,
+///             actix_session::SessionMiddleware::builder(
+///                 actix_session::storage::CookieSessionStore::default(),
+///                 // a real application should use a secure key, of course!
+///                 actix_web::cookie::Key::from(&[0; 64]),
+///             )
+///             // here you use configuration method calls as needed
+///             .build(),
+///         ),
 ///     },
 ///     plug_in(DbConn) {
 ///         def: (
@@ -58,23 +73,9 @@ use proc_macro::TokenStream;
 ///             },
 ///         ),
 ///     },
-///     plug_in(Session) {
-///         def: (
-///             // The type is ignored by vicocomo_actix, but still required!
-///             (),
-///             // vicocomo_actix requires the initialization expression to
-///             // evaluate to SessionMiddleware rather than vicocomo::Session.
-///             actix_session::SessionMiddleware::builder(
-///                 actix_session::storage::CookieSessionStore::default(),
-///                 actix_web::cookie::Key::from(&[0; 64]),
-///             )
-///             // configuration method calls as needed
-///             .build(),
-///         ),
-///     },
 ///     plug_in(TemplEng) {
 ///         def: (
-///             vicocomo_handlebars::HbTemplEng<'_>,
+///             vicocomo_handlebars::HbTemplEng,
 ///             vicocomo_handlebars::HbTemplEng::new(None),
 ///         ),
 ///     },
@@ -86,8 +87,8 @@ use proc_macro::TokenStream;
 ///     actix_main()
 /// }
 /// ```
-/// (see [`vicocomo::http::server::Config`
-/// ](../vicocomo/http/server/struct.Config.html)).
+/// (see [`vicocomo::server::Config`
+/// ](../vicocomo/http/config/struct.Config.html)).
 ///
 #[proc_macro]
 pub fn config(input: TokenStream) -> TokenStream {
@@ -98,17 +99,19 @@ pub fn config(input: TokenStream) -> TokenStream {
         parse_macro_input, parse_quote, punctuated::Punctuated, token, Expr,
         FnArg, Ident, LitInt, LitStr, Path, Type,
     };
-    use vicocomo::{Config, ConfigAttrVal, Handler};
+    use vicocomo::{Config, ConfigAttrVal, HttpHandler};
 
     const ERROR_SESSION: &'static str =
         "expected None, Cookie, Database, or [Database, <max age>]";
+    const ERROR_SESSION_MW: &'static str =
+        "expected a tuple (actix_session::SessionMiddleware, <expression>";
     const SESSION_DB_DEFAULT: &'static str = "8640000"; // 100 days
     const SESSION_DB_NONE: &'static str = "0";
 
     let Config {
         plug_ins,
         app_config,
-        routes,
+        handlers,
         mut static_routes,
         not_found: _,
     } = parse_macro_input!(input as Config);
@@ -136,21 +139,12 @@ pub fn config(input: TokenStream) -> TokenStream {
                 }
                 ConfigAttrVal::Arr(a) => {
                     if a.len() == 2 && a[0].to_string() == "Database" {
-                        let mut age = a[1].to_string();
-                        if age.len() > 1 {
-                            let factor: i64 = match age.remove(0) {
-                                'd' | 'D' => 24 * 60 * 60,
-                                'h' | 'H' => 60 * 60,
-                                'm' | 'M' => 60,
-                                's' | 'S' => 1,
-                                _ => 0,
-                            };
-                            if factor > 0 {
-                                result = age
-                                    .parse::<i64>()
-                                    .ok()
-                                    .map(|i| (true, (factor * i).to_string()))
-                            }
+                        if let Some(secs) =
+                            ::vicocomo_derive_utils::parse_duration(
+                                &a[1].to_string(),
+                            )
+                        {
+                            result = Some((true, secs.to_string()));
                         }
                     }
                 }
@@ -213,92 +207,106 @@ pub fn config(input: TokenStream) -> TokenStream {
     let mut session_prune = LitInt::new("0", Span::call_site());
     if has_session {
         hndl_pars_min.push(parse_quote!(sess: actix_session::Session));
-        session_middleware.push(plug_ins.get("Session").unwrap().1.clone());
+        match app_config
+            .get("session_middleware")
+            .ok_or_else(|| {
+                syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    ERROR_SESSION_MW,
+                )
+            })
+            .and_then(|val| val.get_type_expr())
+        {
+            Ok((_ignore, expr)) => session_middleware.push(expr),
+            Err(e) => panic!("{}", e),
+        }
         session = parse_quote!(Some(sess));
         if db_session != SESSION_DB_NONE {
-            session_db = parse_quote!(Some(db_if));
+            session_db = parse_quote!(Some(db_if.clone()));
             session_prune = LitInt::new(&db_session, Span::call_site());
         }
     }
-    hndl_pars_min.push(parse_quote!(teng: actix_web::web::Data<#templ_type>));
+    hndl_pars_min.push(parse_quote!(
+        te_extr: actix_web::web::Data<#templ_type>
+    ));
     hndl_pars_min.push(parse_quote!(ax_req: actix_web::HttpRequest));
     hndl_pars_min.push(parse_quote!(body: String));
-    for contr_path in routes.keys() {
+    for HttpHandler {
+        authorized,
+        contr_method,
+        contr_path,
+        call_string: _,
+        http_method,
+        route,
+        pattern: _,
+        route_par_names,
+    } in &handlers {
         let contr_path_snake = contr_path
             .segments
             .iter()
             .map(|segm| segm.ident.to_string().to_snake())
             .collect::<Vec<_>>()
             .join("_");
-        for handler in routes.get(contr_path).unwrap() {
-            let Handler {
-                http_method,
-                route,
-                route_par_names,
-                authorized,
-                contr_method,
-            } = handler;
-            handler_fn_vec.push(format_ident!(
-                "{}__{}",
-                contr_path_snake,
-                contr_method,
+        handler_fn_vec.push(format_ident!(
+            "{}__{}",
+            contr_path_snake,
+            contr_method,
+        ));
+        http_meth_vec.push(format_ident!("{}", http_method.to_string()));
+        http_path_vec.push(LitStr::new(
+            &route.replace("<", "{").replace(">", "}"),
+            Span::call_site(),
+        ));
+        let mut hndl_pars = hndl_pars_min.clone();
+        let mut route_pars_expr: Expr = parse_quote!(Vec::new());
+        if !route_par_names.is_empty() {
+            route_pars_expr = parse_quote!(
+                [ #( #route_par_names ),* ]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .zip(route_par_vals.drain(..))
+                    .collect()
+            );
+            hndl_pars.push(parse_quote!(
+                mut route_par_vals: actix_web::web::Path<Vec<String>>
             ));
-            http_meth_vec.push(format_ident!("{}", http_method.to_string()));
-            http_path_vec.push(LitStr::new(
-                &route.replace("<", "{").replace(">", "}"),
-                Span::call_site(),
-            ));
-            let mut hndl_pars = hndl_pars_min.clone();
-            let mut route_pars_expr: Expr = parse_quote!(Vec::new());
-            if !route_par_names.is_empty() {
-                route_pars_expr = parse_quote!(
-                    [ #( #route_par_names ),* ]
-                        .iter()
-                        .map(|s| s.to_string())
-                        .zip(route_par_vals.drain(..))
-                        .collect()
-                );
-                hndl_pars.push(parse_quote!(
-                    mut route_par_vals: actix_web::web::Path<Vec<String>>
-                ));
-            }
-            let authorize_expr: Expr = match authorized {
-                Some(a) => {
-                    let allow = a.allow.clone();
-                    let allow_slice: Expr = parse_quote!(&[ #( #allow ),* ]);
-                    let mut cond: Expr = parse_quote!(
-                        <#role_enum as vicocomo::UserRole>::is_authorized(
-                            #allow_slice,
-                            db_if,
-                            srv_if,
-                            #disabled_expr,
-                            #role_enum::Superuser,
-                        )
-                    );
-                    if a.filter {
-                        cond = parse_quote!(
-                            #cond && #contr_path::filter_access(db_if, srv_if)
-                        );
-                    }
-                    parse_quote!(
-                        if !(#cond) {
-                            return actix_web::HttpResponse::Found()
-                                .append_header((
-                                    actix_web::http::header::LOCATION,
-                                    #unauthorized_route.clone(),
-                                ))
-                                .finish()
-                        }
-                    )
-                }
-                None => parse_quote!(()),
-            };
-            route_pars_expr_vec.push(route_pars_expr);
-            hndl_pars_vec.push(hndl_pars);
-            authorize_expr_vec.push(authorize_expr);
-            controller_vec.push(contr_path.clone());
-            contr_meth_vec.push(contr_method.clone());
         }
+        let authorize_expr: Expr = match authorized {
+            Some(a) => {
+                let allow = a.allow.clone();
+                let allow_slice: Expr = parse_quote!(&[ #( #allow ),* ]);
+                let mut cond: Expr = parse_quote!(
+                    <#role_enum as vicocomo::UserRole>::is_authorized(
+                        #allow_slice,
+                        db_if.clone(),
+                        srv_if,
+                        #disabled_expr,
+                        #role_enum::Superuser,
+                    )
+                );
+                if a.filter {
+                    cond = parse_quote!(
+                        #cond && #contr_path::filter_access(db_if, srv_if)
+                    );
+                }
+                parse_quote!(
+                    if !(#cond) {
+                        return actix_web::HttpResponse::Found()
+                            .append_header((
+                                actix_web::http::header::LOCATION,
+                                #unauthorized_route.clone(),
+                            ))
+                            .finish()
+                    }
+                )
+            }
+            None => parse_quote!(()),
+        };
+        route_pars_expr_vec.push(route_pars_expr);
+        hndl_pars_vec.push(hndl_pars);
+        authorize_expr_vec.push(authorize_expr);
+        controller_vec.push(contr_path.clone());
+        contr_meth_vec.push(contr_method.clone());
     }
     // TODO: use not_found from Config and fix the signature of the default
     let not_found_handler: Path = parse_quote!(crate::not_found);
@@ -341,10 +349,13 @@ pub fn config(input: TokenStream) -> TokenStream {
     }
     TokenStream::from(quote! {
 
-        #[actix_rt::main]
+        #[::actix_rt::main]
         pub async fn actix_main() -> std::io::Result<()> {
             #[cfg(debug_assertions)]
-            eprintln!("debugging");
+            {
+                eprintln!("debugging");
+                //env_logger::init();
+            }
             use std::collections::HashMap;
             let mut conf: HashMap<String, vicocomo::AppConfigVal> =
                 HashMap::new();
@@ -378,7 +389,8 @@ pub fn config(input: TokenStream) -> TokenStream {
             .bind(format!(
                 "0.0.0.0:{}",
                 std::str::FromStr::from_str(&port_str).unwrap_or(3000)
-            ))?
+            ))
+            .map_err(|e| { eprintln!("{}", e); e })?
             .run()
             .await
         }
@@ -393,8 +405,9 @@ pub fn config(input: TokenStream) -> TokenStream {
         }
 
         #[allow(non_snake_case)]
+        #[doc(hidden)]
         mod __vicocomo__handlers {
-            use vicocomo::Controller;
+            use ::vicocomo::Controller;
         #(
             pub async fn #handler_fn_vec(
                 #hndl_pars_vec
@@ -402,9 +415,9 @@ pub fn config(input: TokenStream) -> TokenStream {
                 let conf = conf_extr.into_inner();
                 let stro = stro_extr.into_inner();
                 let db_arc = db_extr.into_inner();
-                let db_if = vicocomo::DatabaseIf::new(db_arc.as_ref());
-                let te_arc = teng.into_inner();
-                let te_if = vicocomo::TemplEngIf::new(te_arc.as_ref());
+                let db_if = vicocomo::DatabaseIf::new(db_arc);
+                let te_arc = te_extr.into_inner();
+                let te_if = vicocomo::TemplEngIf::new(te_arc);
                 let route_pars: Vec<(String, String)> =
                     #route_pars_expr_vec;
                 let server = vicocomo_actix::AxServer::new(
@@ -419,7 +432,11 @@ pub fn config(input: TokenStream) -> TokenStream {
                 );
                 let srv_if = vicocomo::HttpServerIf::new(&server);
                 #authorize_expr_vec;
-                #controller_vec::#contr_meth_vec(db_if, srv_if, te_if);
+                #controller_vec::#contr_meth_vec(
+                    db_if.clone(),
+                    srv_if,
+                    te_if,
+                );
                 server.response()
             }
         )*
@@ -432,6 +449,7 @@ pub fn config(input: TokenStream) -> TokenStream {
                 >,
                 ax_req: actix_web::HttpRequest,
             ) -> actix_web::HttpResponse {
+                use ::vicocomo::HttpServer;
                 let conf = conf_extr.into_inner();
                 let stro = stro_extr.into_inner();
                 let server = vicocomo_actix::AxServer::new(
@@ -444,7 +462,7 @@ pub fn config(input: TokenStream) -> TokenStream {
                     None,
                     0,
                 );
-                vicocomo::HttpServerIf::new(&server).static_file_handler();
+                server.static_file_handler();
                 server.response()
             }
 

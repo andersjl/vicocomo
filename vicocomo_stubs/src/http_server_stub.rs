@@ -1,7 +1,7 @@
 //! A stub implementation of `vicococmo::HttpServer`
 
 use ::std::{cell::RefCell, collections::HashMap};
-use ::vicocomo::{AppConfigVal, Error, HttpServer};
+use ::vicocomo::{AppConfigVal, Error, HttpResponse, HttpServer, HttpStatus};
 
 #[derive(Clone, Debug)]
 pub struct Server {
@@ -9,7 +9,7 @@ pub struct Server {
     params: RefCell<HashMap<String, Vec<String>>>,
     route_pars: RefCell<HashMap<String, String>>,
     request: RefCell<Request>,
-    response: RefCell<Response>,
+    response: RefCell<HttpResponse>,
     session: RefCell<HashMap<String, String>>,
     static_routes: RefCell<HashMap<String, String>>,
 }
@@ -27,10 +27,7 @@ impl Server {
                 parameters: String::new(),
                 body: String::new(),
             }),
-            response: RefCell::new(Response {
-                status: ResponseStatus::NoResponse,
-                text: String::new(),
-            }),
+            response: RefCell::new(HttpResponse::new()),
             session: RefCell::new(HashMap::new()),
             static_routes: RefCell::new(HashMap::new()),
         };
@@ -55,7 +52,7 @@ impl Server {
         map.insert("url_root".to_string(), null_string!());
     }
 
-    pub fn get_response(&self) -> Response {
+    pub fn get_response(&self) -> HttpResponse {
         self.response.borrow().clone()
     }
 
@@ -162,8 +159,8 @@ impl HttpServer for Server {
         self.response.borrow_mut().set_body(txt);
     }
 
-    fn resp_error(&self, err: Option<&Error>) {
-        self.response.borrow_mut().set_error(err);
+    fn resp_error(&self, status: HttpStatus, err: Option<&Error>) {
+        self.response.borrow_mut().error(status, err);
     }
 
     fn resp_file(&self, file_path: &str) {
@@ -212,50 +209,4 @@ pub struct Request {
     pub path: String,
     pub parameters: String,
     pub body: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct Response {
-    pub status: ResponseStatus,
-    pub text: String,
-}
-
-impl Response {
-    fn file(&mut self, file_path: &str) {
-        self.status = ResponseStatus::File;
-        self.text = file_path.to_string();
-    }
-
-    fn ok(&mut self) {
-        self.status = ResponseStatus::Ok;
-    }
-
-    fn redirect(&mut self, url: &str) {
-        self.status = ResponseStatus::Redirect;
-        self.text = url.to_string();
-    }
-
-    fn set_body(&mut self, txt: &str) {
-        self.text = txt.to_string();
-    }
-
-    fn set_error(&mut self, err: Option<&::vicocomo::Error>) {
-        self.status = ResponseStatus::Error;
-        self.text = format!(
-            "Internal server error: {}",
-            match err {
-                Some(e) => e.to_string(),
-                None => "Unknown".to_string(),
-            }
-        );
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum ResponseStatus {
-    File,
-    Error,
-    NoResponse,
-    Ok,
-    Redirect,
 }

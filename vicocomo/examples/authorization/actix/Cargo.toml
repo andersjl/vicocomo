@@ -1,0 +1,17 @@
+[workspace]
+
+[package]
+name = "vicocomo_example_authorization_actix"
+version = "0.5.0"
+authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
+edition = "2021"
+
+[dependencies]
+actix-files = "0.6.2"
+actix-rt = "2.8.0"
+actix-session = "0.7.2"
+actix-web = "4.3.0"
+env_logger = "0.10.0"
+vicocomo = { path = "../../.." }
+vicocomo_actix = { path = "../../../../vicocomo_actix" }
+
