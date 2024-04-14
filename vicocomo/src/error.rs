@@ -129,6 +129,7 @@ impl Error {
     ///     \"error--InvalidInput--bad-input\" => \"Bad input\",
     ///     ",
     /// );
+    /// vicocomo::texts::initialize(None);
     ///
     /// assert_eq!(
     ///     model_error!(
@@ -598,6 +599,14 @@ impl Display for Error {
 impl From<&str> for Error {
     fn from(err: &str) -> Self {
         Self::Other(err.to_string())
+    }
+}
+
+/// Create an `Error::Other`.
+///
+impl From<String> for Error {
+    fn from(err: String) -> Self {
+        Self::Other(err)
     }
 }
 

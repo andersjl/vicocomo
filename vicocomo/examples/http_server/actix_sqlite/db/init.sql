@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS counts;
+CREATE TABLE counts (val BIGINT);
+INSERT INTO counts(val) VALUES (-4711);

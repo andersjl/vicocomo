@@ -5,7 +5,7 @@ use vicocomo::{
     assert_html_form, model_error, Error, HtmlForm, HtmlInput, HttpServerIf,
     InputType, SessionModel,
 };
-use vicocomo_stubs::Server;
+use vicocomo_stubs::{Request, Server};
 
 #[derive(Clone, Debug, HtmlForm)]
 struct BigForm {
@@ -77,7 +77,8 @@ impl SessionForm {
         validator: &dyn Fn(&Self) -> Result<(), Error>,
     ) -> Option<Self> {
         let server_stub = Server::new();
-        let server = HttpServerIf::new(&server_stub);
+        let request_stub = Request::new();
+        let server = HttpServerIf::new(&server_stub, &request_stub);
 
         let mut form = Self::new();
         form.rad.set_options(&[("-1", -1), ("0", 0), ("1", 1)]);
@@ -260,7 +261,7 @@ fn main() {
             "data": {
                 "label": r#"<label for="mul-id">some-label</label>"#,
                 "tag": concat!(
-                r#"<select multiple id="mul-id" name="mul" class="be bop">"#,
+                r#"<select multiple id="mul-id" name="mul[]" class="be bop">"#,
                     r#"<option value="42">answer</option>"#,
                     r#"<option value="1" selected>less</option>"#,
                     r#"<option value="16" selected>sweet</option>"#,
@@ -416,7 +417,7 @@ fn main() {
                 "data":
             {   "label": null,
                 "tag": concat!(
-    r#"<select multiple id="mul" name="mul">"#,
+    r#"<select multiple id="mul" name="mul[]">"#,
     r#"<option value="1" selected>a</option>"#,
     r#"<option value="-9223372036854775808" selected>b</option>"#,
     r#"</select>"#,
@@ -478,7 +479,7 @@ fn main() {
         "data":
     {   "label": null,
         "tag": concat!(
-            r#"<select multiple id="mul" name="mul">"#,
+            r#"<select multiple id="mul" name="mul[]">"#,
             r#"<option value="1" selected>p</option>"#,
             r#"<option value="0">n</option>"#,
             r#"<option value="-1" selected>m</option>"#,
@@ -526,7 +527,7 @@ fn main() {
         "data":
     {   "label": r#"<label for="mul">prefix--SmallForm--mul--label</label>"#,
         "tag": concat!(
-            r#"<select multiple id="mul" name="mul">"#,
+            r#"<select multiple id="mul" name="mul[]">"#,
                 r#"<option value="1" selected>p</option>"#,
                 r#"<option value="0">n</option>"#,
                 r#"<option value="-1" selected>m</option>"#,
@@ -582,7 +583,7 @@ fn main() {
         "data":
     {   "label": r#"<label for="mul">SmallForm--mul--label</label>"#,
         "tag": concat!(
-            r#"<select multiple id="mul" name="mul">"#,
+            r#"<select multiple id="mul" name="mul[]">"#,
             r#"<option value="1" selected>p</option>"#,
             r#"<option value="0">n</option>"#,
             r#"</select>"#,
@@ -611,7 +612,8 @@ fn main() {
     println!("\nwith SessionStore - - - - - - - - - - - - - - - - - - - -\n");
 
     let server_stub = Server::new();
-    let server = HttpServerIf::new(&server_stub);
+    let request_stub = Request::new();
+    let server = HttpServerIf::new(&server_stub, &request_stub);
 
     let mut sess_form: SessionForm;
 
@@ -661,7 +663,7 @@ fn main() {
     print!("update_session(), partial input .. ");
     sess_form = old_session.clone();
     assert!(sess_form.store(server).is_ok());
-    server_stub.set_params(&[("rad", "1"), ("num", "42")]);
+    request_stub.set_params(&[("rad", "1"), ("num", "42")]);
     sess_form = SessionForm::update_session(
         server,
         &server.param_json().unwrap(),
@@ -678,7 +680,7 @@ fn main() {
     sess_form = old_session.clone();
     sess_form.num.add_error_text("previous error");
     assert!(sess_form.store(server).is_ok());
-    server_stub.set_params(&[("rad", "1"), ("num", "42")]);
+    request_stub.set_params(&[("rad", "1"), ("num", "42")]);
     let result = SessionForm::update_session(
         server,
         &server.param_json().unwrap(),
@@ -691,7 +693,8 @@ fn main() {
     print!("update_session(), erronous input .. ");
     sess_form = old_session.clone();
     assert!(sess_form.store(server).is_ok());
-    server_stub.set_params(&[("rad", "17"), ("num", "this is not a number")]);
+    request_stub
+        .set_params(&[("rad", "17"), ("num", "this is not a number")]);
     match SessionForm::update_session(
         server,
         &server.param_json().unwrap(),
@@ -854,5 +857,5 @@ fn main() {
         },
     );
     println!("OK");
-    println!();
+    println!("\ntest completed successfully -----------------------------\n");
 }

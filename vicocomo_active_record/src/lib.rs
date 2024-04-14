@@ -21,20 +21,20 @@ mod to_fro_sql;
 /// #[derive(ActiveRecord)]
 /// #[vicocomo_table_name = "example_table"]  // default "examples"
 /// // one or more vicocomo_has_many attributes
-/// #[vicocomo_has_many(              // one-to-many or possibly ...
+/// #[vicocomo_has_many(              // One-to-many or possibly ...
 ///     join_table = "tnam",          // ... many-to-many w join table "tnam"
-///     name = "SomeName",            // needed if several impl same Rem
-///     on_delete = "cascade",        // cascade / forget / restrict (default)
+///     name = "SomeName",            // Needed if several impl same Rem
+///     on_delete = "cascade",        // Cascade / forget / restrict (default)
 ///     remote_type = "super::Rem",   // Remote type, identifier mandatory
 ///     remote_fk_col = "fk_self",    // Remote or join key to self, default
 ///                                   // "t_id" if the type of Self is T
 ///     // ... if many-to-many, i.e. "join_table" table given ----------------
-///     join_fk_col = "fk_rem",       // join tab key to Rem, default "rem_id"
+///     join_fk_col = "fk_rem",       // Join tab key to Rem, default "rem_id"
 ///     remote_pk_col = "pk")]        // Rem primary col name, default "id",
 /// struct Example {
-///     #[vicocomo_optional]          // not sent to DBMS if None
+///     #[vicocomo_random]            // Random i64 value sent to DBMS if None
 ///     #[vicocomo_primary]           // To find a row to update() or delete()
-///     primary: Option<u32>,         // primary key should be ensured by DBMS
+///     primary: Option<i64>,         // Should be declared PRIMARY to DBMS
 ///     #[vicocomo_column = "db_col"] // different name of DB column
 ///     #[vicocomo_unique = "un1"]    // "un1" labels fields w unique comb.
 ///     not_null: String,             // TEXT NOT NULL
@@ -65,7 +65,7 @@ mod to_fro_sql;
 ///
 /// See [`BeforeDelete`](../vicocomo/active_record/trait.BeforeDelete.html).
 /// If present, the generated [`ActiveRecord::delete()`
-/// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.delete)
+/// ](../vicocomo/active_record/trait.ActiveRecord.html#method.delete)
 /// requires the model to implement [`BeforeDelete`
 /// ](../vicocomo/active_record/trait.BeforeDelete.html) and calls
 /// [`before_delete()`
@@ -75,11 +75,11 @@ mod to_fro_sql;
 ///
 /// See [`BeforeSave`](../vicocomo/active_record/trait.BeforeSave.html). If
 /// present, the generated [`ActiveRecord::insert()`
-/// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.insert),
+/// ](../vicocomo/active_record/trait.ActiveRecord.html#method.insert),
 /// [`ActiveRecord::save()`
-/// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.save), and
+/// ](../vicocomo/active_record/trait.ActiveRecord.html#method.save), and
 /// [`ActiveRecord::update()`
-/// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.update)
+/// ](../vicocomo/active_record/trait.ActiveRecord.html#method.update)
 /// methods require the model to implement [`BeforeSave`
 /// ](../vicocomo/active_record/trait.BeforeSave.html) and calls
 /// [`before_save()`
@@ -136,8 +136,8 @@ mod to_fro_sql;
 ///
 ///   - `remote_pk = "`*a field id*`"`: The name of the `Remote` type's
 ///     primary key *field* - not the column! The primary key field is taken
-///     to be `vicocomo_optional`. If it is mandatory, this must be indicated
-///     by `remote_pk ="`*a field id*` mandatory"`.
+///     to be `vicocomo_optional` or `vicocomo_random`. If it is mandatory,
+///     this must be indicated by `remote_pk ="`*a field id*` mandatory"`.
 ///
 ///     Optional, default `id`.
 ///
@@ -151,9 +151,9 @@ mod to_fro_sql;
 /// ### `vicocomo_readonly`
 ///
 /// The database relation should not be written to, e.g. because it is a
-/// view. The functions in the [`ActiveRecord`
+/// view. The generated functions in the [`ActiveRecord`
 /// ](../vicocomo/active_record/trait.ActiveRecord.html) trait that write to
-/// the database are not overridden.
+/// the database will always return an error.
 ///
 /// ### `vicocomo_table_name = "`*some table name*`"`
 ///
@@ -176,8 +176,9 @@ mod to_fro_sql;
 /// - `remote_pk = "`*a field id*`"`: The name of the remote model's primary
 ///   key *field* - not the column! `vicocomo_belongs_to` associations to
 ///   models with composite primary keys is not possible. The primary key
-///   field is taken to be `vicocomo_optional`. If it is mandatory, this must
-///   be indicated by `remote_pk ="`*a field id* `mandatory"`.
+///   field is taken to be `vicocomo_optional` or `vicocomo_random`. If it is
+///   mandatory, this must be indicated by
+///   `remote_pk ="`*a field id* `mandatory"`.
 ///
 ///   The default is `id`.
 ///
@@ -216,7 +217,19 @@ mod to_fro_sql;
 ///
 /// ### `vicocomo_primary`
 ///
-/// The field corresponds to a primary key in the database.
+/// The field corresponds to a primary key in the database. A primary key
+/// declaration in the database is <b>required</b>. The attribute is still
+/// necessary for correct code generation.
+///
+/// ### `vicocomo_random`
+///
+/// The field should be a Rust `Option<`*a type that can be randomly generated
+/// by `rand::Rng::gen()`*`>`. If it is `None` when inserting in the database
+/// a random value is generated.
+///
+/// If the field type is a wide integer and the entropy of the random number
+/// generator is good this may be used as a database independent alternative
+/// to auto-increment for primary keys.
 ///
 /// ### `vicocomo_required`
 ///
@@ -232,9 +245,9 @@ mod to_fro_sql;
 ///   whitespace
 ///
 /// The generated [`ActiveRecord::insert_batch()`
-/// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.insert_batch)
+/// ](../vicocomo/active_record/trait.ActiveRecord.html#method.insert_batch)
 /// and [`ActiveRecord::update()`
-/// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.update)
+/// ](../vicocomo/active_record/trait.ActiveRecord.html#method.update)
 /// methods return an appropriate [`Error::Model`
 /// ](../vicocomo/error/enum.Error.html#variant.Model) if this requirement is
 /// not met.
@@ -242,20 +255,19 @@ mod to_fro_sql;
 /// ### `vicocomo_unique = "`*a label*`"`
 ///
 /// The tuple of fields whith the same label should be unique in the database.
-/// Primary keys do not need this.
+/// A unique restriction in the database is <b>required</b>. The attribute is
+/// still useful:
+/// - Some [functions depending on the values being unique
+///   ](#for-each-vicocomo_unique-label) are generated.
+/// - The generated [`ActiveRecord::insert_batch()`
+///   ](../vicocomo/active_record/trait.ActiveRecord.html#method.insert_batch)
+///   and [`ActiveRecord::update()`
+///   ](../vicocomo/active_record/trait.ActiveRecord.html#method.update)
+///   methods return an appropriate [`Error::Model`
+///   ](../vicocomo/error/enum.Error.html#variant.Model) if the database
+///   throws a unique restriction violation error..
 ///
-/// The generated [`ActiveRecord::insert_batch()`
-/// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.insert_batch)
-/// and [`ActiveRecord::update()`
-/// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.update)
-/// methods return an appropriate [`Error::Model`
-/// ](../vicocomo/error/enum.Error.html#variant.Model) if this requirement is
-/// not met.
-///
-/// ### `vicocomo_validate_presence`
-///
-/// The field should be an `Option` but *not* `vicocomo_optional`. Generates a
-/// validation function, see below.
+/// Primary keys do not need this attrbute.
 ///
 /// ## Referential Integrity
 ///
@@ -269,9 +281,8 @@ mod to_fro_sql;
 /// ](../vicocomo/error/enum.Error.html#variant.Model).
 ///
 /// - <b>One-to-many associations:</b>  The table storing the remote object
-///   should have a foreign key declaration corresponding to the
-///   `on_delete = "`*one of `cascade`, `forget`, or `restrict`*`"`
-///   name-value pair, in the obvious way.
+///   should have a foreign key declaration corresponding to the name-value
+///   pair, in the obvious way.
 ///
 /// - <b>Many-to-many associations:</b>  The join table should have foreign
 ///   key declarations referring to the primary keys of the tables storing the
@@ -285,11 +296,14 @@ mod to_fro_sql;
 /// Implements [`ActiveRecord`
 /// ](../vicocomo/active_record/trait.ActiveRecord.html).
 ///
-/// Note that the implementation of [`delete_batch()`
-/// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.delete_batch)
-/// ignores the attribute `vicocomo_before_delete` and does *not* call
+/// Note that while the implementation of [`delete()`
+/// ](../vicocomo/active_record/trait.ActiveRecord.html#method.delete)
+/// does acknowledge the attribute `vicocomo_before_delete` and does call
 /// [`before_delete()`
-/// ](../vicocomo/active_record/trait.BeforeDelete.html#tymethod.before_delete)!
+/// ](../vicocomo/active_record/trait.BeforeDelete.html#tymethod.before_delete),
+/// the implementation of [`delete_batch()`
+/// ](../vicocomo/active_record/trait.ActiveRecord.html#method.delete_batch)
+/// does *not*!
 ///
 /// ### For each `vicocomo_belongs_to` attributed field
 ///
@@ -374,7 +388,7 @@ mod to_fro_sql;
 /// ##### `pub fn save_`*name*`s(&self, db: DatabaseIf, remotes: &[`*Remote*`]) -> Result<(), Error>`
 ///
 /// Set and [`save()`
-/// ](../vicocomo/active_record/trait.ActiveRecord.html#tymethod.save) the
+/// ](../vicocomo/active_record/trait.ActiveRecord.html#method.save) the
 /// associated model objects to `remotes` and handle errors and cascading.
 ///
 /// - <b>Only if one-to-many</b>
@@ -394,8 +408,14 @@ mod to_fro_sql;
 ///
 ///   After saving, a join table row connecting `self` to `remote` is created
 ///   if it does not exist, and join table rows connecting `self` to
-///   *Remote*s not in `remotes` are deleted. *Remote* objects are never
-///   deleted in this case.
+///   *Remote*s not in `remotes` are deleted.
+///
+///   - Creating a many-to-many connection requires the join table columns
+///     that are not the relevant foreign keys to be nullable or have default
+///     values in the database.
+///
+///   - When removing a many-to-many connection *Remote* objects are <b>not
+///     deleted</b>.
 */
 ///
 /// <b>Errors</b>
@@ -439,7 +459,7 @@ mod to_fro_sql;
 ///     un_2: i32,
 /// }
 /// ```
-/// also the following declarations are generated:
+/// also the following functions are generated:
 ///
 /// ##### `pub fn find_by_un1_and_un2(db: DatabaseIf, un_1: &i32, un_2: &i32)) -> Option<Self>`
 ///
@@ -457,13 +477,6 @@ mod to_fro_sql;
 ///
 /// `db` is the [database connection](../vicocomo/struct.DatabaseIf.html).
 ///
-/// ### For each `vicocomo_validate_presence` attributed field
-///
-/// ##### `pub fn validate_presence_of_`*field name*`(&self) -> Result<Self, Error>`
-///
-/// Return an [`Error::Model`](../vicocomo/error/enum.Error.html#variant.Model)
-/// if the field value is `None`.
-///
 #[proc_macro_derive(
     ActiveRecord,
     attributes(
@@ -475,8 +488,8 @@ mod to_fro_sql;
         vicocomo_has_many,
         vicocomo_optional,
         vicocomo_order_by,
-        vicocomo_presence_validator,
         vicocomo_primary,
+        vicocomo_random,
         vicocomo_readonly,
         vicocomo_required,
         vicocomo_table_name,

@@ -164,18 +164,25 @@ pub fn test_no_pk(db: DatabaseIf) {
     not_available!("view delete_batch", View::delete_batch(db.clone(), &[]));
     not_available!("table find", NoPk::find(db.clone(), &()), None);
     not_available!("view find", View::find(db.clone(), &()), None);
-    not_available!("table find_equal", n.clone().find_equal(db.clone()), None);
+    not_available!(
+        "table find_equal",
+        n.clone().find_equal(db.clone()),
+        None
+    );
     not_available!("view find_equal", v.clone().find_equal(db.clone()), None);
     not_available!("table update", un.clone().update(db.clone()));
     not_available!("view update", uv.clone().update(db.clone()));
     not_available!(
         "table update_columns",
-        n.clone().update_columns(db.clone(), &[("data", DbValue::Int(17))])
+        n.clone()
+            .update_columns(db.clone(), &[("data", DbValue::Int(17))])
     );
     not_available!(
         "view update_columns",
-        v.clone()
-            .update_columns(db.clone(), &[("default_parent_id", DbValue::Int(17))])
+        v.clone().update_columns(
+            db.clone(),
+            &[("default_parent_id", DbValue::Int(17))]
+        )
     );
     println!("validate_exists() -> Error::Model(_) ..");
     let res = NoPk::validate_exists(db.clone(), &(), "");
@@ -191,6 +198,14 @@ pub fn test_no_pk(db: DatabaseIf) {
     } else {
         panic!("expected Error::Model");
     }
-    not_available!("table validate_unique", n.validate_unique(db.clone(), ""), Ok);
-    not_available!("view validate_unique", v.validate_unique(db.clone(), ""), Ok);
+    not_available!(
+        "table validate_unique",
+        n.validate_unique(db.clone(), ""),
+        Ok
+    );
+    not_available!(
+        "view validate_unique",
+        v.validate_unique(db.clone(), ""),
+        Ok
+    );
 }

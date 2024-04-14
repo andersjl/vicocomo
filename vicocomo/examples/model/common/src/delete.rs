@@ -23,7 +23,8 @@ pub fn test_delete(db: DatabaseIf) {
         &res.err().unwrap(),
         Model(
             CannotDelete,
-            "SinglePk", Some("missing-primary-key".to_string()),
+            "SinglePk",
+            Some("missing-primary-key".to_string()),
         ),
     ));
     println!("    OK");
@@ -34,9 +35,12 @@ pub fn test_delete(db: DatabaseIf) {
         &res.err().unwrap(),
         Model(
             CannotDelete,
-            "MultiPk", Some("not-found".to_string()),
-            "id", [],
-            "id2", [],
+            "MultiPk",
+            Some("not-found".to_string()),
+            "id",
+            [],
+            "id2",
+            [],
         ),
     ));
     println!("    OK");
@@ -50,8 +54,10 @@ pub fn test_delete(db: DatabaseIf) {
         err.clone(),
         Model(
             CannotDelete,
-            "SinglePk", None,
-            "name", ["Some(\"immortal\")"],
+            "SinglePk",
+            None,
+            "name",
+            ["Some(\"immortal\")"],
         ),
     ));
     let res = s.clone().delete(db.clone());
@@ -84,8 +90,10 @@ pub fn test_delete(db: DatabaseIf) {
                 res.err().unwrap(),
                 Model(
                     CannotDelete,
-                    "SinglePk", Some("not-found".to_string()),
-                    "id", [],
+                    "SinglePk",
+                    Some("not-found".to_string()),
+                    "id",
+                    [],
                 ),
             ));
             println!("error (as expected!)");
@@ -110,8 +118,10 @@ pub fn test_delete(db: DatabaseIf) {
         res.err().unwrap(),
         Model(
             CannotDelete,
-            "NonstandardParent", Some("foreign-key-violation".to_string()),
-            "BonusChild", [],
+            "NonstandardParent",
+            Some("foreign-key-violation".to_string()),
+            "BonusChild",
+            [],
         ),
     ));
     let new_counts = (
@@ -164,31 +174,38 @@ pub fn test_delete(db: DatabaseIf) {
     pa.clone().delete(db.clone()).unwrap();
     print!(" .. deletes connection rows ..");
     assert_eq!(
-        db.clone().query(
-            "\
+        db.clone()
+            .query(
+                "\
             SELECT * FROM joins \
                 WHERE default_parent_id = $1 AND single_pk_id in ($2, $3)\
             ",
-            &[
-                DbValue::Int(pa.id.unwrap().into()),
-                DbValue::Int(sa.id.unwrap().into()),
-                DbValue::Int(sb.id.unwrap().into()),
-            ],
-            &[DbType::Int, DbType::Int, DbType::Int],
-        )
-        .unwrap()
-        .len(),
+                &[
+                    DbValue::Int(pa.id.unwrap().into()),
+                    DbValue::Int(sa.id.unwrap().into()),
+                    DbValue::Int(sb.id.unwrap().into()),
+                ],
+                &[DbType::Int, DbType::Int, DbType::Int],
+            )
+            .unwrap()
+            .len(),
         0,
     );
     println!(" OK");
     print!(" .. leaves remote objects untouched ..");
     assert!(
         format!("{:?}", sa)
-            == format!("{:?}", SinglePk::find(db.clone(), &sa.id.unwrap()).unwrap()),
+            == format!(
+                "{:?}",
+                SinglePk::find(db.clone(), &sa.id.unwrap()).unwrap()
+            ),
     );
     assert!(
         format!("{:?}", sb)
-            == format!("{:?}", SinglePk::find(db.clone(), &sb.id.unwrap()).unwrap()),
+            == format!(
+                "{:?}",
+                SinglePk::find(db.clone(), &sb.id.unwrap()).unwrap()
+            ),
     );
     println!(" OK");
     println!("    OK");
@@ -196,19 +213,20 @@ pub fn test_delete(db: DatabaseIf) {
     sa.clone().delete(db.clone()).unwrap();
     print!(" .. deletes connection rows ..");
     assert_eq!(
-        db.clone().query(
-            "\
+        db.clone()
+            .query(
+                "\
             SELECT * FROM joins \
                 WHERE default_parent_id = $1 AND single_pk_id = $2\
             ",
-            &[
-                DbValue::Int(pb.id.unwrap().into()),
-                DbValue::Int(sa.id.unwrap().into()),
-            ],
-            &[DbType::Int, DbType::Int],
-        )
-        .unwrap()
-        .len(),
+                &[
+                    DbValue::Int(pb.id.unwrap().into()),
+                    DbValue::Int(sa.id.unwrap().into()),
+                ],
+                &[DbType::Int, DbType::Int],
+            )
+            .unwrap()
+            .len(),
         0,
     );
     println!(" OK");

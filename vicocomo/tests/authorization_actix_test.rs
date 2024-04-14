@@ -8,12 +8,12 @@ fn test_authorization_actix() {
         false,
         TestRequest::new("http://localhost:3000/").no_redirect(),
         |r: &TestResponse| {
-            assert_eq!(r.status(), "302");
+            assert_eq!(r.status(), "303");
             assert_eq!(r.redirect(), "http://localhost:3000/njet");
         },
         TestRequest::new("http://localhost:3000/bar").no_redirect(),
         |r: &TestResponse| {
-            assert_eq!(r.status(), "302");
+            assert_eq!(r.status(), "303");
             assert_eq!(r.redirect(), "http://localhost:3000/njet");
         },
         TestRequest::new("http://localhost:3000/foo/bar").cookies(),
@@ -48,7 +48,7 @@ fn test_authorization_actix() {
         },
         TestRequest::new("http://localhost:3000/bar").no_redirect(),
         |r: &TestResponse| {
-            assert_eq!(r.status(), "302");
+            assert_eq!(r.status(), "303");
             assert_eq!(r.redirect(), "http://localhost:3000/njet");
         },
         TestRequest::new("http://localhost:3000/foo/bar").cookies(),

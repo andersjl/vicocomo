@@ -1,10 +1,14 @@
 mod controllers {
-    use ::vicocomo::{DatabaseIf, HttpServerIf, TemplEngIf};
+    use ::vicocomo::{DatabaseIf, HttpResponse, HttpServerIf, TemplEngIf};
 
     pub struct Static;
 
     impl Static {
-        pub fn home(_db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
+        pub fn home(
+            _db: DatabaseIf,
+            srv: HttpServerIf,
+            _teng: TemplEngIf,
+        ) -> HttpResponse {
             let count = match srv.session_get::<i32>("count") {
                 Some(i) if i < 2 => i + 1,
                 Some(_) => {
@@ -15,14 +19,16 @@ mod controllers {
             };
             srv.session_clear();
             let _ = srv.session_set("count", &count);
-            srv.resp_body(&format!("{}", count));
-            srv.resp_ok();
+            srv.resp_ok(format!("{}", count))
         }
 
-        pub fn init(db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
+        pub fn init(
+            db: DatabaseIf,
+            srv: HttpServerIf,
+            _teng: TemplEngIf,
+        ) -> HttpResponse {
             let _ = db.exec("DROP TABLE IF EXISTS __vicocomo__sessions", &[]);
-            srv.resp_body("deleted session DB table");
-            srv.resp_ok();
+            srv.resp_ok(String::from("deleted session DB table"))
         }
     }
 }

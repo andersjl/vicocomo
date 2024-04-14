@@ -1,39 +1,59 @@
 mod controllers {
-    use vicocomo::{DatabaseIf, HttpServerIf, TemplEngIf};
+    use vicocomo::{DatabaseIf, HttpResponse, HttpServerIf, TemplEngIf};
 
     pub struct Static;
 
     impl Static {
-        pub fn bar(_db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
-            srv.resp_body("bar is authorized, too");
-            srv.resp_ok();
+        pub fn bar(
+            _db: DatabaseIf,
+            srv: HttpServerIf,
+            _teng: TemplEngIf,
+        ) -> HttpResponse {
+            srv.resp_ok(String::from("bar is authorized, too"))
         }
 
-        pub fn foobar(_db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
-            srv.resp_body("foobar is public");
-            srv.resp_ok();
+        pub fn foobar(
+            _db: DatabaseIf,
+            srv: HttpServerIf,
+            _teng: TemplEngIf,
+        ) -> HttpResponse {
+            srv.resp_ok(String::from("foobar is public"))
         }
 
-        pub fn home(_db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
-            srv.resp_body("you are authorized");
-            srv.resp_ok();
+        pub fn home(
+            _db: DatabaseIf,
+            srv: HttpServerIf,
+            _teng: TemplEngIf,
+        ) -> HttpResponse {
+            srv.resp_ok(String::from("you are authorized"))
         }
 
-        pub fn login(_db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
+        pub fn login(
+            _db: DatabaseIf,
+            srv: HttpServerIf,
+            _teng: TemplEngIf,
+        ) -> HttpResponse {
             match srv.session_set("logged_in", &true) {
                 Ok(_) => srv.resp_redirect("/"),
                 _ => srv.resp_error(None, None),
             }
         }
 
-        pub fn logout(_db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
+        pub fn logout(
+            _db: DatabaseIf,
+            srv: HttpServerIf,
+            _teng: TemplEngIf,
+        ) -> HttpResponse {
             srv.session_remove("logged_in");
-            srv.resp_redirect("/");
+            srv.resp_redirect("/")
         }
 
-        pub fn njet(_db: DatabaseIf, srv: HttpServerIf, _teng: TemplEngIf) {
-            srv.resp_body("*** njet ***");
-            srv.resp_ok();
+        pub fn njet(
+            _db: DatabaseIf,
+            srv: HttpServerIf,
+            _teng: TemplEngIf,
+        ) -> HttpResponse {
+            srv.resp_ok(String::from("*** njet ***"))
         }
     }
 }

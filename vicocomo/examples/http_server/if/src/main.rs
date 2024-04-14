@@ -1,14 +1,15 @@
 fn main() {
     use chrono::NaiveDate;
-    use vicocomo::{AppConfigVal, HttpServerIf};
+    use vicocomo::{AppConfigVal, HttpRespBody, HttpServerIf};
     use vicocomo_stubs::{Request, Server};
 
-    let stub = Server::new();
-    stub.add_config("url_root", AppConfigVal::Str("/root".to_string()));
-    stub.add_config("file_root", AppConfigVal::Str("root/".to_string()));
-    let srv = HttpServerIf::new(&stub);
+    let srv_stub = Server::new();
+    srv_stub.add_config("url_root", AppConfigVal::Str("/root".to_string()));
+    srv_stub.add_config("file_root", AppConfigVal::Str("root/".to_string()));
+    let req_stub = Request::new();
+    let srv = HttpServerIf::new(&srv_stub, &req_stub);
 
-    stub.set_params(&[
+    req_stub.set_params(&[
         ("smpl", "1"),
         ("arr[]", "2"),
         ("arr[]", "3"),
@@ -45,19 +46,17 @@ fn main() {
     assert_eq!(i.unwrap(), 9);
     println!("OK");
 
-    stub.set_request(Request {
-        scheme: "http".to_string(),
-        host: "example.com".to_string(),
-        path: "/root/some/<par>/path".to_string(),
-        parameters: "foo=bar".to_string(),
-        body: String::new(),
-    });
+    *req_stub.scheme.borrow_mut() = "http".to_string();
+    *req_stub.host.borrow_mut() = "example.com".to_string();
+    *req_stub.path.borrow_mut() = "/root/some/<par>/path".to_string();
+    *req_stub.parameters.borrow_mut() = "foo=bar".to_string();
+    *req_stub.body.borrow_mut() = Vec::new();
 
     print!("req_path() ... ");
     assert_eq!(srv.req_path(), "/some/<par>/path");
     println!("OK");
 
-    stub.set_route_pars(&[
+    req_stub.set_route_pars(&[
         ("foo", "42"),
         ("bar", "43"),
         ("baz", "2020-02-02"),
@@ -79,28 +78,46 @@ fn main() {
     );
     println!("OK");
 
-    print!("resp_file() ... ");
-    srv.resp_file("some/file.txt");
-    assert_eq!(stub.get_response().text, "root/some/file.txt");
-    srv.resp_file("some/file-1234567890.txt");
-    assert_eq!(stub.get_response().text, "root/some/file-1234567890.txt");
-    stub.add_config("strip_mtime", AppConfigVal::Bool(true));
-    srv.resp_file("some/file-1234567890.txt");
-    assert_eq!(stub.get_response().text, "root/some/file.txt");
-    srv.resp_file("some/file-123456789.txt");
-    assert_eq!(stub.get_response().text, "root/some/file-123456789.txt");
-    srv.resp_file("some/file-1234567890");
-    assert_eq!(stub.get_response().text, "root/some/file");
+    print!("resp_download() ... ");
+    assert_eq!(
+        srv.resp_download("some/file.txt").get_body(),
+        HttpRespBody::Download("root/some/file.txt".into()),
+    );
+    assert_eq!(
+        srv.resp_download("some/file-1234567890.txt").get_body(),
+        HttpRespBody::Download("root/some/file-1234567890.txt".into()),
+    );
+    srv_stub.add_config("strip_mtime", AppConfigVal::Bool(true));
+    assert_eq!(
+        srv.resp_download("some/file-1234567890.txt").get_body(),
+        HttpRespBody::Download("root/some/file.txt".into()),
+    );
+    assert_eq!(
+        srv.resp_download("some/file-123456789.txt").get_body(),
+        HttpRespBody::Download("root/some/file-123456789.txt".into()),
+    );
+    assert_eq!(
+        srv.resp_download("some/file-1234567890").get_body(),
+        HttpRespBody::Download("root/some/file".into()),
+    );
     println!("OK");
 
     print!("resp_redirect() ... ");
-    srv.resp_redirect("foo/bar");
-    assert_eq!(stub.get_response().text, "foo/bar");
-    srv.resp_redirect("/foo/bar");
-    assert_eq!(stub.get_response().text, "/root/foo/bar");
+    assert_eq!(
+        srv.resp_redirect("foo/bar")
+            .drain_headers()
+            .collect::<Vec<_>>(),
+        vec![(String::from("Location"), String::from("foo/bar"))],
+    );
+    assert_eq!(
+        srv.resp_redirect("/foo/bar")
+            .drain_headers()
+            .collect::<Vec<_>>(),
+        vec![(String::from("Location"), String::from("/root/foo/bar"))],
+    );
     println!("OK");
 
-    stub.set_static_routes(&[
+    srv_stub.set_static_routes(&[
         ("/root/some/url", "root/some/dir"),
         ("/root/other/url", "/absolute/dir"),
     ]);

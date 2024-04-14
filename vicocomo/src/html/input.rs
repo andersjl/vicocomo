@@ -4,9 +4,10 @@
 
 use super::utils::*;
 use crate::{texts::get_text, Error, HttpServerIf, SessionModel};
-use ::serde::{Deserialize, Serialize};
-use ::serde_json::value::{Map as JsonMap, Value as JsonValue};
-use ::std::{
+use ljumvall_utils::blacken;
+use serde::{Deserialize, Serialize};
+use serde_json::value::{Map as JsonMap, Value as JsonValue};
+use std::{
     fmt::{Debug, Display},
     str::FromStr,
     string::ToString,
@@ -68,14 +69,14 @@ where
         }
     }
 
-    /// Add a value to an HTML attribute for the generated tag(s), see
-    /// [`render()`](#method.render).
+    /// Add one (or more, whitespace separated) value(s) to an HTML attribute
+    /// for the generated tag(s), see [`render()`](#method.render).
     ///
     /// For details see [`HtmlTag::add_attr_vals()`
     /// ](../utils/struct.HtmlTag.html#method.add_attr_vals).
     ///
-    pub fn add_attr_vals(&mut self, attr: &str, value: &str) {
-        self.tag.add_attr_vals(attr, value);
+    pub fn add_attr_vals(&mut self, attr: &str, values: &str) {
+        self.tag.add_attr_vals(attr, values);
     }
 
     /// Make [`render()`](#method.render) output the (each) input as inner
@@ -193,7 +194,7 @@ where
     /// ](enum.InputType.html#variant.SelectMult) the iterator never yields
     /// more than one value.
     ///
-    pub fn iter(&self) -> ::std::slice::Iter<'_, V> {
+    pub fn iter(&self) -> std::slice::Iter<'_, V> {
         self.vals.iter()
     }
 
@@ -202,7 +203,7 @@ where
     /// ](#method.add_error_text), or [`prepend_error()`
     /// ](#method.prepend_error).
     ///
-    pub fn iter_error(&self) -> ::std::slice::Iter<'_, String> {
+    pub fn iter_error(&self) -> std::slice::Iter<'_, String> {
         self.errs.iter()
     }
 
@@ -253,6 +254,14 @@ where
     /// ](enum.InputType.html#variant.Checkbox) and [`Radio`
     /// ](enum.InputType.html#variant.Radio) the [value](#method.set_options)
     /// is appended to get a unique `id` for each `input` tag.
+    ///
+    /// For the multple-valued input types [`Checkbox`
+    /// ](enum.InputType.html#variant.Checkbox) and [`SelectMult`
+    /// ](enum.InputType.html#variant.SelectMult), `"[]" is appended to the
+    /// `name` attribute of the generated tag. This makes
+    /// [`HttpServerIf::param_json()`
+    /// ](../../http/server/struct.HttpServerIf.html#method.param_json)
+    /// collect the values in a `Json` array.
     ///
     /// If the [`errors`](#errors) array is not empty and
     /// [`set_errors_class(None)`](#method.set_errors_class) has not been
@@ -611,10 +620,18 @@ where
         result.insert(
             "tag".to_string(),
             JsonValue::String({
+                let mut cloned = tag.clone();
                 let errors = !self.errs.is_empty() && self.err_cls.is_some();
                 let embed = !self.embed.is_empty();
+                if let InputType::SelectMult = self.typ {
+                    cloned.set_attr(
+                        "name",
+                        Some(
+                            &(cloned.get_attr_first("name").unwrap() + "[]"),
+                        ),
+                    );
+                }
                 if errors || embed {
-                    let mut cloned = tag.clone();
                     if errors {
                         cloned.add_attr_vals(
                             "class",
@@ -626,10 +643,8 @@ where
                         embedding.push_tag(cloned);
                         cloned = embedding;
                     }
-                    cloned.to_string()
-                } else {
-                    tag.to_string()
                 }
+                cloned.to_string()
             }),
         );
         JsonValue::Object(result)
@@ -643,7 +658,10 @@ where
         let mut inputs = Vec::new();
         for (lab, val) in &self.opts {
             let mut tag = self.tag.clone();
-            tag.set_attr("id", Some(&(id.clone() + "--" + &val.to_string())));
+            tag.set_attr(
+                "id",
+                Some(&(id.clone() + "--" + &blacken(&val.to_string()))),
+            );
             if let InputType::Checkbox = self.typ {
                 tag.set_attr(
                     "name",
@@ -757,6 +775,10 @@ pub enum InputType {
     ///
     Email,
 
+    /// One `<input type="file" `...` >`
+    ///
+    File,
+
     /// One `<input type="hidden" `...` >`
     ///
     Hidden,
@@ -823,6 +845,7 @@ impl InputType {
             Self::Checkbox => Self::input_tag("checkbox"),
             Self::Date => Self::input_tag("date"),
             Self::Email => Self::input_tag("email"),
+            Self::File => Self::input_tag("file"),
             Self::Hidden => Self::input_tag("hidden"),
             Self::Number => Self::input_tag("number"),
             Self::Password => Self::input_tag("password"),
@@ -866,8 +889,8 @@ impl InputType {
 /// ### Inferring or setting input types
 /// ```
 /// use chrono::NaiveDate;
-/// use ::serde_json::json;
-/// use ::vicocomo::{HtmlForm, HtmlInput};
+/// use serde_json::json;
+/// use vicocomo::{HtmlForm, HtmlInput};
 ///
 /// #[derive(Clone, HtmlForm)]
 /// struct BigForm {                                // Rust type or trait,
@@ -888,7 +911,7 @@ impl InputType {
 ///     txt: HtmlInput<String>,                     // String
 ///     // <input type="hidden" ... >
 ///     #[vicocomo_html_input_type = "Hidden"]
-///     // vicocomo_html_input_type may be Email, Password, Search, Url =>
+///     // vicocomo_html_input_type Email, File, Password, Search, Url =>
 ///     // <input type="email", ...>, ... <input type="url" ...>
 ///     hid: HtmlInput<String>,                     // String
 ///     // <input type="date" ... >
@@ -923,7 +946,7 @@ impl InputType {
 /// big.sel.set_prompt(Some("p"));
 /// big.sel.set_options(&[("a", 1), ("b", 42)]);
 /// big.rad.set_options(&[("a", 1), ("b", -42)]);
-/// big.mul.set_options(&[("a", 1), ("b", ::std::i64::MIN)]);
+/// big.mul.set_options(&[("a", 1), ("b", std::i64::MIN)]);
 /// big.chk.set_options(&[("a", "x".to_string()), ("b", "y".to_string())]);
 /// assert!(
 ///     big.update(&json!({
@@ -944,8 +967,8 @@ impl InputType {
 ///
 /// ### Rendering
 /// ```
-/// use ::serde_json::json;
-/// use ::vicocomo::{HtmlForm, HtmlInput, HtmlTag};
+/// use serde_json::json;
+/// use vicocomo::{HtmlForm, HtmlInput, HtmlTag};
 ///
 /// #[derive(Clone, HtmlForm)]
 /// struct SmallForm {
@@ -983,7 +1006,7 @@ impl InputType {
 ///             "data": {
 ///                 "label": r#"<label for="mul">pre--SmallForm--mul--label</label>"#,
 ///                 "tag": concat!(
-///                     r#"<select multiple id="mul" name="mul">"#,
+///                     r#"<select multiple id="mul" name="mul[]">"#,
 ///                     r#"<option value="1" selected>p</option>"#,
 ///                     r#"<option value="0">z</option>"#,
 ///                     r#"<option value="-1" selected>n</option>"#,
@@ -1110,7 +1133,7 @@ pub trait HtmlForm: Clone + Sized {
     /// ](#method.prepend_error) as well as those in all [`HtmlInput`
     /// ](struct.HtmlInput.html) fields.
     ///
-    fn iter_error(&self) -> ::std::slice::Iter<'_, String>;
+    fn iter_error(&self) -> std::slice::Iter<'_, String>;
 
     /// `true` iff errors have been generated by [`update()`](#method.update)
     /// or set by [`add_error()`](#method.add_error), [`add_error_text()`

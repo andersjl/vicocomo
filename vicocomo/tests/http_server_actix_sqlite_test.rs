@@ -5,12 +5,12 @@ use regex::Regex;
 fn test_http_server_actix_sqlite() {
     test_http_server!(
         "../vicocomo/examples/http_server/actix_sqlite",
-        false,
+        true,
         TestRequest::new("http://localhost:3000/delete")
             .no_redirect()
             .post(),
         |r: &TestResponse| {
-            assert_eq!(r.status(), "302");
+            assert_eq!(r.status(), "303");
             assert_eq!(r.redirect(), "http://localhost:3000/");
         },
         TestRequest::new("http://localhost:3000/"),
@@ -23,7 +23,7 @@ fn test_http_server_actix_sqlite() {
             .no_redirect()
             .data("count", "42"),
         |r: &TestResponse| {
-            assert_eq!(r.status(), "302");
+            assert_eq!(r.status(), "303");
             assert_eq!(r.redirect(), "http://localhost:3000/");
         },
         TestRequest::new("http://localhost:3000/"),
@@ -43,14 +43,14 @@ fn test_http_server_actix_sqlite() {
                 "got\n{}\n",
                 r.body()
             );
-            assert!(r.body().contains("cancelled"));
+            assert!(r.body().contains("avbrutet"), "{}", r.body());
         },
         TestRequest::new("http://localhost:3000/")
             .post()
             .no_redirect()
             .data("count", "4711"),
         |r: &TestResponse| {
-            assert_eq!(r.status(), "302");
+            assert_eq!(r.status(), "303");
             assert_eq!(r.redirect(), "http://localhost:3000/");
         },
         TestRequest::new("http://localhost:3000/"),

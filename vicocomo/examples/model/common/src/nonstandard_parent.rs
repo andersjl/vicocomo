@@ -23,8 +23,10 @@ pub fn test_nonstandard_parent(db: DatabaseIf) {
         res.err().unwrap(),
         Model(
             CannotSave,
-            "NonstandardParent", Some("unique-violation".to_string()),
-            "pk", [],
+            "NonstandardParent",
+            Some("unique-violation".to_string()),
+            "pk",
+            [],
         ),
     ));
     println!("    OK");

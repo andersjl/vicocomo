@@ -1,7 +1,7 @@
 use vicocomo::DatabaseIf;
 pub fn test_single_pk(db: DatabaseIf) {
     use super::models::{find_or_insert_single_pk, single_pk::SinglePk};
-    use vicocomo::{is_error, ActiveRecord, DbValue, QueryBld};
+    use vicocomo::{is_error, ActiveRecord, DbValue, Error, QueryBld};
 
     super::models::reset_db(db.clone());
 
@@ -105,9 +105,12 @@ pub fn test_single_pk(db: DatabaseIf) {
         &res.err().unwrap(),
         Model(
             CannotSave,
-            "SinglePk", Some("unique-violation".to_string()),
-            "name", [],
-            "un2", [],
+            "SinglePk",
+            Some("unique-violation".to_string()),
+            "name",
+            [],
+            "un2",
+            [],
         )
     ));
     println!("    OK");
@@ -134,14 +137,14 @@ pub fn test_single_pk(db: DatabaseIf) {
     }
     println!("|   OK");
     let mut s = SinglePk::find(db.clone(), &42000000).unwrap();
-    s.name = Some("nytt namn".to_string());
+    s.name = Some("nytt\n,;namn".to_string());
     println!("| updating existing {:?} ..", s);
     let res = s.update(db.clone());
     assert!(res.is_ok());
     assert_eq!(
         format!("{:?}", s),
-        "SinglePk { id: Some(42000000), name: Some(\"nytt namn\"), data: None, \
-            opt: Some(1), un2: 42 }",
+        "SinglePk { id: Some(42000000), name: Some(\"nytt\\n,;namn\"), \
+            data: None, opt: Some(1), un2: 42 }",
     );
     println!("|   OK");
     db.clone().commit().unwrap();
@@ -159,8 +162,10 @@ pub fn test_single_pk(db: DatabaseIf) {
         &res.err().unwrap(),
         Model(
             CannotSave,
-            "SinglePk", Some("unique-violation".to_string()),
-            "id", [],
+            "SinglePk",
+            Some("unique-violation".to_string()),
+            "id",
+            [],
         )
     ));
     let res = s.insert(db.clone());
@@ -175,9 +180,12 @@ pub fn test_single_pk(db: DatabaseIf) {
         &res.err().unwrap(),
         Model(
             CannotSave,
-            "SinglePk", Some("unique-violation".to_string()),
-            "name", [],
-            "un2", [],
+            "SinglePk",
+            Some("unique-violation".to_string()),
+            "name",
+            [],
+            "un2",
+            [],
         )
     ));
     let res = s.insert(db.clone());
@@ -190,22 +198,28 @@ pub fn test_single_pk(db: DatabaseIf) {
     let res = s.find_equal(db.clone());
     assert!(res.is_some());
     assert!(format!("{:?}", res.unwrap()) ==
-        "SinglePk { id: Some(42000000), name: Some(\"nytt namn\"), data: None, \
-            opt: Some(1), un2: 42 }"
+        "SinglePk { id: Some(42000000), name: Some(\"nytt\\n,;namn\"), \
+            data: None, opt: Some(1), un2: 42 }"
     );
     println!("    OK");
     println!("finding existing by unique fields ..");
-    let res =
-        SinglePk::find_by_name_and_un2(db.clone(), s.name.as_ref().unwrap(), &s.un2);
+    let res = SinglePk::find_by_name_and_un2(
+        db.clone(),
+        s.name.as_ref().unwrap(),
+        &s.un2,
+    );
     assert!(res.is_some());
     let res = res.unwrap();
     assert!(format!("{:?}", &res) ==
-        "SinglePk { id: Some(42000000), name: Some(\"nytt namn\"), data: None, \
-            opt: Some(1), un2: 42 }"
+        "SinglePk { id: Some(42000000), name: Some(\"nytt\\n,;namn\"), \
+            data: None, opt: Some(1), un2: 42 }"
     );
     assert!(
         format!("{:?}", &res)
-            == format!("{:?}", &s.find_equal_name_and_un2(db.clone()).unwrap())
+            == format!(
+                "{:?}",
+                &s.find_equal_name_and_un2(db.clone()).unwrap()
+            )
     );
     println!("    OK");
 
@@ -230,7 +244,7 @@ pub fn test_single_pk(db: DatabaseIf) {
             "[\
                 SinglePk {{ \
                     id: Some(42000000), \
-                    name: Some(\"nytt namn\"), \
+                    name: Some(\"nytt\\n,;namn\"), \
                     data: None, \
                     opt: Some(1), \
                     un2: 42 \
@@ -271,7 +285,7 @@ pub fn test_single_pk(db: DatabaseIf) {
             "[\
                 SinglePk {{ \
                     id: Some(42000000), \
-                    name: Some(\"nytt namn\"), \
+                    name: Some(\"nytt\\n,;namn\"), \
                     data: None, \
                     opt: Some(1), \
                     un2: 42 \
@@ -305,7 +319,7 @@ pub fn test_single_pk(db: DatabaseIf) {
             "[\
                 SinglePk {{ \
                     id: Some(42000000), \
-                    name: Some(\"nytt namn\"), \
+                    name: Some(\"nytt\\n,;namn\"), \
                     data: None, \
                     opt: Some(1), \
                     un2: 42 \
@@ -345,7 +359,7 @@ pub fn test_single_pk(db: DatabaseIf) {
             "[\
                 SinglePk {{ \
                     id: Some(42000000), \
-                    name: Some(\"nytt namn\"), \
+                    name: Some(\"nytt\\n,;namn\"), \
                     data: None, \
                     opt: Some(1), \
                     un2: 42 \
@@ -424,7 +438,7 @@ pub fn test_single_pk(db: DatabaseIf) {
     );
     println!("    OK");
 
-    println!(",- transaction begin  - - - - - - - - - - - - - - - - - -");
+    println!("\n,- transaction begin  - - - - - - - - - - - - - - - - - -");
     db.clone().begin().unwrap();
     println!("| deleting existing {:?} ..", s);
     assert!(s.clone().delete(db.clone()).is_ok());
@@ -435,7 +449,34 @@ pub fn test_single_pk(db: DatabaseIf) {
     println!("|   OK");
     db.clone().rollback().unwrap();
     assert!(s.find_equal(db.clone()).is_some());
-    println!("'- transaction rollback - - - - - - - - - - - - - - - - -");
+    println!("`- transaction rollback - - - - - - - - - - - - - - - - -");
+    println!("    OK");
+
+    println!("\n,- transaction()  - - - - - - - - - - - - - - - - - - - -");
+    let sid = s.id.unwrap();
+    let mut expected = None;
+    let received = db.clone().transaction(|db| {
+        println!("| deleting existing {:?} ..", s);
+        assert!(s.clone().delete(db.clone()).is_ok());
+        println!("|   OK");
+        println!("| error deleting non-existing {:?}", s);
+        let res = s.clone().delete(db.clone());
+        assert!({
+            if let Err(Error::Database(_)) = res {
+                println!("{res:?}");
+                false
+            } else {
+                true
+            }
+        });
+        println!("|   OK");
+        expected = Some(res.clone());
+        res
+    });
+    assert!(SinglePk::find(db.clone(), &sid).is_some());
+    println!("`- transaction rolled back - - - - - - - - -  - - - - - -");
+    assert_eq!(received, expected.unwrap());
+    println!("transaction() returns closure Result");
     println!("    OK");
 
     println!("\nrequired => not zero or empty - - - - - - - - - - - - - -\n");
@@ -484,21 +525,4 @@ pub fn test_single_pk(db: DatabaseIf) {
         Model(CannotSave, "SinglePk", None, "un2", ["required"]),
     ));
     println!("    OK");
-
-/*
-    println!("\nvalidating  - - - - - - - - - - - - - - - - - - - - - - -\n");
-
-    println!("presence ..");
-    let mut s = SinglePk {
-        id: None,
-        name: None,
-        data: Some(17f32),
-        opt: Some(2),
-        un2: 1,
-    };
-    assert!(s.validate_presence_of_data().is_ok());
-    s.data = None;
-    assert!(is_error!(s.validate_presence_of_data(), Model));
-    println!("    OK");
-*/
 }

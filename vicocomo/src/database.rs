@@ -1,9 +1,10 @@
 //! Trait and helper types to abstract an SQL database.
 //!
-use crate::{db_value_convert, map_error, Error};
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use crate::{db_value_convert, Error};
+use chrono::{
+    DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc,
+};
 use std::fmt;
-use std::path::Path;
 use std::sync::Arc;
 
 /// An SQL abstraction for use by other `vicocomo` modules as well as
@@ -27,12 +28,15 @@ impl DatabaseIf {
 
     /// Commit the present transaction.
     ///
-    /// On error `rollback()` before returning error.
+    /// On error try to `rollback()` before returning error.
     ///
     pub fn commit(self) -> Result<(), Error> {
-        self.0.commit().map_err(|e| {
-            let _ = self.0.rollback();
-            e
+        self.0.commit().map_err(|commit_err| {
+            if let Err(rollback_err) = self.0.rollback() {
+                rollback_err
+            } else {
+                commit_err
+            }
         })
     }
 
@@ -45,13 +49,8 @@ impl DatabaseIf {
     ///
     /// Returns the number of affected rows.
     ///
-    /// On error `rollback()` before returning error.
-    ///
     pub fn exec(self, sql: &str, values: &[DbValue]) -> Result<usize, Error> {
-        self.0.exec(sql, values).map_err(|e| {
-            let _ = self.0.rollback();
-            e
-        })
+        self.0.exec(sql, values)
     }
 
     /// Execute an SQL query and return the result.
@@ -67,18 +66,13 @@ impl DatabaseIf {
     ///
     /// Returns the result as a vector of vectors of `DbValue`.
     ///
-    /// On error `rollback()` before returning error.
-    ///
     pub fn query(
         self,
         sql: &str,
         values: &[DbValue],
         types: &[DbType],
     ) -> Result<Vec<Vec<DbValue>>, Error> {
-        self.0.query(sql, values, types).map_err(|e| {
-            let _ = self.0.rollback();
-            e
-        })
+        self.0.query(sql, values, types)
     }
 
     /// Query for one single value from one single column. See [`query()`
@@ -101,18 +95,48 @@ impl DatabaseIf {
 
     /// Rollback the present transaction.
     ///
+    /// <b>Errors</b>
+    ///
+    /// Forwards any error from the database adapter.
+    ///
     pub fn rollback(self) -> Result<(), Error> {
         self.0.rollback()
+    }
+
+    /// Wrap code in a database transaction and ensure `ROLLBACK` on any error
+    /// -- <b>not only database errors!</b>.
+    ///
+    /// `action` is a closure that takes the database connection as a
+    /// parameter and returns `T` wrapped in a `Result`.
+    ///
+    /// Returns what `action` returns. Before returning does a `COMMIT` or
+    /// `ROLLBACK` depending on whether `action` succeeds.
+    ///
+    pub fn transaction<T, F>(self, action: F) -> Result<T, Error>
+    where
+        F: FnOnce(DatabaseIf) -> Result<T, Error>,
+    {
+        let _ = self.0.begin();
+        let result = action(self.clone());
+        let _ = match result {
+            Ok(_) => self.0.commit(),
+            Err(_) => self.0.rollback(),
+        };
+        result
     }
 }
 
 /// An SQL abstraction trait for database adapter developers.
 ///
 pub trait DbConn: Send + Sync {
-    /// Begin a transaction.  The default method simply uses `exec()` to send
-    /// `BEGIN` to the database.
+    /// Begin a transaction.
+    ///
+    /// The default method simply uses `exec()` to send `BEGIN` to the
+    /// database.
     ///
     fn begin(&self) -> Result<(), Error> {
+        #[cfg(debug_assertions)]
+        eprintln!("BEGIN");
         self.exec("BEGIN", &[]).map(|_| ())
     }
 
@@ -120,6 +144,8 @@ pub trait DbConn: Send + Sync {
     /// `exec()` to send `COMMIT` to the database.
     ///
     fn commit(&self) -> Result<(), Error> {
+        #[cfg(debug_assertions)]
+        eprintln!("COMMIT");
         self.exec("COMMIT", &[]).map(|_| ())
     }
 
@@ -150,6 +176,8 @@ pub trait DbConn: Send + Sync {
     /// `exec()` to send `ROLLBACK` to the database.
     ///
     fn rollback(&self) -> Result<(), Error> {
+        #[cfg(debug_assertions)]
+        eprintln!("ROLLBACK");
         self.exec("ROLLBACK", &[]).map(|_| ())
     }
 }
@@ -157,7 +185,7 @@ pub trait DbConn: Send + Sync {
 /// The possible types as seen by the database.
 ///
 /// See [`DbConn::query()`](trait.DbConn.html#tymethod.query)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DbType {
     /// `f64`
     Float,
@@ -234,7 +262,7 @@ impl DbValue {
         match self {
             DbValue::Float(v) => v.to_string(),
             DbValue::Int(v) => v.to_string(),
-            DbValue::Text(v) => format!("'{}'", v),
+            DbValue::Text(v) => format!("'{}'", v.replace("'", "''")),
             DbValue::NulFloat(v) => match v {
                 Some(v) => v.to_string(),
                 None => "NULL".to_string(),
@@ -244,7 +272,7 @@ impl DbValue {
                 None => "NULL".to_string(),
             },
             DbValue::NulText(v) => match v {
-                Some(v) => format!("'{}'", v),
+                Some(v) => format!("'{}'", v.replace("'", "''")),
                 None => "NULL".to_string(),
             },
         }
@@ -289,8 +317,8 @@ db_value_convert! {
     in_db_value_module,
     NaiveDateTime,
     Int,
-    NaiveDateTime::from_timestamp_opt(value, 0).unwrap(),
-    other.timestamp(),
+    DateTime::<Utc>::from_timestamp(value, 0).unwrap().naive_utc(),
+    other.and_utc().timestamp(),
 }
 db_value_convert! {
     in_db_value_module,
@@ -325,30 +353,28 @@ impl DbConn for NullConn {
     }
 }
 
-/// Try to execute SQL statements read from `file`. The contents of `file` are
-/// simply split at `';'` to produce a number of SQL parameters to
+/// Try to execute SQL statements read from `source`. The contents of `file`
+/// are simply split at `';'` to produce a number of SQL parameters to
 /// [`DatabaseIf::exec()`](struct.DatabaseIf.html#method.exec).
 ///
 /// <b>Errors</b>
 ///
-/// If creation fails the `original_error` is returned if `Some(_)`, otherwise
-/// the error returned from the failing `exec()`.
+/// If execution fails the `original_error` is returned if `Some(_)`,
+/// otherwise the error returned from the failing `exec()`.
 ///
-pub fn try_exec_file(
+pub fn try_exec_sql(
     db: DatabaseIf,
-    file: &Path,
+    source: &str,
     original_error: Option<Error>,
 ) -> Result<(), Error> {
-    map_error!(InvalidInput, std::fs::read_to_string(file)).and_then(|s| {
-        for statement in s.split(';') {
-            let statement = statement.trim();
-            if statement.is_empty() {
-                continue;
-            }
-            if let Err(e) = db.clone().exec(statement, &[]) {
-                return Err(original_error.unwrap_or(e));
-            }
+    for statement in source.split(';') {
+        let statement = statement.trim();
+        if statement.is_empty() {
+            continue;
         }
-        Ok(())
-    })
+        if let Err(e) = db.clone().exec(statement, &[]) {
+            return Err(original_error.unwrap_or(e));
+        }
+    }
+    Ok(())
 }

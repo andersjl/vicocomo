@@ -2,6 +2,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use syn::{
     parse_quote, punctuated::Punctuated, AttrStyle, Attribute, Expr, Ident,
     Lit, LitInt, LitStr, Meta, NestedMeta, Path, Type,
@@ -17,14 +18,22 @@ const ATTR_DB_VALUE_ERROR: &'static str =
 const ATTR_OPTIONAL_ERROR: &'static str = "expected #[vicocomo_optional]";
 const ATTR_ORDER_ERROR: &'static str =
     "expected #[vicocomo_order_by(<int>, <\"ASC\"/\"DESC\">)]";
-const ATTR_PRESENCE_VLDTR_ERROR: &'static str =
-    "expected #[vicocomo_presence_validator] on an Option<_> field \
-    that is not #[vicocomo_optional]";
 const ATTR_PRIMARY_ERROR: &'static str = "expected #[vicocomo_primary]";
+const ATTR_RANDOM_ERROR: &'static str =
+    "expected #[vicocomo_random] on an Option<i64> field";
 const ATTR_REQUIRED_ERROR: &'static str =
     "expected #[vicocomo_required] on a field that is not nullable";
 const ATTR_UNIQUE_ERROR: &'static str =
     "expected #[vicocomo_unique = \"label\"]";
+
+// determines what to send to the database when inserting or updating if the
+// field is an Option and the value is None
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum OnNone {
+    Ignore, // do not update the field
+    Null,   // NULL
+    Random, // if inserting an Option<i64>, random value, if not, panic
+}
 
 #[derive(Clone, Debug)]
 pub(crate) enum Order {
@@ -58,15 +67,12 @@ pub(crate) struct Field {
     pub(crate) ty: Type,
     pub(crate) col: LitStr,
     pub(crate) dbt: DbType,
-    // indictates what the field is (part of) the primary key
+    // indictates that the field is (part of) the primary key
     pub(crate) pri: bool,
     // indicates that the field must not have a zero or empty value
     pub(crate) req: bool,
-    // indictates that a presence validator should be generated
-    pub(crate) pre: bool,
     pub(crate) ord: Option<Order>,
-    // indicates whether the field is optional. It may be nullable regardless.
-    pub(crate) opt: bool,
+    pub(crate) onn: OnNone,
     pub(crate) fk: Option<ForKey>,
 }
 
@@ -186,10 +192,9 @@ impl Model {
                 LitStr::new(id.to_string().as_str(), Span::call_site());
             let mut pri = false;
             let mut req = false;
-            let mut pre = false;
             let mut uni = None;
             let mut ord = None;
-            let mut opt = false;
+            let mut onn = OnNone::Null;
             let mut fk = None;
             for attr in field.attrs {
                 match attr.style {
@@ -309,7 +314,7 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                     }
                     "vicocomo_optional" => {
                         match attr.parse_meta().expect(ATTR_OPTIONAL_ERROR) {
-                            Meta::Path(_) => opt = true,
+                            Meta::Path(_) => onn = OnNone::Ignore,
                             _ => panic!("{}", ATTR_OPTIONAL_ERROR),
                         };
                     }
@@ -371,21 +376,22 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                             Order::Desc(precedence)
                         });
                     }
-                    "vicocomo_presence_validator" => {
-                        match attr
-                            .parse_meta()
-                            .expect(ATTR_PRESENCE_VLDTR_ERROR)
-                        {
-                            Meta::Path(_) => pre = true,
-                            _ => panic!("{}", ATTR_PRESENCE_VLDTR_ERROR),
-                        };
-                    }
                     "vicocomo_primary" => {
                         match attr.parse_meta().expect(ATTR_PRIMARY_ERROR) {
-                            Meta::Path(_) => {
-                                pri = true;
-                            }
+                            Meta::Path(_) => pri = true,
                             _ => panic!("{}", ATTR_PRIMARY_ERROR),
+                        };
+                    }
+                    "vicocomo_random" => {
+                        match attr.parse_meta().expect(ATTR_RANDOM_ERROR) {
+                            // We would like to check that the field type is
+                            // Option<something that Rng::gen() can output>
+                            // here, but the macro does not know aboute type
+                            // declarations etc, so not reliable.
+                            // An incompatible type will generate a compile
+                            // time error anyway.
+                            Meta::Path(_) => onn = OnNone::Random,
+                            _ => panic!("{}", ATTR_RANDOM_ERROR),
                         };
                     }
                     "vicocomo_required" => {
@@ -409,70 +415,67 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                     _ => (),
                 }
             }
-            use ::lazy_static::lazy_static;
-            use ::quote::format_ident;
-            lazy_static! {
-                pub(crate) static ref DB_TYPES: HashMap<String, DbType> = {
-                    let mut map = HashMap::new();
-                    for (typ_str, var_str) in &[
-                        ("bool", "Int"),
-                        ("f32", "Float"),
-                        ("f64", "Float"),
-                        ("i32", "Int"),
-                        ("i64", "Int"),
-                        ("u32", "Int"),
-                        ("u64", "Int"),
-                        ("usize", "Int"),
-                        ("NaiveDate", "Int"),
-                        ("NaiveDateTime", "Int"),
-                        ("NaiveTime", "Int"),
-                        ("String", "Text"),
-                    ] {
-                        let typ_id = format_ident!("{}", typ_str);
-                        let typ: Type = parse_quote!(#typ_id);
-                        let opt: Type = parse_quote!(Option<#typ_id>);
-                        map.insert(
-                            tokens_to_string(&typ),
-                            match *var_str {
-                                "Float" => DbType::Float,
-                                "Int" => DbType::Int,
-                                "Text" => DbType::Text,
-                                _ => panic!(),
-                            },
-                        );
-                        map.insert(
-                            tokens_to_string(&opt),
-                            match *var_str {
-                                "Float" => DbType::NulFloat,
-                                "Int" => DbType::NulInt,
-                                "Text" => DbType::NulText,
-                                _ => panic!(),
-                            },
-                        );
-                    }
-                    map
-                };
-            }
-            let type_string = tokens_to_string(if opt {
-                Self::strip_option(&field.ty)
-            } else {
+
+            static DB_TYPES: OnceLock<HashMap<String, DbType>> =
+                OnceLock::new();
+            DB_TYPES.get_or_init(|| {
+                use ::quote::format_ident;
+                let mut map = HashMap::new();
+                for (typ_str, var_str) in &[
+                    ("bool", "Int"),
+                    ("f32", "Float"),
+                    ("f64", "Float"),
+                    ("i32", "Int"),
+                    ("i64", "Int"),
+                    ("u32", "Int"),
+                    ("u64", "Int"),
+                    ("usize", "Int"),
+                    ("NaiveDate", "Int"),
+                    ("NaiveDateTime", "Int"),
+                    ("NaiveTime", "Int"),
+                    ("String", "Text"),
+                ] {
+                    let typ_id = format_ident!("{}", typ_str);
+                    let typ: Type = parse_quote!(#typ_id);
+                    let opt: Type = parse_quote!(Option<#typ_id>);
+                    map.insert(
+                        tokens_to_string(&typ),
+                        match *var_str {
+                            "Float" => DbType::Float,
+                            "Int" => DbType::Int,
+                            "Text" => DbType::Text,
+                            _ => panic!(),
+                        },
+                    );
+                    map.insert(
+                        tokens_to_string(&opt),
+                        match *var_str {
+                            "Float" => DbType::NulFloat,
+                            "Int" => DbType::NulInt,
+                            "Text" => DbType::NulText,
+                            _ => panic!(),
+                        },
+                    );
+                }
+                map
+            });
+            let type_string = tokens_to_string(if onn == OnNone::Null {
                 &field.ty
+            } else {
+                Self::strip_option(&field.ty)
             });
             let dbt = dbt.unwrap_or_else(|| {
-                *DB_TYPES.get(&type_string).unwrap_or_else(|| {
-                    panic!(
-                        "Type {} currently not allowed in a vicocomo \
+                *DB_TYPES.get().unwrap().get(&type_string).unwrap_or_else(
+                    || {
+                        panic!(
+                            "Type {} currently not allowed in a vicocomo \
                             Active Record model",
-                        type_string,
-                    )
-                })
+                            type_string,
+                        )
+                    },
+                )
             });
-            assert!(
-                !pre || (dbt.nul() && !opt),
-                "{}",
-                ATTR_PRESENCE_VLDTR_ERROR,
-            );
-            assert!(!(req && dbt.nul()), "{}", ATTR_REQUIRED_ERROR,);
+            assert!(!(req && dbt.nul()), "{}", ATTR_REQUIRED_ERROR);
             let field = Field {
                 id,
                 ty,
@@ -480,9 +483,8 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                 dbt,
                 pri,
                 req,
-                pre,
                 ord,
-                opt,
+                onn,
                 fk,
             };
             fields.push(field.clone());
@@ -504,11 +506,11 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
             let mut uni_fld_strs = Vec::new();
             for field in &fields {
                 let fld_id = &field.id;
-                if field.opt {
+                if field.onn == OnNone::Null {
+                    find_self_args.push(parse_quote!(&self.#fld_id));
+                } else {
                     find_self_args
                         .push(parse_quote!(self.#fld_id.as_ref().unwrap()));
-                } else {
-                    find_self_args.push(parse_quote!(&self.#fld_id));
                 }
                 uni_fld_strs.push(fld_id.to_string());
             }
@@ -623,17 +625,9 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                     #fld_lit: ["required"],
                 ));
                 if f.dbt.text() {
-                    if f.opt {
+                    if f.onn == OnNone::Null {
                         parse_quote!(
-                            match #obj.#fld_id.as_ref() {
-                                Some(val) if ::vicocomo::blacken(val)
-                                    .is_empty() => Err(#err),
-                                _ => Ok(()),
-                            }
-                        )
-                    } else {
-                        parse_quote!(
-                            if ::vicocomo::blacken(&#obj.#fld_id)
+                            if ::ljumvall_utils::blacken(&#obj.#fld_id)
                                 .is_empty()
                             {
                                 Err(#err)
@@ -641,21 +635,29 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                                 Ok(())
                             }
                         )
-                    }
-                } else {
-                    if f.opt {
+                    } else {
                         parse_quote!(
-                            match #obj.#fld_id {
-                                Some(val) if val == 0 => Err(#err),
-                                None => Ok(()),
+                            match #obj.#fld_id.as_ref() {
+                                Some(val) if ::ljumvall_utils::blacken(val)
+                                    .is_empty() => Err(#err),
+                                _ => Ok(()),
                             }
                         )
-                    } else {
+                    }
+                } else {
+                    if f.onn == OnNone::Null {
                         parse_quote!(
                             if #obj.#fld_id == 0 {
                                 Err(#err)
                             } else {
                                 Ok(())
+                            }
+                        )
+                    } else {
+                        parse_quote!(
+                            match #obj.#fld_id {
+                                Some(val) if val == 0 => Err(#err),
+                                None => Ok(()),
                             }
                         )
                     }
@@ -716,14 +718,14 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
     // val is an expression yielding the field value, e.g. self.some_field.
     //
     pub(crate) fn field_value_expr(&self, fld: &Field, val: Expr) -> Expr {
-        if fld.opt == fld.dbt.nul() {
+        if (fld.onn == OnNone::Null) == fld.dbt.nul() {
+            parse_quote!(#val.as_ref())
+        } else {
             if fld.dbt.nul() {
                 parse_quote!(#val.as_ref().and_then(|opt| opt.as_ref()))
             } else {
                 parse_quote!(Some(&#val))
             }
-        } else {
-            parse_quote!(#val.as_ref())
         }
     }
 
@@ -811,10 +813,10 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
             self.pk_fields()
                 .iter()
                 .map(|pk| {
-                    if pk.opt {
-                        &Self::strip_option(&pk.ty)
-                    } else {
+                    if pk.onn == OnNone::Null {
                         &pk.ty
+                    } else {
+                        &Self::strip_option(&pk.ty)
                     }
                 })
                 .collect::<Vec<_>>()
@@ -842,10 +844,6 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         self.value(self.pk_fields().as_slice(), obj)
     }
 
-    pub(crate) fn presence_validator_fields(&self) -> Vec<&Field> {
-        self.fields.iter().filter(|f| f.pre).collect()
-    }
-
     // rows should be a Vec<Vec<DbValue>>
     // returns Result<Vec<struct_id>, Error>
     pub(crate) fn rows_to_models_expr(&self, rows: Expr) -> Expr {
@@ -854,10 +852,10 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         let vals: Vec<Expr> = retrieved
             .iter()
             .map(|f| {
-                if f.opt {
-                    parse_quote!(Some(vicocomo_local__val))
-                } else {
+                if f.onn == OnNone::Null {
                     parse_quote!(vicocomo_local__val)
+                } else {
+                    parse_quote!(Some(vicocomo_local__val))
                 }
             })
             .collect();
@@ -924,10 +922,10 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
             1 => {
                 let def = fields.first().unwrap();
                 let id = &def.id;
-                if def.opt {
-                    parse_quote!(#obj.#id.clone())
-                } else {
+                if def.onn == OnNone::Null {
                     parse_quote!(Some(#obj.#id.clone()))
+                } else {
+                    parse_quote!(#obj.#id.clone())
                 }
             }
             _ => {
@@ -935,15 +933,15 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                     .iter()
                     .map(|def| {
                         let id = &def.id;
-                        if def.opt {
+                        if def.onn == OnNone::Null {
+                            parse_quote!(#obj.#id.clone())
+                        } else {
                             parse_quote!(
                                 match #obj.#id {
                                     Some(val) => val.clone(),
                                     None => return None,
                                 }
                             )
-                        } else {
-                            parse_quote!(#obj.#id.clone())
                         }
                     })
                     .collect();

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title> Tauri Tough Test </title>
+    <link href="css/application.css" rel="stylesheet">
+  </head>
+  <body>
+    <form id="tough-frm" action="/tough" method="post">
+      <div> {{{ selec.data.tag }}} </div>
+      <div> {{{ multi.data.tag }}} </div>
+      <div> {{ #each radio.data }} {{{ label }}} {{{ tag }}} {{ /each }} </div>
+      <div> {{ #each chbox.data }} {{{ label }}} {{{ tag }}} {{ /each }} </div>
+      <input id="tough-ok" type="submit" name="commit" value="OK">
+    </form>
+    <a href="/"> Back </a>
+  </body>
+</html>

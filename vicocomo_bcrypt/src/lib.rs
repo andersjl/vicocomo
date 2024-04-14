@@ -2,6 +2,7 @@
 //! ](../bcrypt/index.html) crate.
 
 use bcrypt::{hash, verify};
+use std::sync::{Mutex, OnceLock};
 use vicocomo::{db_value_convert, map_error, Error, PasswordDigest};
 
 /// Encapsulates a [BCrypt](../bcrypt/index.html) hash.
@@ -15,24 +16,13 @@ use vicocomo::{db_value_convert, map_error, Error, PasswordDigest};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BcryptDigest(String);
 
-lazy_static::lazy_static! {
-    static ref BCRYPT_COST: std::sync::Mutex<u32> = {
-        let cost: u32 = std::env::var("BCRYPT_COST")
-            .unwrap_or(String::new())
-            .parse().unwrap_or(::bcrypt::DEFAULT_COST);
-        if cost != bcrypt::DEFAULT_COST {
-            eprintln!("using bcrypt cost {}", cost);
-        }
-        std::sync::Mutex::new(cost)
-    };
-}
+static BCRYPT_COST: OnceLock<Mutex<u32>> = OnceLock::new();
 
 impl BcryptDigest {
     /// Set the BCrypt [cost](https://github.com/Keats/rust-bcrypt#readme).
     ///
     pub fn set_cost(cost: u32) {
-        let mut stored_cost = BCRYPT_COST.lock().unwrap();
-        *stored_cost = cost;
+        *BCRYPT_COST.get_or_init(|| Mutex::new(0)).lock().unwrap() = cost;
     }
 }
 
@@ -44,7 +34,24 @@ impl PasswordDigest for BcryptDigest {
     fn digest(password: &str) -> Result<Self, Error> {
         Ok(Self(map_error!(
             Other,
-            hash(password, *BCRYPT_COST.lock().unwrap())
+            hash(
+                password,
+                *BCRYPT_COST
+                    .get_or_init(|| {
+                        Mutex::new({
+                            let cost: u32 = std::env::var("BCRYPT_COST")
+                                .unwrap_or(String::new())
+                                .parse()
+                                .unwrap_or(bcrypt::DEFAULT_COST);
+                            if cost != bcrypt::DEFAULT_COST {
+                                eprintln!("using bcrypt cost {}", cost);
+                            }
+                            cost
+                        })
+                    })
+                    .lock()
+                    .unwrap(),
+            ),
         )?))
     }
 

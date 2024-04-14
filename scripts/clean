@@ -1,0 +1,6 @@
+#!/bin/sh
+
+cargo clean
+find vicocomo/examples -name target -type d |xargs rm -r
+rm Cargo.lock
+find vicocomo/examples -name Cargo.lock -type f -delete

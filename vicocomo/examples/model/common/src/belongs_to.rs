@@ -38,8 +38,10 @@ pub fn test_belongs_to(db: DatabaseIf) {
         res.err().unwrap(),
         Model(
             Invalid,
-            "MultiPk", None,
-            "DefaultParent", ["missing-primary-key"],
+            "MultiPk",
+            None,
+            "DefaultParent",
+            ["missing-primary-key"],
         ),
     ));
     assert_eq!(m.default_parent_id, orig_dp_id);
@@ -92,7 +94,10 @@ pub fn test_belongs_to(db: DatabaseIf) {
     let np_sibs = np_sibs.unwrap();
     assert!(np_sibs.len() == 1);
     let grown_sibs: Result<Vec<NonstandardParent>, vicocomo::Error> =
-        NonstandardParent::all_belonging_to_nonstandard_parent(db.clone(), &np);
+        NonstandardParent::all_belonging_to_nonstandard_parent(
+            db.clone(),
+            &np,
+        );
     assert!(grown_sibs.is_ok());
     let grown_sibs = grown_sibs.unwrap();
     assert!(grown_sibs.len() == 1);

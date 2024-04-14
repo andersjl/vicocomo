@@ -1,4 +1,4 @@
-use crate::model::Model;
+use crate::model::{Model, OnNone};
 use ::syn::ItemFn;
 
 pub(crate) fn find_impl(
@@ -6,14 +6,9 @@ pub(crate) fn find_impl(
     struct_fn: &mut Vec<ItemFn>,
     trait_fn: &mut Vec<ItemFn>,
 ) {
-    use ::proc_macro2::Span;
     use ::quote::format_ident;
-    use ::syn::{
-        parse_quote, punctuated::Punctuated, token::Comma, Expr, LitStr,
-    };
+    use ::syn::{parse_quote, punctuated::Punctuated, token::Comma, Expr};
 
-    let struct_id = &model.struct_id;
-    let struct_lit = LitStr::new(&struct_id.to_string(), Span::call_site());
     let table_name = &model.table_name;
     let all_cols = model
         .fields
@@ -122,23 +117,23 @@ pub(crate) fn find_impl(
             db: ::vicocomo::DatabaseIf,
             query: &::vicocomo::Query
         ) -> Result<Vec<Self>, ::vicocomo::Error> {
-            let filter = match query.filter.as_ref() {
+            let filter = match query.filter() {
                 Some(f) => format!("WHERE {}", f),
                 None => String::new(),
             };
-            let limit = match query.limit {
+            let limit = match query.limit() {
                 Some(l) => format!("LIMIT {}", l),
                 // E.g. SQLite requires LIMIT if OFFSET
-                None if query.offset.is_some() => {
-                    "LIMIT 1000000000".to_string()
+                None if query.offset().is_some() => {
+                    "LIMIT 2147483647".to_string()
                 },
                 _ => String::new(),
             };
-            let offset = match query.offset {
+            let offset = match query.offset() {
                 Some(l) => format!("OFFSET {}", l),
                 None => String::new(),
             };
-            let order = match &query.order {
+            let order = match query.order() {
                 ::vicocomo::Order::Custom(ord) =>
                     format!("ORDER BY {}", ord),
                 ::vicocomo::Order::Dflt =>
@@ -146,7 +141,7 @@ pub(crate) fn find_impl(
                 ::vicocomo::Order::NoOrder => String::new(),
             };
             let mut values: Vec<::vicocomo::DbValue> = Vec::new();
-            for opt in query.values.as_slice() {
+            for opt in query.values() {
                 match opt {
                     Some(v) => values.push(v.clone()),
                     None => return Err(::vicocomo::Error::invalid_input(
@@ -154,8 +149,7 @@ pub(crate) fn find_impl(
                     )),
                 }
             }
-            let sql =
-                format!(#query_sql, filter, order, limit, offset);
+            let sql = format!(#query_sql, filter, order, limit, offset);
             let mut found_rows =
                 db.clone().query(&sql, &values, &[ #( #db_types ),* ])?;
             #found_models
@@ -178,14 +172,14 @@ pub(crate) fn find_impl(
         for field in uni_flds {
             let fld_id = &field.id;
             let par_id = format_ident!("{}_par", fld_id);
-            let par_ty = if field.opt {
-                &Model::strip_option(&field.ty)
-            } else {
+            let par_ty = if field.onn == OnNone::Null {
                 &field.ty
+            } else {
+                &Model::strip_option(&field.ty)
             };
             find_pars.push(parse_quote!(#par_id: &#par_ty));
             par_vals.push(parse_quote!(#par_id.clone().into()));
-            if field.opt {
+            if field.onn != OnNone::Null {
                 self_test.push(parse_quote!(self.#fld_id.is_some()));
             }
             uni_cols.push(field.col.value());
@@ -224,35 +218,6 @@ pub(crate) fn find_impl(
                 } else {
                     None
                 }
-            }
-        ));
-    }
-
-    // == validators =========================================================
-
-    // -- presence validators ------------------------------------------------
-
-    for fld in model.presence_validator_fields() {
-        let fld_id = &fld.id;
-        let fld_str = fld_id.to_string();
-        let fld_lit = LitStr::new(&fld_str, Span::call_site());
-        let val_pre_id = format_ident!("validate_presence_of_{}", &fld_str);
-        struct_fn.push(parse_quote!(
-            pub fn #val_pre_id(&self) -> Result<(), ::vicocomo::Error> {
-                self.#fld_id
-                    .map(|_| ())
-                    .ok_or_else(|| {
-                        ::vicocomo::Error::Model(::vicocomo::ModelError {
-                            error: ::vicocomo::ModelErrorKind::Invalid,
-                            model: #struct_lit.to_string(),
-                            general: None,
-                            field_errors: vec![(
-                                #fld_lit.to_string(),
-                                vec!["missing".to_string()],
-                            )],
-                            assoc_errors: Vec::new(),
-                        })
-                })
             }
         ));
     }

@@ -5,13 +5,9 @@ description.workspace = true
 authors.workspace = true
 edition.workspace = true
 
-[lib]
-proc-macro = true
-
 [dependencies]
-proc-macro2.workspace = true
-quote.workspace = true
-syn = { workspace = true, features = ["extra-traits"] }
-vicocomo = { path = "../vicocomo", version = "0.5.0" }
-vicocomo_derive_utils = { path = "../vicocomo_derive_utils", version = "0.5.0" }
-
+tauri.workspace = true
+url.workspace = true
+vicocomo = { path = "../vicocomo", version = "0.6.0" }
+vicocomo_sqlite = { path = "../vicocomo_sqlite", version = "0.6.0" }
+vicocomo_tauri_config = { path = "config", version = "0.6.0" }

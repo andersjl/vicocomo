@@ -1,0 +1,27 @@
+Until webdriver works better:
+
+./init.sh
+cargo tauri build -b
+./src-tauri/target/release/vicocomo-example-http-server-tauri
+check that the count input shows -4711
+click delete
+check that the count input shows 0
+enter 42 in the count input
+click OK
+enter -42 in the count input
+click Cancel
+check that the count input changes to 42
+check that a new red text "avbrutet" appears
+
+click the Tough link
+check that "one" is selected on the top control, "two" on the second, "thr" on
+the third, and nothing on the last
+click ctrl+"one" on the second control, and "two" and "thr" on the last one.
+click "OK"
+check that the controls are still |"one"|"one" "two"|"thr"|"two" thr"|
+click radio button "two"
+check that the controls are |"one"|"one" "two"|"two"|"two" thr"|
+
+close the application and start it again
+check that the values on both pages are as they were before you closed the
+application

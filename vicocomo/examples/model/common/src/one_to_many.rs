@@ -15,7 +15,10 @@ pub fn test_one_to_many(db: DatabaseIf) {
     let dp_chn = dp_chn.unwrap();
     assert!(
         format!("{:?}", dp_chn)
-            == format!("{:?}", m.default_parent_siblings(db.clone()).unwrap()),
+            == format!(
+                "{:?}",
+                m.default_parent_siblings(db.clone()).unwrap()
+            )
     );
     let bp_chn = bp.bonus_childs(db.clone(), None);
     assert!(bp_chn.is_ok());
@@ -32,7 +35,8 @@ pub fn test_one_to_many(db: DatabaseIf) {
             == format!(
                 "{:?}",
                 NonstandardParent::all_belonging_to_nonstandard_parent(
-                    db.clone(), &np
+                    db.clone(),
+                    &np
                 )
                 .unwrap(),
             )

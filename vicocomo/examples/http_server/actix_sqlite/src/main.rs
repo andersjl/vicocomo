@@ -3,11 +3,14 @@ use vicocomo_example_http_server_local::*;
 vicocomo_actix::config! {
     app_config {
         session: None,
+        texts_config: true,
     },
     plug_in(DbConn) {
         def: (
             vicocomo_sqlite::SqliteConn,
-            vicocomo_sqlite::SqliteConn::new("test.sqlite").unwrap(),
+            vicocomo_sqlite::SqliteConn::new(
+                std::path::Path::new("test.sqlite"),
+            ).unwrap(),
         ),
     },
     plug_in(TemplEng) {

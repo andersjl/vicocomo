@@ -1,8 +1,9 @@
-use chrono::{NaiveDate, NaiveDateTime};
+pub use backup_and_restore::{backup, restore, Join};
+use chrono::{DateTime, NaiveDate, Utc};
 use vicocomo::{ActiveRecord, DatabaseIf};
 pub use {
-    default_parent::DefaultParent, multi_pk::MultiPk,
-    other_parent::NonstandardParent, single_pk::SinglePk,
+    default_parent::DefaultParent, multi_pk::MultiPk, no_pk::NoPk,
+    other_parent::NonstandardParent, random::Random, single_pk::SinglePk,
 };
 
 // belongs-to associations:
@@ -12,16 +13,38 @@ pub use {
 //     NonstandardParent -> NonstandardParent
 //
 // one-to-many associations:
-//     BonusChild        <- MultiPk            restrict
+//     BonusChild        <- MultiPk            no_action
 //     DefaultParent     <- MultiPk            cascade
 //     NonstandardParent <- MultiPk            forget
-//     NonstandardParent <- NonstandardParent  restrict
+//     NonstandardParent <- NonstandardParent  no_action
 //
 // many-to-many associations:
 //     DefaultParent <- joins -> SinglePk
 
+pub mod backup_and_restore {
+    use vicocomo::define_backup_and_restore;
+
+    // The sole purpose of this model is to define the functions
+    // Join::{try_from_csv, try_to_csv}.
+    #[derive(Debug, PartialEq, vicocomo::ActiveRecord)]
+    pub struct Join {
+        pub default_parent_id: i64,
+        pub single_pk_id: i32,
+    }
+
+    define_backup_and_restore! {
+        Join,
+        super::DefaultParent,
+        super::MultiPk,
+        super::NoPk,
+        super::NonstandardParent,
+        super::Random,
+        super::SinglePk,
+    }
+}
+
 pub mod default_parent {
-    #[derive(Clone, Debug, vicocomo::ActiveRecord)]
+    #[derive(Clone, Debug, PartialEq, vicocomo::ActiveRecord)]
     #[vicocomo_has_many(remote_type = "MultiPk", on_delete = "cascade")]
     #[vicocomo_has_many(remote_type = "SinglePk", join_table = "joins")]
     pub struct DefaultParent {
@@ -91,7 +114,7 @@ pub mod multi_pk {
 }
 
 pub mod no_pk {
-    #[derive(vicocomo::ActiveRecord, Clone, Debug)]
+    #[derive(PartialEq, vicocomo::ActiveRecord, Clone, Debug)]
     pub struct NoPk {
         #[vicocomo_order_by(0, "desc")]
         pub data: i32,
@@ -99,7 +122,7 @@ pub mod no_pk {
 }
 
 pub mod other_parent {
-    #[derive(Clone, Debug, vicocomo::ActiveRecord)]
+    #[derive(Clone, Debug, PartialEq, vicocomo::ActiveRecord)]
     #[vicocomo_has_many(
         on_delete = "forget",
         remote_fk_col = "other_parent_id",
@@ -125,8 +148,19 @@ pub mod other_parent {
     }
 }
 
+pub mod random {
+    #[derive(Clone, Debug, PartialEq, vicocomo::ActiveRecord)]
+    pub struct Random {
+        #[vicocomo_random]
+        #[vicocomo_primary]
+        pub id: Option<u32>,
+        #[vicocomo_random]
+        pub data: Option<u64>,
+    }
+}
+
 pub mod single_pk {
-    #[derive(Clone, Debug, vicocomo::ActiveRecord)]
+    #[derive(Clone, Debug, PartialEq, vicocomo::ActiveRecord)]
     #[vicocomo_before_delete]
     #[vicocomo_before_save]
     pub struct SinglePk {
@@ -138,7 +172,6 @@ pub mod single_pk {
         #[vicocomo_required]
         #[vicocomo_unique = "uni-lbl"]
         pub name: Option<String>,
-        #[vicocomo_presence_validator]
         pub data: Option<f32>,
         #[vicocomo_optional]
         pub opt: Option<i32>,
@@ -208,6 +241,7 @@ pub fn empty_db(db: DatabaseIf) {
     let _ = db.clone().exec("DELETE FROM single_pks", &[]);
     let _ = db.clone().exec("DELETE FROM default_parents", &[]);
     let _ = db.clone().exec("DELETE FROM nonstandard_parents", &[]);
+    let _ = db.clone().exec("DELETE FROM randoms", &[]);
 }
 
 pub fn find_or_insert_default_parent(
@@ -294,7 +328,9 @@ pub fn multi_pk_templ(dp: &DefaultParent) -> MultiPk {
         // NonstandardParent with pk "bonus nonstandard" must not be deleted!
         bonus_parent: "bonus nonstandard".to_string(),
         date_mand: NaiveDate::from_num_days_from_ce_opt(0).unwrap(),
-        date_time_mand: NaiveDateTime::from_timestamp_opt(0, 0).unwrap(),
+        date_time_mand: DateTime::<Utc>::from_timestamp(0, 0)
+            .unwrap()
+            .naive_utc(),
         string_mand: String::new(),
         u32_mand: 0,
         u64_mand: 0,
@@ -314,7 +350,8 @@ pub fn reset_db(
     empty_db(db.clone());
     find_or_insert_default_parent(db.clone(), "default filler");
     let dp = find_or_insert_default_parent(db.clone(), "used default");
-    let bp = find_or_insert_nonstandard_parent(db.clone(), "bonus nonstandard");
+    let bp =
+        find_or_insert_nonstandard_parent(db.clone(), "bonus nonstandard");
     let np = find_or_insert_nonstandard_parent(db.clone(), "nonstandard");
     let mut m = multi_pk_templ(&dp);
     let mut m2 = m.clone();
@@ -355,12 +392,26 @@ pub fn setup(
 ) {
     assert!(db.clone().exec("DROP VIEW IF EXISTS views", &[]).is_ok());
     assert!(db.clone().exec("DROP TABLE IF EXISTS joins", &[]).is_ok());
-    assert!(db.clone().exec("DROP TABLE IF EXISTS multi_pks", &[]).is_ok());
-    assert!(db.clone().exec("DROP TABLE IF EXISTS default_parents", &[]).is_ok());
-    assert!(db.clone().exec("DROP TABLE IF EXISTS nonstandard_parents", &[]).is_ok());
+    assert!(db
+        .clone()
+        .exec("DROP TABLE IF EXISTS multi_pks", &[])
+        .is_ok());
+    assert!(db
+        .clone()
+        .exec("DROP TABLE IF EXISTS default_parents", &[])
+        .is_ok());
+    assert!(db
+        .clone()
+        .exec("DROP TABLE IF EXISTS nonstandard_parents", &[])
+        .is_ok());
     assert!(db.clone().exec("DROP TABLE IF EXISTS no_pks", &[]).is_ok());
-    assert!(db.clone().exec("DROP TABLE IF EXISTS single_pks", &[]).is_ok());
-    assert!(db.clone()
+    assert!(db
+        .clone()
+        .exec("DROP TABLE IF EXISTS single_pks", &[])
+        .is_ok());
+    assert!(db.clone().exec("DROP TABLE IF EXISTS randoms", &[]).is_ok());
+    assert!(db
+        .clone()
         .exec(
             &format!(
                 "CREATE TABLE default_parents(id {}, name  TEXT NOT NULL)",
@@ -369,16 +420,28 @@ pub fn setup(
             &[],
         )
         .is_ok());
-    assert!(db.clone()
+    assert!(db
+        .clone()
+        .exec(
+            "
+            CREATE TABLE randoms
+            (   id    BIGINT  PRIMARY KEY
+            ,   data  BIGINT  NOT NULL
+            )",
+            &[],
+        )
+        .is_ok());
+    assert!(db
+        .clone()
         .exec(
             &format!(
                 "
                 CREATE TABLE single_pks
                 (   id    {}
-                ,   name  TEXT     NOT NULL DEFAULT 'default'
+                ,   name  TEXT       NOT NULL DEFAULT 'default'
                 ,   data  FLOAT(53)
-                ,   opt   BIGINT   DEFAULT 4711
-                ,   un2   BIGINT   NOT NULL
+                ,   opt   BIGINT     NOT NULL DEFAULT 4711
+                ,   un2   BIGINT     NOT NULL
                 ,   UNIQUE(name, un2)
                 )",
                 auto_primary_sql,
@@ -386,31 +449,37 @@ pub fn setup(
             &[],
         )
         .is_ok());
-    assert!(db.clone()
+    assert!(db
+        .clone()
         .exec(
             "
             CREATE TABLE joins
             (   default_parent_id  BIGINT NOT NULL
                     REFERENCES default_parents ON DELETE CASCADE
+                    DEFERRABLE INITIALLY DEFERRED
             ,   single_pk_id       BIGINT NOT NULL
                     REFERENCES single_pks ON DELETE CASCADE
+                    DEFERRABLE INITIALLY DEFERRED
             ,   PRIMARY KEY(default_parent_id, single_pk_id)
             )",
             &[],
         )
         .is_ok());
-    assert!(db.clone()
+    assert!(db
+        .clone()
         .exec(
             "
             CREATE TABLE nonstandard_parents
             (   pk                     TEXT PRIMARY KEY
             ,   nonstandard_parent_id  TEXT
-                    REFERENCES nonstandard_parents ON DELETE RESTRICT
+                    REFERENCES nonstandard_parents
+                    DEFERRABLE INITIALLY DEFERRED
             )",
             &[],
         )
         .is_ok());
-    assert!(db.clone()
+    assert!(db
+        .clone()
         .exec(
             "
             CREATE TABLE multi_pks
@@ -426,10 +495,13 @@ pub fn setup(
             ,   i32_opt_nul        BIGINT DEFAULT 1
             ,   default_parent_id  BIGINT
                     REFERENCES default_parents ON DELETE CASCADE
+                    DEFERRABLE INITIALLY DEFERRED
             ,   other_parent_id    TEXT
                     REFERENCES nonstandard_parents ON DELETE SET NULL
+                    DEFERRABLE INITIALLY DEFERRED
             ,   bonus_parent      TEXT NOT NULL
-                    REFERENCES nonstandard_parents ON DELETE RESTRICT
+                    REFERENCES nonstandard_parents
+                    DEFERRABLE INITIALLY DEFERRED
             ,   date_mand          BIGINT NOT NULL
             ,   date_time_mand     BIGINT NOT NULL
             ,   string_mand        TEXT NOT NULL
@@ -441,10 +513,12 @@ pub fn setup(
             &[],
         )
         .is_ok());
-    assert!(db.clone()
+    assert!(db
+        .clone()
         .exec("CREATE TABLE no_pks(data BIGINT NOT NULL)", &[])
         .is_ok());
-    assert!(db.clone()
+    assert!(db
+        .clone()
         .exec(
             "
             CREATE VIEW views AS

@@ -1,76 +1,98 @@
-use crate::model::Model;
+use crate::model::{Model, OnNone};
 use proc_macro2::Span;
-use syn::{parse_quote, Expr, ItemFn, LitStr};
+use syn::{parse_quote, Expr, ItemFn, LitBool, LitStr};
 
 pub(crate) fn to_fro_sql_impl(model: &Model, trait_fn: &mut Vec<ItemFn>) {
-    let cols = model.cols().join(", ");
-    let insert_fmt = LitStr::new(
-        &format!(
-            "INSERT INTO {} ({}) VALUES {{}};",
-            &model.table_name, &cols
-        ),
-        Span::call_site(),
-    );
-    let delete_sql = LitStr::new(
-        &format!("DELETE FROM {};", &model.table_name),
-        Span::call_site(),
-    );
-    let fld_val: Vec<Expr> = model
-        .fields
-        .iter()
-        .map(|fld| {
+    let model_name =
+        LitStr::new(&model.struct_id.to_string(), Span::call_site());
+    let table = LitStr::new(&model.table_name, Span::call_site());
+    let readonly = LitBool::new(model.readonly, Span::call_site());
+    let mut col_name = Vec::new();
+    let mut db_type = Vec::new();
+    let mut field_value: Vec<Expr> = Vec::new();
+    for fld in &model.fields {
+        col_name.push(fld.col.clone());
+        db_type.push(fld.dbt.path());
+        field_value.push({
             let id = &fld.id;
-            if fld.opt {
-                // strip (one) option, it cannot be None after load()
+            let id_name = LitStr::new(&id.to_string(), Span::call_site());
+            if fld.onn == OnNone::Null {
                 parse_quote!({
-                    let db_val: ::vicocomo::DbValue =
-                        obj.#id.as_ref().unwrap().clone().into();
-                    db_val.sql_value()
+                    let dbv: ::vicocomo::DbValue = self.#id.clone().into();
+                    dbv
                 })
             } else {
-                parse_quote!({
-                    let db_val: ::vicocomo::DbValue = obj.#id.clone().into();
-                    db_val.sql_value()
-                })
+                // strip (one) option, error if None
+                parse_quote!(
+                    match self.#id.as_ref() {
+                        Some(val) => {
+                            let dbv: ::vicocomo::DbValue = val.clone().into();
+                            dbv
+                        }
+                        None => {
+                            return Err(::vicocomo::model_error!(
+                                Invalid,
+                                #model_name: "",
+                                #id_name: ["optional-value-required"],
+                            ));
+                        }
+                    }
+                )
             }
-        })
-        .collect();
+        });
+    }
 
     trait_fn.push(parse_quote!(
-        fn to_sql(
-            db: ::vicocomo::DatabaseIf,
-        ) -> Result<String, ::vicocomo::Error> {
-            //Ok(String::new())
-            Ok(format!(
-                #insert_fmt,
-                {
-                    let mut obj_vals = Vec::new();
-                    for obj in Self::load(db)?.iter() {
-                        obj_vals.push(format!(
-                            "({})",
-                            {
-                                let mut fld_vals = Vec::new();
-                            #(  fld_vals.push(#fld_val);)*
-                                fld_vals.join(", ")
-                            },
-                        ));
-                    }
-                    obj_vals.join(", ")
-                },
-            ))
+        fn col_type(col: &str) -> Option<::vicocomo::DbType> {
+            match col {
+            #(  #col_name => Some(#db_type), )*
+                _ => None,
+            }
         }
     ));
 
-    if !model.readonly {
-        trait_fn.push(parse_quote!(
-            fn try_from_sql(
-                db: ::vicocomo::DatabaseIf,
-                sql: &str,
-            ) -> Result<(), ::vicocomo::Error> {
-                db.clone().exec(#delete_sql, &[])?;
-                db.exec(sql, &[])?;
-                Ok(())
-            }
-        ));
-    }
+    trait_fn.push(parse_quote!(
+        fn columns() -> Vec<String> {
+            let mut result = Vec::new();
+        #(  result.push(#col_name.to_string()); )*
+            result
+        }
+    ));
+
+    trait_fn.push(parse_quote!(
+        fn readonly() -> bool {
+            #readonly
+        }
+    ));
+
+    trait_fn.push(parse_quote!(
+        fn table() -> String {
+            #table.to_string()
+        }
+    ));
+
+    /*
+    let fn_values: ItemFn = parse_quote!(
+        fn values(
+            &self,
+        ) -> Result<Vec<::vicocomo::DbValue>, ::vicocomo::Error> {
+
+            let mut result = Vec::new();
+        #(  result.push(#field_value); )*
+            Ok(result)
+        }
+    );
+    //eprintln!("{}", vicocomo_derive_utils::tokens_to_string(&fn_values));
+    trait_fn.push(fn_values);
+    */
+    trait_fn.push(parse_quote!(
+        fn values(
+            &self,
+        ) -> Result<Vec<::vicocomo::DbValue>, ::vicocomo::Error> {
+
+            let mut result = Vec::new();
+        #(  result.push(#field_value); )*
+            Ok(result)
+        }
+    ));
 }

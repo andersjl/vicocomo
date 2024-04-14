@@ -9,7 +9,9 @@ fn test_http_server_actix() {
     let timestamp = chrono::Utc::now().timestamp().to_string();
     fs::write(std::env::temp_dir().join("timestamp.txt"), &timestamp)
         .unwrap();
-    create_dir_all("examples/http_server/actix/public/txt");
+    create_dir_all(&std::path::Path::new(
+        "examples/http_server/actix/public/txt",
+    ));
     fs::write(
         "examples/http_server/actix/public/txt/timestamp.txt",
         &timestamp,
@@ -34,7 +36,7 @@ fn test_http_server_actix() {
         true,
         TestRequest::new("http://localhost:3000/test/home/42").no_redirect(),
         |r: &TestResponse| {
-            assert_eq!(r.status(), "302");
+            assert_eq!(r.status(), "303");
             assert_eq!(
                 r.redirect(),
                 "http://localhost:3000/test/home/redirect-from-42"
@@ -43,13 +45,14 @@ fn test_http_server_actix() {
         TestRequest::new("http://localhost:3000/test/home/42"),
         |r: &TestResponse| {
             assert_eq!(r.status(), "200", "\n{}\n", r.body());
+            assert_eq!(r.content_type(), "text/html; charset=utf-8");
             assert!(
                 Regex::new(
                     "<html>\
                         \\s*<head>\\s*<title>\\s*test\\s*</title>\\s*</head>\
                         \\s*<body>\
                             \\s*<div>\\s*head\\s*</div>\
-                            \\s*<div>\\s*hej\\s*&quot;hopp&quot;!\\s*</div>\
+                            \\s*<div>\\s*hej och &quot;hå&quot;!\\s*</div>\
                             \\s*<div>\\s* /home/redirect-from-42\\s*</div>\
                             \\s*<div>\\s*url: /test/home/redirect-from-42\\s*</div>\
                             \\s*<div>\\s*<a href=\"/test/static/txt/timestamp-\\d{10}.txt\">\\s*test file\\s*</a>\\s*</div>\
@@ -73,7 +76,7 @@ fn test_http_server_actix() {
                         \\s*<head>\\s*<title>\\s*test\\s*</title>\\s*</head>\
                         \\s*<body>\
                             \\s*<div>\\s*head\\s*</div>\
-                            \\s*<div>\\s*hej\\s*&quot;hopp&quot;!\\s*</div>\
+                            \\s*<div>\\s*hej och &quot;hå&quot;!\\s*</div>\
                             \\s*<div>\\s* /home/redirect\\s*</div>\
                             \\s*<div>\\s*url: /test/home/redirect\\?foo&#x3D;bar\\s*</div>\
                             \\s*<div>\\s*<a href=\"/test/static/txt/timestamp-\\d{10}.txt\">\\s*test file\\s*</a>\\s*</div>\
@@ -91,13 +94,12 @@ fn test_http_server_actix() {
         TestRequest::new("http://localhost:3000/test/dynamic")
             .data("foo", "a+b c"),
         |r: &TestResponse| {
-            assert_eq!(r.status(), "200", "\n{}\n", r.body());
+            assert_eq!(r.status(), "200", "\n{}\n", r.all());
             assert_eq!(
                 r.body(),
-                //"foo=a%2Bb+c\na+b c\n",
                 "/test/dynamic?foo=a%2Bb+c\na+b c\n",
-                "got\n{}\n",
-                r.body(),
+                "\n{}\n",
+                r.all(),
             );
         },
         TestRequest::new(
@@ -131,6 +133,16 @@ fn test_http_server_actix() {
         |r: &TestResponse| {
             assert_eq!(r.status(), "200", "\n{}\n", r.body());
             assert!(r.body() == "2022-01-01", "got\n{}\n", r.body());
+        },
+        TestRequest::new("http://localhost:3000/test/attach"),
+        |r: &TestResponse| {
+            assert_eq!(r.status(), "200", "\n{}\n", r.all());
+            assert_eq!(
+                r.header("content-disposition"),
+                Some(r#"attachment; filename="foo.txt""#),
+            );
+            assert_eq!(r.body(), "foo");
+            assert_eq!(r.content_type(), "text/plain; charset=utf-8");
         },
     );
 }

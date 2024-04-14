@@ -1,4 +1,4 @@
-use crate::model::{HasMany, Model};
+use crate::model::{HasMany, Model, OnNone};
 use ::syn::ItemFn;
 use ::vicocomo_derive_utils::*;
 
@@ -60,7 +60,9 @@ pub(crate) fn has_many_impl(
         let pk_id = &pk.id;
         let self_pk_none_err_expr =
             Model::field_none_err_expr(&struct_id, pk_id);
-        let self_pk_expr: Expr = if pk.opt {
+        let self_pk_expr: Expr = if pk.onn == OnNone::Null {
+            parse_quote!(self.#pk_id)
+        } else {
             parse_quote!(
                 match self.#pk_id {
                     Some(pk) => pk,
@@ -69,8 +71,6 @@ pub(crate) fn has_many_impl(
                     }
                 }
             )
-        } else {
-            parse_quote!(self.#pk_id)
         };
         let assoc_snake = assoc_name.to_snake();
         let connect_to_fn = format_ident!("connect_to_{}", assoc_snake);

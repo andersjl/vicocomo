@@ -1,13 +1,11 @@
 //! Structs and traits used to implement an HTTP server adapter with a
-//! `config` macro.
+//! `config` macro. For HTTP server adapter developers only!
 
-use super::{AppConfigVal, HttpStatus};
-use crate::{map_error, DatabaseIf, DbType, Error};
-use chrono::{Duration, Local, NaiveDateTime};
-use core::{
-    convert::TryFrom,
-    fmt::{self, Display, Formatter},
-};
+use super::{AppConfigVal, HttpReqBody, HttpResponse, HttpStatus};
+use crate::{map_error, t, DatabaseIf, DbType, Error};
+use chrono::{Local, NaiveDateTime, TimeDelta};
+use core::convert::TryFrom;
+use core::fmt::{self, Display, Formatter};
 use quote::format_ident;
 use rand::{thread_rng, Rng};
 use regex::Regex;
@@ -15,290 +13,74 @@ use serde_json::Value as JsonValue;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::OnceLock;
+use syn::parse::{Parse, ParseStream};
 use syn::{
-    braced, bracketed, parenthesized,
-    parse::{Parse, ParseStream},
-    parse_quote, token, Expr, Ident, LitBool, LitChar, LitFloat, LitInt,
-    LitStr, Path, Type,
+    braced, bracketed, parenthesized, parse_quote, token, Expr, Ident,
+    LitBool, LitChar, LitFloat, LitInt, LitStr, Path, Type,
 };
 use url::Url;
 use vicocomo_derive_utils::*;
 
-// --- HttpServer ------------------------------------------------------------
+// --- local macros ----------------------------------------------------------
 
-/// Everything Vicocomo needs from an HTTP server.
-///
-/// There is an example implementation for [`actix-web`
-/// ](https://crates.io/crates/actix-web) [here
-/// ](../../../vicocomo_actix/struct.AxServer.html).
-///
-pub trait HttpServer {
-    /// See [`HttpServerIf::app_config()`
-    /// ](../server/struct.HttpServerIf.html#method.app_config).
-    ///
-    fn app_config(&self, id: &str) -> Option<AppConfigVal>;
-
-    /// See [`HttpServerIf::param_val()`
-    /// ](../server/struct.HttpServerIf.html#method.param_val), but this one
-    /// returns a `String`.
-    ///
-    fn param_val(&self, name: &str) -> Option<String>;
-
-    /// All parameter values in the URL (get) or body (post) as a vector of
-    /// URL-decoded key-value pairs.
-    ///
-    fn param_vals(&self) -> Vec<(String, String)>;
-
-    /// prepend file_root if not starts with '/', strip mtime if strip_mtime
-    fn prepend_file_root(&self, file_path: &str) -> String {
-        lazy_static::lazy_static! {
-            static ref MTIME: Regex =
-                Regex::new(r"([^/]+)-\d{10}(\.[^/.]+)?$").unwrap();
+macro_rules! cav_from_value {
+    ($typ:ty, $variant:ident, $lit:ident) => {
+        impl From<$typ> for ConfigAttrVal {
+            fn from(val: $typ) -> Self {
+                Self::$variant(syn::$lit::new(
+                    val,
+                    proc_macro2::Span::call_site(),
+                ))
+            }
         }
-        let stripped =
-            if self.app_config("strip_mtime").unwrap().bool().unwrap()
-                && MTIME.is_match(file_path)
-            {
-                MTIME.replace(file_path, "$1$2")
-            } else {
-                file_path.into()
-            };
-        if stripped.starts_with('/') {
-            stripped.to_string()
-        } else {
-            self.app_config("file_root").unwrap().str().unwrap() + &stripped
-        }
-    }
-
-    /// prepend url_root if starts with '/'
-    fn prepend_url_root(&self, url_path: &str) -> String {
-        if url_path.starts_with('/') {
-            self.app_config("url_root").unwrap().str().unwrap() + url_path
-        } else {
-            url_path.to_string()
-        }
-    }
-
-    /// See [`HttpServerIf::req_path()`
-    /// ](../server/struct.HttpServerIf.html#method.req_path), but this one
-    /// <b>does not strip</b> the `url_root` [attribute](#level-1-app_config).
-    ///
-    fn req_path(&self) -> String;
-
-    /// See [`HttpServerIf::req_route_par_val()`
-    /// ](../server/struct.HttpServerIf.html#method.req_route_par_val), but
-    /// this one returns a `String`.
-    ///
-    fn req_route_par_val(&self, par: &str) -> Option<String>;
-
-    /// [`req_path()`](#tymethod.req_path) with [`url_root`
-    /// ](../server/struct.HttpServerIf.html#url_root) removed.
-    ///
-    fn req_path_impl(&self) -> String {
-        self.strip_url_root(&self.req_path())
-    }
-
-    /// See [`HttpServerIf::req_route_par_vals()`
-    /// ](../server/struct.HttpServerIf.html#method.req_route_par_vals).
-    ///
-    fn req_route_par_vals(&self) -> Vec<(String, String)>;
-
-    /// See [`HttpServerIf::req_body()`
-    /// ](../server/struct.HttpServerIf.html#method.req_body).
-    ///
-    fn req_body(&self) -> String;
-
-    /// See [`HttpServerIf::req_url()`
-    /// ](../server/struct.HttpServerIf.html#method.req_url).
-    ///
-    fn req_url(&self) -> String;
-
-    /// See [`HttpServerIf::resp_body()`
-    /// ](../server/struct.HttpServerIf.html#method.resp_body).
-    ///
-    fn resp_body(&self, txt: &str);
-
-    /// See [`HttpServerIf::resp_error()`
-    /// ](../server/struct.HttpServerIf.html#method.resp_error).
-    ///
-    fn resp_error(&self, status: HttpStatus, err: Option<&Error>);
-
-    /// Serve a static file, ignoring the body.
-    ///
-    /// `file_path` is the absolute path of the file if it starts with '`/`',
-    /// or relative to the HTTP server's working directory if it does not.
-    ///
-    fn resp_file(&self, file_path: &str);
-
-    /// See [`HttpServerIf::resp_file()`
-    /// ](../server/struct.HttpServerIf.html#method.resp_file).
-    ///
-    fn resp_file_impl(&self, file_path: &str) {
-        self.resp_file(&self.prepend_file_root(file_path))
-    }
-
-    /// See [`HttpServerIf::resp_ok()`
-    /// ](../server/struct.HttpServerIf.html#method.resp_ok).
-    ///
-    fn resp_ok(&self);
-
-    /// See [`HttpServerIf::resp_redirect()`
-    /// ](../server/struct.HttpServerIf.html#method.resp_redirect).
-    ///
-    fn resp_redirect(&self, url: &str);
-
-    /// See [`HttpServerIf::session_clear()`
-    /// ](../server/struct.HttpServerIf.html#method.session_clear).
-    ///
-    fn session_clear(&self);
-
-    /// See [`HttpServerIf::session_get()`
-    /// ](../server/struct.HttpServerIf.html#method.session_get), but the JSON
-    /// is not decoded.
-    ///
-    fn session_get(&self, key: &str) -> Option<String>;
-
-    /// See [`HttpServerIf::session_remove()`
-    /// ](../server/struct.HttpServerIf.html#method.session_remove).
-    ///
-    fn session_remove(&self, key: &str);
-
-    /// See [`HttpServerIf::session_set()`
-    /// ](../server/struct.HttpServerIf.html#method.session_set), but the
-    /// value is already JSON-serialized on entry.
-    ///
-    fn session_set(&self, key: &str, value: &str) -> Result<(), Error>;
-
-    /// Handle files routed by the `config` macro's [`route_static`
-    /// ](../server/struct.HttpServerIf.html#level-1-route_static) entries. If
-    /// the `app_config` attribute [`strip_mtime`
-    /// ](../server/struct.HttpServerIf.html#strip_mtime) is `true`, this is
-    /// needed to strip the mtime. If not, the use of this function is
-    /// optional.
-    ///
-    /// On entry, [`req_path()`
-    /// ](../server/struct.HttpServerIf.html#method.req_path) is required to
-    /// have the form `"<url_path>/<file>"` where `<url_path>` is the first
-    /// string in a [`route_static`
-    /// ](../server/struct.HttpServerIf.html#level-1-route_static) entry in
-    /// the `config` macro.
-    ///
-    /// First, tries to find  a file system directory by
-    /// [`url_path_to_dir_impl()`](#method.url_path_to_dir_impl). If not
-    /// found, [`resp_error()`](#tymethod.resp_error).
-    ///
-    /// Then, appends `file` to the directory and [`resp_file()`
-    /// ](#tymethod.resp_file).
-    ///
-    fn static_file_handler(&self) {
-        lazy_static::lazy_static! {
-            static ref SPLIT: Regex = Regex::new(r"/").unwrap();
-        }
-        let (url_path, file) = {
-            let orig_path = self.req_path_impl();
-            let mut pieces: Vec<&str> = SPLIT.split(&orig_path).collect();
-            let file = pieces.pop().unwrap();
-            (pieces.join("/").to_string(), file.to_string())
-        };
-        self.url_path_to_dir_impl(&url_path)
-            .map(|dir| self.resp_file_impl(&(dir + &file)))
-            .unwrap_or_else(|| {
-                self.resp_error(
-                    HttpStatus::NotFound,
-                    Some(&Error::this_cannot_happen("static-route-not-found")),
-                );
-            });
-    }
-
-    /// Strip file_root if at beginning
-    fn strip_file_root(&self, file_path: &str) -> String {
-        file_path
-            .strip_prefix(
-                &self.app_config("file_root").unwrap().str().unwrap(),
-            )
-            .map(|dir| dir.to_string())
-            .unwrap_or_else(|| file_path.to_string())
-    }
-
-    /// Strip url_root if at beginning
-    fn strip_url_root(&self, url_path: &str) -> String {
-        url_path
-            .strip_prefix(
-                &self.app_config("url_root").unwrap().str().unwrap(),
-            )
-            .map(|url| url.to_string())
-            .unwrap_or_else(|| url_path.to_string())
-    }
-
-    /// Map URL to file directory for serving static files as defined by the
-    /// `config` macro's [`route_static`
-    /// ](../server/struct.HttpServerIf.html#level-1-route_static) entries.
-    ///
-    /// `url_path` is the <b>absolute</b> URL, without [`url_root`
-    /// ](../server/struct.HttpServerIf.html#url_root). A missing leading
-    /// slash is inserted.
-    ///
-    /// The returned file system path is guaranteed to end with a slash. If it
-    /// starts with a slash it is absolute, if not it is relative to
-    /// [`file_root`](../server/struct.HttpServerIf.html#file_root).
-    ///
-    ///
-    fn url_path_to_dir_impl(&self, url_path: &str) -> Option<String> {
-        use crate::fix_slashes;
-        let url_path = fix_slashes(url_path, 1, -1);
-        self.url_path_to_dir(&self.prepend_url_root(&url_path))
-            .as_ref()
-            .map(|dir| fix_slashes(&self.strip_file_root(dir), 0, 1))
-    }
-
-    /// See [`url_path_to_dir_impl()`](#tymethod.url_path_to_dir_impl), but
-    /// - `url_path` includes [`url_root`
-    ///   ](../server/struct.HttpServerIf.html#url_root) and is guaranteed not
-    ///   to end with a slash, and
-    /// - the returned string includes [`file_root`
-    ///   ](../server/struct.HttpServerIf.html#file_root).
-    ///
-    fn url_path_to_dir(&self, url_path: &str) -> Option<String>;
+    };
 }
 
-// --- TemplEng --------------------------------------------------------------
+// collect values for the same key in a vector mapping both key and value
+// $key_value_pairs should evaluate to a slice &[(&str, &str)].
+// key_map and val_map should be the name of a function (&str) -> String.
+macro_rules! multi_val_map {
+    ($key_value_pairs:expr) => {
+        multi_val_map!($key_value_pairs, to_string, to_string)
+    };
+    ($key_value_pairs:expr, $key_map:ident) => {
+        multi_val_map!($key_value_pairs, $key_map, to_string)
+    };
+    ($key_value_pairs:expr, $key_map:ident, $val_map:ident) => {{
+        let mut result: HashMap<String, Vec<String>> = HashMap::new();
+        for (key, val) in $key_value_pairs.iter() {
+            let key = key.$key_map();
+            let val = val.$val_map();
+            match result.get_mut(&key) {
+                Some(vals) => vals.push(val),
+                None => {
+                    result.insert(key, vec![val]);
+                }
+            }
+        }
+        result
+    }};
+}
 
-/// Methods to render via a template engine.
-///
-pub trait TemplEng: Send + Sync {
-    /// Override this if you override [`register_templ_dir`
-    /// ](#method.register_templ_dir) to return `false` until the templates
-    /// directory has been registered.
-    ///
-    /// The provided method always returns `true`.
-    ///
-    #[allow(unused_variables)]
-    fn initialized(&self) -> bool {
-        true
-    }
-
-    /// Override if your implementation uses a template directory the path of
-    /// which is not available at initialization.
-    ///
-    /// `ext` is the template file extension, only files with that extension
-    /// should be registered.
-    ///
-    /// `path` is the path to a directory with template files.
-    ///
-    /// <b>Errors</b>
-    ///
-    /// The provided method always returns an error.
-    ///
-    #[allow(unused_variables)]
-    fn register_templ_dir(&self, path: &str, ext: &str) -> Result<(), Error> {
-        Err(Error::nyi())
-    }
-
-    /// Override to render.
-    ///
-    /// `data` is data for the template `tmpl` as `serde_json::Value`.
-    ///
-    fn render(&self, tmpl: &str, json: &JsonValue) -> Result<String, Error>;
+macro_rules! prepend_root {
+    // prepend file_root if not starts with '/'
+    (file $root:expr, $path:expr) => {
+        if ($path).starts_with('/') {
+            ($path).to_string()
+        } else {
+            ($root).to_string() + ($path)
+        }
+    };
+    // prepend url_root if starts with '/'
+    (url $root:expr, $path:expr) => {
+        if ($path).starts_with('/') {
+            ($root).to_string() + ($path)
+        } else {
+            ($path).to_string()
+        }
+    };
 }
 
 // --- Authorized ------------------------------------------------------------
@@ -386,25 +168,6 @@ pub struct Config {
     pub static_routes: Vec<(String, String)>,
 }
 
-macro_rules! prepend_root {
-    // prepend file_root if not starts with '/'
-    (file $root:expr, $path:expr) => {
-        if ($path).starts_with('/') {
-            ($path).to_string()
-        } else {
-            ($root).to_string() + ($path)
-        }
-    };
-    // prepend url_root if starts with '/'
-    (url $root:expr, $path:expr) => {
-        if ($path).starts_with('/') {
-            ($root).to_string() + ($path)
-        } else {
-            ($path).to_string()
-        }
-    };
-}
-
 impl Parse for Config {
     /// In addition to simple parsing, this function also implements rules as
     /// documented for [`HttpServerIf`
@@ -467,6 +230,8 @@ impl Parse for Config {
             }
         }
         let file_root = fix_root(&mut app_config, "file_root", 0, 1);
+        fix_root(&mut app_config, "data_dir", 0, 1);
+        fix_root(&mut app_config, "resource_dir", 0, 1);
         let role_type: Option<Type> = {
             let mut default = true;
             let mut role_type: Option<Type> = None;
@@ -559,6 +324,8 @@ impl Parse for Config {
                 ),
             );
         }
+
+        // - - texts configuration business rules  - - - - - - - - - - - - - -
 
         // - - handler defaults and business rules - - - - - - - - - - - - - -
 
@@ -730,7 +497,11 @@ impl ConfigAttrVal {
 
     // get_string() and then fix_slashes()
     fn get_fix_slashes(&self, lead: i32, trail: i32) -> syn::Result<String> {
-        Ok(crate::fix_slashes(&self.get_string()?, lead, trail))
+        Ok(ljumvall_utils::fix_slashes(
+            &self.get_string()?,
+            lead,
+            trail,
+        ))
     }
 
     /// Return the contained (Type, Expr) pair or an error.
@@ -831,19 +602,6 @@ impl Display for ConfigAttrVal {
     }
 }
 
-macro_rules! cav_from_value {
-    ($typ:ty, $variant:ident, $lit:ident) => {
-        impl From<$typ> for ConfigAttrVal {
-            fn from(val: $typ) -> Self {
-                Self::$variant(syn::$lit::new(
-                    val,
-                    proc_macro2::Span::call_site(),
-                ))
-            }
-        }
-    };
-}
-
 impl<T: Into<ConfigAttrVal>> From<Vec<T>> for ConfigAttrVal {
     fn from(arr: Vec<T>) -> Self {
         Self::Arr(arr.into_iter().map(|val| val.into()).collect())
@@ -856,89 +614,6 @@ cav_from_value! { char, Char, LitChar }
 impl From<&str> for ConfigAttrVal {
     fn from(s: &str) -> Self {
         Self::Str(LitStr::new(s, proc_macro2::Span::call_site()))
-    }
-}
-
-// --- HttpHandler -----------------------------------------------------------
-
-/// Information needed for implementing an HTTP server configuration macro
-/// using [`Config`](struct.Config.html).
-///
-#[derive(Clone, Debug)]
-pub struct HttpHandler {
-    /// If `Some`, defines access control for `route`, see [`Authorized`
-    /// ](struct.Authorized.html). If `None`, there is no access control.
-    pub authorized: Option<Authorized>,
-
-    /// controller method name.
-    pub contr_method: Ident,
-
-    /// The full rust path to the controller, e.g. `path::to::controller`.
-    pub contr_path: Path,
-
-    /// The full path to `contr_method` as a `String`, e.g.
-    /// `"path::to::controller::method"`.
-    pub call_string: String,
-
-    /// only tested for Get and Post.
-    ///
-    pub http_method: HttpMethod,
-
-    /// Route, possibly with path parameters in angle brackets. The
-    /// `app_config` attribute [`url_root`
-    /// ](../server/struct.HttpServerIf.html#url_root) is prepended if
-    /// defined. Use [`HttpServer::strip_url_root()`
-    /// ](trait.HttpServer.html#tymethod.strip_url_root) to get the relative
-    /// URL.
-    ///
-    pub route: String,
-
-    /// A Regex pattern to match `http_method` and `route` and capture the
-    /// route parameter values.
-    ///
-    /// Example: if `http_method` is `Get` and `route` is `/foo/<bar>/baz`,
-    /// the `pattern` will be `"get__/foo/([^/]+)/baz"`.
-    ///
-    pub pattern: String,
-
-    /// Route parameter names.
-    ///
-    pub route_par_names: Vec<LitStr>,
-}
-
-impl HttpHandler {
-    fn authorize(
-        &mut self,
-        authorizers: &[Authorizer],
-        role_type: &Type,
-    ) -> syn::Result<()> {
-        for auth in authorizers {
-            if auth.pattern.is_match(&self.route) {
-                if auth.roles == vec!["Public".to_string()] {
-                    return Ok(());
-                }
-                let mut allow: Vec<Expr> = auth
-                    .roles
-                    .iter()
-                    .map(|s| {
-                        let variant = format_ident!("{}", s);
-                        parse_quote!(#role_type::#variant)
-                    })
-                    .collect();
-                if !auth.roles.contains(&"Superuser".to_string()) {
-                    allow.push(parse_quote!(#role_type::Superuser));
-                }
-                self.authorized = Some(Authorized {
-                    allow,
-                    filter: auth.filter,
-                });
-                return Ok(());
-            }
-        }
-        Err(syn_error(&format!(
-            "no authorization for route {}",
-            self.route
-        )))
     }
 }
 
@@ -989,8 +664,6 @@ impl HttpDbSession {
         prune: i64,
         create_sql: Option<&str>,
     ) -> Result<Self, Error> {
-        use crate::t;
-
         if prune > 0 {
             let count = db
                 .clone()
@@ -1003,7 +676,8 @@ impl HttpDbSession {
             if count > 0 && thread_rng().gen_range(0..count) == 0 {
                 let _ = db.clone().exec(
                     DB_SESSION_PRUNE,
-                    &[(Self::now() - Duration::seconds(prune)).into()],
+                    &[(Self::now() - TimeDelta::try_seconds(prune).unwrap())
+                        .into()],
                 );
             }
         }
@@ -1055,7 +729,11 @@ impl HttpDbSession {
                 }
             }
         }
-        Ok(Self { db, id, cache: cache.unwrap() })
+        Ok(Self {
+            db,
+            id,
+            cache: cache.unwrap(),
+        })
     }
 
     /// Clear session data with [`id`](#method.id) from the database and the
@@ -1118,9 +796,106 @@ impl HttpDbSession {
     }
 }
 
+// --- HttpHandler -----------------------------------------------------------
+
+/// Information needed for implementing an HTTP server configuration macro
+/// using [`Config`](struct.Config.html).
+///
+#[derive(Clone, Debug)]
+pub struct HttpHandler {
+    /// If `Some`, defines access control for `route`, see [`Authorized`
+    /// ](struct.Authorized.html). If `None`, there is no access control.
+    ///
+    pub authorized: Option<Authorized>,
+
+    /// controller method name.
+    ///
+    pub contr_method: Ident,
+
+    /// The full rust path to the controller, e.g. `path::to::controller`.
+    ///
+    pub contr_path: Path,
+
+    /// The full path to `contr_method` as a `String`, e.g.
+    /// `"path::to::controller::method"`.
+    ///
+    pub call_string: String,
+
+    /// Only tested for Get and Post.
+    ///
+    /// Guaranteed to never be HttpMethod::None.
+    ///
+    pub http_method: HttpMethod,
+
+    /// Route, possibly with path parameters in angle brackets. The
+    /// `app_config` attribute [`url_root`
+    /// ](../server/struct.HttpServerIf.html#url_root) is prepended if
+    /// defined. Use [`HttpServerIf::strip_url_root()`
+    /// ](struct.HttpServerIf.html#tymethod.strip_url_root) to get the
+    /// relative URL.
+    ///
+    pub route: String,
+
+    /// A Regex pattern to match `http_method` and `route` and capture the
+    /// route parameter values.
+    ///
+    /// Example: if `http_method` is `Get` and `route` is `/foo/<bar>/baz`,
+    /// the `pattern` will be `"get__/foo/([^/]+)/baz"`.
+    ///
+    pub pattern: String,
+
+    /// Route parameter names.
+    ///
+    pub route_par_names: Vec<LitStr>,
+
+    /// If Some("field") the handler should expect a `multipart/form-data`
+    /// containing files to upload, see [`HttpServerIf`
+    /// ](../server/struct.HttpServerIf.html#file-upload).
+    ///
+    pub upload: Option<String>,
+}
+
+impl HttpHandler {
+    fn authorize(
+        &mut self,
+        authorizers: &[Authorizer],
+        role_type: &Type,
+    ) -> syn::Result<()> {
+        for auth in authorizers {
+            if auth.pattern.is_match(&self.route) {
+                if auth.roles == vec!["Public".to_string()] {
+                    return Ok(());
+                }
+                let mut allow: Vec<Expr> = auth
+                    .roles
+                    .iter()
+                    .map(|s| {
+                        let variant = format_ident!("{}", s);
+                        parse_quote!(#role_type::#variant)
+                    })
+                    .collect();
+                if !auth.roles.contains(&"Superuser".to_string()) {
+                    allow.push(parse_quote!(#role_type::Superuser));
+                }
+                self.authorized = Some(Authorized {
+                    allow,
+                    filter: auth.filter,
+                });
+                return Ok(());
+            }
+        }
+        Err(syn_error(&format!(
+            "no authorization for route {}",
+            self.route
+        )))
+    }
+}
+
 // --- HttpMethod ------------------------------------------------------------
 
 /// A simple enum with the official methods.
+///
+/// HttpMethod::None is only for internal use by `ConfigItem::parse()`.
 ///
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Hash)]
 pub enum HttpMethod {
@@ -1128,6 +903,7 @@ pub enum HttpMethod {
     Delete,
     Get,
     Head,
+    None,
     Options,
     Patch,
     Post,
@@ -1147,6 +923,7 @@ impl Display for HttpMethod {
                 Self::Delete => "delete",
                 Self::Get => "get",
                 Self::Head => "head",
+                Self::None => "none",
                 Self::Options => "options",
                 Self::Patch => "patch",
                 Self::Post => "post",
@@ -1175,6 +952,13 @@ impl TryFrom<&str> for HttpMethod {
     }
 }
 
+impl TryFrom<String> for HttpMethod {
+    type Error = Error;
+    fn try_from(s: String) -> Result<Self, Error> {
+        Self::try_from(s.as_str())
+    }
+}
+
 // --- HttpParamVals ---------------------------------------------------------
 
 /// Facilitates implementing [`HttpServer`](trait.HttpServer.html), see e.g.
@@ -1188,59 +972,47 @@ impl HttpParamVals {
         Self(HashMap::new())
     }
 
-    /// Empty string(s) is OK
-    pub fn from_request(req_body: &str, req_query: &str) -> Self {
-        let mut result = Self::new();
-        result.set_request(req_body, req_query);
-        result
-    }
-
+    /// If Some(vec) vec is never empty
     pub fn get(&self, name: &str) -> Option<&Vec<String>> {
         self.0.get(name)
     }
 
-    /// Empty string(s) is OK
-    pub fn set_request(&mut self, req_body: &str, req_query: &str) {
-        use lazy_static::lazy_static;
+    /// Empty string(s) is OK. `body_par_string` should only contain
+    /// `parameters=value` pairs, e.g. generated from the body by
+    /// [`HttpServer::body_par_string()`
+    /// ](trait.HttpServer.html#method.body_par_string)
+    ///
+    pub fn set_request(&mut self, body_par_string: &str, req_query: &str) {
+        static QUERY: OnceLock<Regex> = OnceLock::new();
+        let query = QUERY.get_or_init(|| {
+            Regex::new(r"([^&=]+=[^&=]+&)*[^&=]+=[^&=]+").unwrap()
+        });
 
-        lazy_static! {
-            static ref QUERY: Regex =
-                Regex::new(r"([^&=]+=[^&=]+&)*[^&=]+=[^&=]+").unwrap();
-        }
-
-        let mut param_vals: HashMap<String, Vec<String>> = HashMap::new();
-        let body_vals = QUERY
-            .captures(&req_body)
+        let body_vals = query
+            .captures(body_par_string)
             .and_then(|c| c.get(0))
-            .and_then(|m| HttpRequest::decode_url_parameter(m.as_str()).ok());
-        let uri_vals = HttpRequest::decode_url_parameter(req_query).ok();
-        for key_value in match uri_vals {
+            .and_then(|m| decode_url_parameter(m.as_str()).ok());
+        let uri_vals = decode_url_parameter(req_query).ok();
+        let mut param_vals = Vec::new();
+        let par_string = match uri_vals {
             Some(u) => match body_vals {
                 Some(b) => u + "&" + b.as_ref(),
                 None => u,
             },
             None => body_vals.unwrap_or_else(|| String::new()),
-        }
-        .split('&')
-        {
+        };
+        for key_value in par_string.split('&') {
             if key_value.len() == 0 {
                 continue;
             }
             let mut k_v = key_value.split('=');
-            let key = k_v.next().unwrap();
-            let val = k_v.next().unwrap_or("");
-            match param_vals.get_mut(key) {
-                Some(vals) => vals.push(val.to_string()),
-                None => {
-                    param_vals.insert(key.to_string(), vec![val.to_string()]);
-                }
-            }
+            param_vals.push((k_v.next().unwrap(), k_v.next().unwrap_or("")));
         }
-        self.0 = param_vals;
+        self.0 = multi_val_map!(param_vals.as_slice());
     }
 
     pub fn vals(&self) -> Vec<(String, String)> {
-        let mut result: Vec<(String, String)> = Vec::new();
+        let mut result = Vec::new();
         for (key, vals) in &self.0 {
             for val in vals {
                 result.push((key.clone(), val.clone()));
@@ -1252,101 +1024,373 @@ impl HttpParamVals {
 
 // --- HttpRequest -----------------------------------------------------------
 
-/// Helper functions for handling an HTTP request.
+/// Everything Vicocomo needs from an HTTP server that depends on the current
+/// request.
 ///
-pub struct HttpRequest;
-
-impl HttpRequest {
-    /// Change `"+"` to `"%20"`, then [`urlencoding::decode()`
-    /// ](https://docs.rs/urlencoding/latest/urlencoding/fn.decode.html).
+/// There is an example implementation for [`actix-web`
+/// ](https://crates.io/crates/actix-web) [here
+/// ](../../../vicocomo_actix/struct.AxRequest.html).
+///
+pub trait HttpRequest<'req> {
+    /// Returns the body as a `String` if no
+    /// `Content-Type: multipart/form-data` header is present and the body is
+    /// an UTF8 string.
     ///
-    pub fn decode_url_parameter(par: &str) -> Result<String, Error> {
-        lazy_static::lazy_static! {
-            static ref PLUS: Regex = Regex::new(r"\+").unwrap();
+    fn body_par_string(&self) -> String {
+        let body = self.body();
+        if self
+            .header("content-type")
+            .map(|h| h.starts_with("multipart/form-data;"))
+            .unwrap_or(false)
+        {
+            String::new()
+        } else {
+            String::from_utf8_lossy(body.bytes).to_string()
         }
-        urlencoding::decode(&PLUS.replace_all(par, "%20"))
-            .map(|s| s.to_string())
-            .map_err(|e| Error::invalid_input(&e.to_string()))
     }
+
+    /// The HTTP method of the request.
+    ///
+    fn http_method(&self) -> HttpMethod;
+
+    /// See [`HttpServerIf::param_val()`
+    /// ](../server/struct.HttpServerIf.html#method.param_val), but this one
+    /// always returns a `String`.
+    ///
+    fn param_val(&self, name: &str) -> Option<String>;
+
+    /// All parameter values in the URL (get) or body (post) as a vector of
+    /// URL-decoded key-value pairs.
+    ///
+    fn param_vals(&self) -> Vec<(String, String)>;
+
+    /// The request body.
+    ///
+    fn body(&self) -> HttpReqBody<'req>;
+
+    /// See [`HttpServerIf::req_header()`
+    /// ](../server/struct.HttpServerIf.html#method.req_header).
+    ///
+    fn header(&self, name: &str) -> Option<String>;
+
+    /// See [`HttpServerIf::req_path()`
+    /// ](../server/struct.HttpServerIf.html#method.req_path), but this one
+    /// <b>does not strip</b> the `url_root` [attribute](#level-1-app_config).
+    ///
+    fn path(&self) -> String;
+
+    /// See [`HttpServerIf::req_route_par_val()`
+    /// ](../server/struct.HttpServerIf.html#method.req_route_par_val), but
+    /// this one returns a `String`.
+    ///
+    fn route_par_val(&self, par: &str) -> Option<String>;
+
+    /// See [`HttpServerIf::req_route_par_vals()`
+    /// ](../server/struct.HttpServerIf.html#method.req_route_par_vals).
+    ///
+    fn route_par_vals(&self) -> Vec<(String, String)>;
+
+    /// See [`HttpServerIf::req_url()`
+    /// ](../server/struct.HttpServerIf.html#method.req_url).
+    ///
+    fn url(&self) -> String;
 }
 
-// --- HttpResponse ----------------------------------------------------------
+// --- HttpRequestImpl -------------------------------------------------------
 
-/// Facilitates implementing [`HttpServer`](trait.HttpServer.html), see e.g.
+/// A default implementation of [`HttpRequest`](trait.HttpRequest.html).
+///
+/// Primarily intended for cases where there is no better alternative, see
+/// e.g. [`vicocomo_tauri`](../../../vicocomo_tauri/index.html). Generally
+/// *not* useful when writing an HTTP server adapter, see e.g.
 /// [`vicocomo_actix`](../../../vicocomo_actix/index.html).
 ///
-#[derive(Clone, Debug, Default)]
-pub struct HttpResponse {
-    pub status: HttpResponseStatus,
-    pub text: String,
+#[derive(Debug)]
+pub struct HttpRequestImpl<'req> {
+    handler: String,
+    headers: HashMap<String, Vec<String>>,
+    method: HttpMethod,
+    param_vals: HttpParamVals,
+    body: HttpReqBody<'req>,
+    url: Url,
+    route_pars: Vec<(String, String)>,
 }
 
-impl HttpResponse {
-    pub fn new() -> Self {
-        Self {
-            status: HttpResponseStatus::NoResponse,
-            text: String::new(),
+impl<'req> HttpRequestImpl<'req> {
+    /// Create from the received `method`, `url`, `headers`, and `body`.
+    ///
+    pub fn new(
+        method: HttpMethod,
+        url: &Url,
+        headers: &[(&str, &str)],
+        body: HttpReqBody<'req>,
+        targets: &[HttpRouteTarget],
+    ) -> Result<Self, Error> {
+        let mut route_pars = Vec::new();
+        let route = format!("{method}__{}", url.path());
+        let mut parameter_error: Option<String> = None;
+        targets
+            .iter()
+            .find(|t| {
+                t.pattern
+                    .captures(&route)
+                    .map(|vals| {
+                        let mut vals = vals.iter();
+                        vals.next(); // skip match of entire URL path
+                        for (nam, val) in t
+                            .route_par_names
+                            .iter()
+                            .zip(vals.map(|val| val.unwrap().as_str()))
+                        {
+                            route_pars.push((
+                                nam.clone(),
+                                decode_url_parameter(val).unwrap_or_else(|e| {
+                                    parameter_error = Some(
+                                        e.to_string() + ": " + val
+                                    );
+                                    String::new()
+                                })
+                            ));
+                        }
+                        parameter_error.is_none()
+                    })
+                    .unwrap_or(false)
+            })
+            .map(|t| {
+                let mut result = Self {
+                    handler: t.target.clone(),
+                    headers: multi_val_map!(headers, to_lowercase),
+                    method,
+                    param_vals: HttpParamVals::new(),
+                    body: body,
+                    url: url.clone(),
+                    route_pars,
+                };
+                result.param_vals.set_request(
+                    &result.body_par_string(),
+                    url.query().unwrap_or(""),
+                );
+                result
+            })
+            .ok_or_else(|| Error::InvalidInput(
+                parameter_error.unwrap_or("route-not-found".to_string())
+            ))
+    }
+
+    /// Return the handler created by [`new()`](#method.new).
+    ///
+    /// The returned value is of the form `"path::to::controller::method"`.
+    ///
+    pub fn handler(&'req self) -> &'req str {
+        self.handler.as_str()
+    }
+
+    /// Find out if `url` is `localhost` or `127.0.0.x` or `::1`.
+    ///
+    pub fn is_loopback(url: &Url) -> bool {
+        fn is_lb(addr: std::net::IpAddr) -> bool {
+            addr.is_loopback()
         }
-    }
-
-    pub fn set_body(&mut self, text: &str) {
-        self.text = text.to_string();
-    }
-
-    pub fn clear(&mut self) {
-        self.status = HttpResponseStatus::NoResponse;
-        self.text.clear();
-    }
-
-    pub fn error(&mut self, status: HttpStatus, err: Option<&Error>) {
-        use crate::t;
-
-        self.status = HttpResponseStatus::Error(status);
-        self.text = format!(
-            "{}: {}",
-            t!(&status.to_string()),
-            match err {
-                Some(e) => e.to_string(),
-                None => "Unknown".to_string(),
-            }
-        );
-    }
-
-    pub fn file(&mut self, path: &str) {
-        self.status = HttpResponseStatus::File;
-        self.text = path.to_string();
-    }
-
-    pub fn http_status(&self) -> HttpStatus {
-        match self.status {
-            HttpResponseStatus::Error(s) => s,
-            HttpResponseStatus::File => HttpStatus::Ok,
-            HttpResponseStatus::NoResponse => HttpStatus::BadRequest,
-            HttpResponseStatus::Ok => HttpStatus::Ok,
-            HttpResponseStatus::Redirect => HttpStatus::SeeOther,
+        if let Some(host) = url.host() {
+            return match host {
+                url::Host::Domain(host) => host == "localhost",
+                url::Host::Ipv4(ipv4_addr) => is_lb(ipv4_addr.into()),
+                url::Host::Ipv6(ipv6_addr) => is_lb(ipv6_addr.into()),
+            };
         }
-    }
-
-    pub fn ok(&mut self) {
-        self.status = HttpResponseStatus::Ok;
-    }
-
-    pub fn redirect(&mut self, url: &str) {
-        self.status = HttpResponseStatus::Redirect;
-        self.text = url.to_string();
+        true
     }
 }
 
-/// See [`HttpResponse`](struct.HttpResponse.html).
+impl<'req> HttpRequest<'req> for HttpRequestImpl<'req> {
+    fn http_method(&self) -> HttpMethod {
+        self.method
+    }
+
+    fn param_val(&self, name: &str) -> Option<String> {
+        self.param_vals.get(name).map(|vec| vec[0].clone())
+    }
+
+    fn param_vals(&self) -> Vec<(String, String)> {
+        self.param_vals.vals()
+    }
+
+    fn body(&self) -> HttpReqBody<'req> {
+        self.body.clone()
+    }
+
+    fn header(&self, name: &str) -> Option<String> {
+        self.headers
+            .get(&name.to_lowercase())
+            .map(|vec| vec[0].clone())
+    }
+
+    fn path(&self) -> String {
+        self.url.path().to_string()
+    }
+
+    fn route_par_val(&self, par: &str) -> Option<String> {
+        self.route_pars
+            .iter()
+            .find(|(nam, _)| nam == par)
+            .map(|(_, val)| val.clone())
+    }
+
+    fn route_par_vals(&self) -> Vec<(String, String)> {
+        self.route_pars.clone()
+    }
+
+    fn url(&self) -> String {
+        self.url.to_string()
+    }
+}
+
+// --- HttpRespBody ----------------------------------------------------------
+
+/// An interface for the HTTP server to access the response body.
 ///
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum HttpResponseStatus {
-    Error(HttpStatus),
-    File,
-    #[default]
-    NoResponse,
-    Ok,
-    Redirect,
+#[derive(Clone, Debug, PartialEq)]
+pub enum HttpRespBody {
+    Bytes(Vec<u8>),
+
+    /// The "body" is the path to a file, the contents of which should be the
+    /// response body.
+    ///
+    /// If the path starts with "/" it is an absolute path in the HTTP
+    /// server's file system. If not, it is relative to the HTTP server's
+    /// working directory
+    ///
+    Download(PathBuf),
+
+    Str(String),
+
+    /// An empty response body.
+    ///
+    None,
+}
+
+impl Display for HttpRespBody {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            Self::Bytes(b) => {
+                let s: String;
+                write!(
+                    f,
+                    "{}",
+                    match std::str::from_utf8(b) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            s = e.to_string();
+                            s.as_str()
+                        }
+                    },
+                )
+            }
+            Self::Download(p) => {
+                write!(f, "cannot display contents of {}", p.display())
+            }
+            Self::Str(s) => write!(f, "{}", s),
+            Self::None => write!(f, ""),
+        }
+    }
+}
+
+// --- HttpRouteTarget -------------------------------------------------------
+
+/// A data structure created by [`HttpServerImpl::build_expr()`
+/// ](struct.HttpServerImpl.html#method.build_expr) and used by
+/// [`HttpRequestImpl::new()`](struct.HttpRequestImpl.html#method.new) to look
+/// up the [`handler()`](struct.HttpRequestImpl.html#method.handler) and set
+/// the values of the route parameters for
+/// [`HttpRequestImpl::route_par_val()`
+/// ](struct.HttpRequestImpl.html#method.route_par_val) and
+/// [`HttpRequestImpl::route_par_vals()`
+/// ](struct.HttpRequestImpl.html#method.route_par_vals).
+///
+#[derive(Debug)]
+pub struct HttpRouteTarget {
+    // from HttpHandler.pattern
+    pattern: Regex,
+    // the names of the route parameters
+    route_par_names: Vec<String>,
+    // the Rust path of the handler as a string
+    target: String,
+}
+
+impl HttpRouteTarget {
+    fn new(
+        pattern: &str,
+        par_nams: &[&str],
+        target: &str,
+    ) -> Result<Self, Error> {
+        Ok(Self {
+            pattern: map_error!(
+                Other,
+                Regex::new((String::from("^") + pattern + "$").as_str(),)
+            )?,
+            route_par_names: par_nams.iter().map(|n| n.to_string()).collect(),
+            target: target.to_string(),
+        })
+    }
+}
+
+// --- HttpServer ------------------------------------------------------------
+
+/// Everything Vicocomo needs from an HTTP server that does not depend on the
+/// current request.
+///
+/// There is an example implementation for [`actix-web`
+/// ](https://crates.io/crates/actix-web) [here
+/// ](../../../vicocomo_actix/struct.AxServer.html).
+///
+pub trait HttpServer {
+    /// See [`HttpServerIf::app_config()`
+    /// ](../server/struct.HttpServerIf.html#method.app_config).
+    ///
+    fn app_config(&self, id: &str) -> Option<AppConfigVal>;
+
+    /// See [`HttpServerIf::handle_upload()`
+    /// ](../server/struct.HttpServerIf.html#method.handle_upload).
+    ///
+    fn handle_upload(
+        &self,
+        files: &[Option<&std::path::Path>],
+    ) -> Result<(), Error>;
+
+    /// See [`HttpServerIf::session_clear()`
+    /// ](../server/struct.HttpServerIf.html#method.session_clear).
+    ///
+    fn session_clear(&self);
+
+    /// See [`HttpServerIf::session_get()`
+    /// ](../server/struct.HttpServerIf.html#method.session_get), but the JSON
+    /// is not decoded.
+    ///
+    fn session_get(&self, key: &str) -> Option<String>;
+
+    /// See [`HttpServerIf::session_remove()`
+    /// ](../server/struct.HttpServerIf.html#method.session_remove).
+    ///
+    fn session_remove(&self, key: &str);
+
+    /// See [`HttpServerIf::session_set()`
+    /// ](../server/struct.HttpServerIf.html#method.session_set), but the
+    /// value is already JSON-serialized on entry.
+    ///
+    fn session_set(&self, key: &str, value: &str) -> Result<(), Error>;
+
+    /// Map URL to file directory for serving static files as defined by the
+    /// `config` macro's [`route_static`
+    /// ](../server/struct.HttpServerIf.html#level-1-route_static) entries.
+    ///
+    /// `url_path` is the <b>absolute</b> URL, including [`url_root`
+    /// ](../server/struct.HttpServerIf.html#url_root) and is guaranteed not
+    /// to end with a slash.
+    ///
+    /// The returned file system path is guaranteed to end with a slash, and
+    /// includes [`file_root`](../server/struct.HttpServerIf.html#file_root).
+    ///
+    fn url_path_to_dir(&self, url_path: &str) -> Option<String>;
 }
 
 // --- HttpServerImpl --------------------------------------------------------
@@ -1358,18 +1402,15 @@ pub enum HttpResponseStatus {
 /// *not* useful when writing an HTTP server adapter, see e.g.
 /// [`vicocomo_actix`](../../../vicocomo_actix/index.html).
 ///
+/// There is always a session, but unless you give a database connection to
+/// [`build_expr()`](#method.build_expr) it will only live as long as this
+/// instance.
+///
 pub struct HttpServerImpl {
-    // - - set by the expression returned by build_expr(), never changed - - -
     app_config: HashMap<String, AppConfigVal>,
-    targets: Vec<HttpRouteTarget>,
-    static_routes: HashMap<String, String>,
     session: RefCell<HttpSession>,
-    // - - set by receive()  - - - - - - - - - - - - - - - - - - - - - - - - -
-    req_url: Url,
-    route_pars: Vec<(String, String)>,
-    req_body: String,
-    param_vals: HttpParamVals,
-    response: RefCell<HttpResponse>,
+    static_routes: HashMap<String, String>,
+    targets: Vec<HttpRouteTarget>,
 }
 
 impl HttpServerImpl {
@@ -1417,7 +1458,8 @@ impl HttpServerImpl {
             let dir_lit = LitStr::new(&dir, Span::call_site());
             static_dir.push(dir_lit.clone());
         }
-        let persistent: Expr = if db.as_ref().map(|_| true).unwrap_or(false) {
+        let session_expr: Expr = if db.as_ref().map(|_| true).unwrap_or(false)
+        {
             let db = db.unwrap();
             let secs = config
                 .app_config
@@ -1442,89 +1484,39 @@ impl HttpServerImpl {
                 )
             )
         } else {
-            parse_quote!(())
+            parse_quote!(server.set_session(
+                ::vicocomo::HttpSession::new(None, 0)
+                    .expect("cannot create HttpDbSession"),
+            ))
         };
         parse_quote!({
             let mut server = ::vicocomo::HttpServerImpl::new();
         #(  server.add_cfg(#config_attr, #config_val); )*
         #(  server.add_tgt(#pattern, &#params, #target).unwrap(); )*
         #(  server.add_static(#static_url, #static_dir); )*
-            #persistent;
+            #session_expr;
             server
         })
     }
 
     /// Create an HTTP 404 response.
     ///
-    pub fn not_found(&self, http_method: &str, url: &Url) {
-        self.resp_error(
-            HttpStatus::NotFound,
-            Some(&Error::from(
-                format!("{}--{}", http_method, url.path()).as_str(),
+    #[rustfmt::skip]
+    pub fn not_found(&self, method: HttpMethod, url: &Url) -> HttpResponse {
+eprintln!("{}", Error::from(format!("not found: {}--{}", method, url.path()).as_str()));
+        HttpResponse::error(
+            Some(HttpStatus::NotFound),
+            None,
+            Some(Error::from(
+                format!("{}--{}", method, url.path()).as_str(),
             )),
-        );
+        )
     }
 
-    /// Find out if `url` is `localhost` or `127.0.0.x` or `::1`.
+    /// Return a list of [targets](struct.HttpRouteTarget.html).
     ///
-    pub fn is_loopback(url: &Url) -> bool {
-        fn is_lb(addr: std::net::IpAddr) -> bool {
-            addr.is_loopback()
-        }
-        if let Some(host) = url.host() {
-            return match host {
-                url::Host::Domain(host) => host == "localhost",
-                url::Host::Ipv4(ipv4_addr) => is_lb(ipv4_addr.into()),
-                url::Host::Ipv6(ipv6_addr) => is_lb(ipv6_addr.into()),
-            };
-        }
-        true
-    }
-
-    /// Reset state from the received `body` and `url`.
-    ///
-    /// On success, the return value is `Ok("path::to::controller::method")`.
-    ///
-    pub fn receive(
-        &mut self,
-        method: &str,
-        url: &Url,
-        body: &str,
-    ) -> Result<String, Error> {
-        self.route_pars.clear();
-        self.req_url = url.clone();
-        self.req_body = body.to_string();
-        self.param_vals.set_request(body, url.query().unwrap_or(""));
-        self.response.borrow_mut().clear();
-        let route = format!("{}__{}", method, url.path());
-        self.targets
-            .iter()
-            .find(|t| {
-                t.pattern
-                    .captures(&route)
-                    .map(|vals| {
-                        let mut vals = vals.iter();
-                        vals.next(); // skip match of entire URL path
-                        for (nam, val) in t
-                            .route_par_names
-                            .iter()
-                            .zip(vals.map(|val| val.unwrap().as_str()))
-                        {
-                            self.route_pars
-                                .push((nam.clone(), val.to_string()));
-                        }
-                        true
-                    })
-                    .unwrap_or(false)
-            })
-            .map(|t| t.target.clone())
-            .ok_or_else(|| Error::other(""))
-    }
-
-    /// Return and reset the response.
-    ///
-    pub fn response(&self) -> HttpResponse {
-        self.response.take()
+    pub fn targets<'srv>(&'srv self) -> &'srv [HttpRouteTarget] {
+        self.targets.as_slice()
     }
 
     // - - intended for internal use by the code generated by build_expr() - -
@@ -1533,14 +1525,9 @@ impl HttpServerImpl {
     pub fn new() -> Self {
         Self {
             app_config: HashMap::new(),
-            targets: Vec::new(),
-            static_routes: HashMap::new(),
             session: HttpSession::new(None, 0).unwrap().into(),
-            req_url: Url::parse("http://localhost").unwrap(),
-            route_pars: Vec::new(),
-            req_body: String::new(),
-            param_vals: HttpParamVals::new(),
-            response: HttpResponse::new().into(),
+            static_routes: HashMap::new(),
+            targets: Vec::new(),
         }
     }
 
@@ -1567,7 +1554,7 @@ impl HttpServerImpl {
 
     #[doc(hidden)]
     pub fn set_session(&mut self, session: HttpSession) {
-        self.session = RefCell::new(session);
+        self.session = session.into();
     }
 }
 
@@ -1576,55 +1563,11 @@ impl HttpServer for HttpServerImpl {
         self.app_config.get(id).cloned()
     }
 
-    fn param_val(&self, name: &str) -> Option<String> {
-        self.param_vals.get(name).map(|v| v[0].clone())
-    }
-
-    fn param_vals(&self) -> Vec<(String, String)> {
-        self.param_vals.vals()
-    }
-
-    fn req_path(&self) -> String {
-        self.req_url.path().to_string()
-    }
-
-    fn req_route_par_val(&self, par: &str) -> Option<String> {
-        self.route_pars
-            .iter()
-            .find(|(nam, _)| nam == par)
-            .map(|(_, val)| val.clone())
-    }
-
-    fn req_route_par_vals(&self) -> Vec<(String, String)> {
-        self.route_pars.clone()
-    }
-
-    fn req_body(&self) -> String {
-        self.req_body.clone()
-    }
-
-    fn req_url(&self) -> String {
-        self.req_url.to_string()
-    }
-
-    fn resp_body(&self, txt: &str) {
-        self.response.borrow_mut().set_body(txt);
-    }
-
-    fn resp_error(&self, status: HttpStatus, err: Option<&Error>) {
-        self.response.borrow_mut().error(status, err);
-    }
-
-    fn resp_file(&self, file_path: &str) {
-        self.response.borrow_mut().file(file_path);
-    }
-
-    fn resp_ok(&self) {
-        self.response.borrow_mut().ok();
-    }
-
-    fn resp_redirect(&self, url: &str) {
-        self.response.borrow_mut().redirect(url);
+    fn handle_upload(
+        &self,
+        _files: &[Option<&std::path::Path>],
+    ) -> Result<(), Error> {
+        Err(Error::nyi())
     }
 
     fn session_clear(&self) {
@@ -1666,6 +1609,69 @@ impl TemplEng for NullTemplEng {
     }
 }
 
+// --- TemplEng --------------------------------------------------------------
+
+/// Methods to render via a template engine.
+///
+pub trait TemplEng: Send + Sync {
+    /// Override this if you override [`register_templ_dir`
+    /// ](#method.register_templ_dir) to return `false` until the templates
+    /// directory has been registered.
+    ///
+    /// The provided method always returns `true`.
+    ///
+    #[allow(unused_variables)]
+    fn initialized(&self) -> bool {
+        true
+    }
+
+    /// Override if your implementation uses a template directory the path of
+    /// which is not available at initialization.
+    ///
+    /// `ext` is the template file extension, only files with that extension
+    /// should be registered.
+    ///
+    /// `path` is the path to a directory with template files.
+    ///
+    /// <b>Errors</b>
+    ///
+    /// The provided method always returns an error.
+    ///
+    #[allow(unused_variables)]
+    fn register_templ_dir(&self, path: &str, ext: &str) -> Result<(), Error> {
+        Err(Error::nyi())
+    }
+
+    /// Override to render.
+    ///
+    /// `data` is data for the template `tmpl` as `serde_json::Value`.
+    ///
+    fn render(&self, tmpl: &str, json: &JsonValue) -> Result<String, Error>;
+}
+
+/// Change `"+"` to `"%20"`, then [`urlencoding::decode()`
+/// ](https://docs.rs/urlencoding/latest/urlencoding/fn.decode.html).
+///
+pub fn decode_url_parameter(par: &str) -> Result<String, Error> {
+    static PLUS: OnceLock<Regex> = OnceLock::new();
+    let plus = PLUS.get_or_init(|| Regex::new(r"\+").unwrap());
+    urlencoding::decode(&plus.replace_all(par, "%20"))
+        .map(|s| s.to_string())
+        .map_err(|e| Error::invalid_input(&e.to_string()))
+}
+
+/// Returns the boundary if `content_type` is `multipart/form-data;` ...
+/// `boundary="`*some boundary*`"`. For use by HTTP server adapters.
+///
+pub fn multipart_boundary(content_type: &str) -> Option<String> {
+    let header = super::HttpHeaderVal::from_str(content_type);
+    if header.value == "multipart/form-data" {
+        header.get_param("boundary")
+    } else {
+        None
+    }
+}
+
 // --- private --------------------------------------------------------------
 
 const DB_SESSION_INSERT: &'static str =
@@ -1681,9 +1687,7 @@ const DB_SESSION_TOUCH: &'static str =
 const DB_SESSION_UPDATE: &'static str =
     "UPDATE __vicocomo__sessions SET data = $2, time = $3 WHERE id = $1";
 
-lazy_static::lazy_static! {
-    static ref ROUTE_PARAM: Regex = Regex::new(r"<[^>]*>").unwrap();
-}
+static ROUTE_PARAM: OnceLock<Regex> = OnceLock::new();
 
 // - - HttpSession - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 // Conceptually private, but needs to be public because it is used by the code
@@ -1747,37 +1751,12 @@ impl HttpSession {
     }
 }
 
-// - - HttpRouteTarget - - - - - - - - - - - - - - - - - - - - - - - - - - - -
-
-#[derive(Debug)]
-struct HttpRouteTarget {
-    pattern: Regex,
-    route_par_names: Vec<String>,
-    target: String,
-}
-
-impl HttpRouteTarget {
-    fn new(
-        pattern: &str,
-        par_nams: &[&str],
-        target: &str,
-    ) -> Result<Self, Error> {
-        Ok(Self {
-            pattern: map_error!(
-                Other,
-                Regex::new((String::from("^") + pattern + "$").as_str(),)
-            )?,
-            route_par_names: par_nams.iter().map(|n| n.to_string()).collect(),
-            target: target.to_string(),
-        })
-    }
-}
-
 /// Extract the parameter names from `route`.
 ///
 fn get_route_par_names(route: &str) -> Vec<LitStr> {
     use proc_macro2::Span;
     ROUTE_PARAM
+        .get_or_init(route_param_init)
         .find_iter(route)
         .map(|p| {
             let s = p.as_str();
@@ -1796,7 +1775,7 @@ fn fix_root(
     let inserted = app_config.get(root).map(|val| val.get_string().unwrap());
     let result = inserted
         .as_ref()
-        .map(|s| crate::fix_slashes(s, lead, trail))
+        .map(|s| ljumvall_utils::fix_slashes(s, lead, trail))
         .unwrap_or_else(|| String::new());
     if match inserted {
         Some(s) => s != result,
@@ -1918,7 +1897,7 @@ impl ConfigItem {
         &self,
         not_found: &mut Option<(Path, Ident)>,
     ) -> syn::Result<()> {
-        Ok(*not_found = Some((
+        *not_found = Some((
             self.value
                 .as_ref()
                 .ok_or_else(|| syn_error("missing not_found controller Path"))
@@ -1929,7 +1908,8 @@ impl ConfigItem {
                 .ok_or_else(|| {
                     syn_error("missing not_found function Ident")
                 })?,
-        )))
+        ));
+        Ok(())
     }
 
     // assumes level_1 to be PlugIn
@@ -1976,33 +1956,44 @@ impl ConfigItem {
                 .id
                 .clone()
                 .ok_or_else(|| syn_error("missing route handler function"))?;
-            let mut http_method = HttpMethod::Get;
+            let mut method = HttpMethod::None;
             let mut route_str: Option<&str> = None;
+            let mut upload = None;
             let meth_string = contr_method.to_string();
             match meth_string.as_str() {
-                "new_form" => route_str = Some("new"),
-                "copy_form" => route_str = Some("<id>/copy"),
+                "new_form" => {
+                    route_str = Some("new");
+                }
+                "copy_form" => {
+                    route_str = Some("<id>/copy");
+                }
                 "create" => {
-                    http_method = HttpMethod::Post;
+                    method = HttpMethod::Post;
                     route_str = Some("");
                 }
                 "ensure" => {
-                    http_method = HttpMethod::Post;
+                    method = HttpMethod::Post;
                     route_str = Some("ensure");
                 }
-                "index" => route_str = Some(""),
-                "show" => route_str = Some("<id>"),
-                "edit_form" => route_str = Some("<id>/edit"),
+                "index" => {
+                    route_str = Some("");
+                }
+                "show" => {
+                    route_str = Some("<id>");
+                }
+                "edit_form" => {
+                    route_str = Some("<id>/edit");
+                }
                 "patch" => {
-                    http_method = HttpMethod::Post;
+                    method = HttpMethod::Post;
                     route_str = Some("<id>");
                 }
                 "replace" => {
-                    http_method = HttpMethod::Post;
+                    method = HttpMethod::Post;
                     route_str = Some("<id>/replace");
                 }
                 "delete" => {
-                    http_method = HttpMethod::Post;
+                    method = HttpMethod::Post;
                     route_str = Some("<id>/delete");
                 }
                 _ => (),
@@ -2012,7 +2003,7 @@ impl ConfigItem {
                 let attr_nam = attr.id.to_string();
                 match attr_nam.as_str() {
                     "http_method" => {
-                        http_method = attr.val.get_ident().and_then(|i| {
+                        method = attr.val.get_ident().and_then(|i| {
                             HttpMethod::try_from(i.to_string().as_str())
                                 .map_err(|e| syn_error(&e.to_string()))
                         })?;
@@ -2024,12 +2015,22 @@ impl ConfigItem {
                         }
                         route = Some(s);
                     }
+                    "upload" => {
+                        upload = Some(attr.val.get_string()?);
+                    }
                     _ => {
                         return Err(syn_error(&format!(
                             "unknown handler attribute {}",
                             &attr_nam,
                         )));
                     }
+                }
+            }
+            if method == HttpMethod::None {
+                if upload.is_some() {
+                    method = HttpMethod::Post;
+                } else {
+                    method = HttpMethod::Get;
                 }
             }
             let route = {
@@ -2054,10 +2055,11 @@ impl ConfigItem {
                 call_string: tokens_to_string(&contr_path)
                     + "::"
                     + &meth_string,
-                http_method,
+                http_method: method,
                 route,
                 pattern: String::new(),
                 route_par_names,
+                upload,
             });
         }
         Ok(())
@@ -2068,7 +2070,7 @@ impl ConfigItem {
         &self,
         routes: &mut Vec<(String, String)>,
     ) -> syn::Result<()> {
-        use crate::fix_slashes;
+        use ljumvall_utils::fix_slashes;
         if let Some(v) = &self.value {
             let url_path = v.get_fix_slashes(1, -1)?;
             let mut fs_path = None;
@@ -2386,11 +2388,49 @@ fn get_config_attrs(stream: ParseStream) -> syn::Result<Vec<ConfigAttr>> {
     })
 }
 
+fn route_param_init() -> Regex {
+    Regex::new(r"<[^>]*>").unwrap()
+}
+
 // convert a route path to a regex pattern extracting the parameters
 fn route_to_pattern(route: &str) -> String {
-    ROUTE_PARAM.replace_all(&route, r"([^/]+)").to_string()
+    ROUTE_PARAM
+        .get_or_init(route_param_init)
+        .replace_all(&route, r"([^/]+)")
+        .to_string()
 }
 
 fn syn_error(e: &str) -> syn::Error {
     syn::Error::new(proc_macro2::Span::call_site(), e)
+}
+
+#[cfg(test)]
+mod tests {
+    // TODO: unit test Config::parse()
+    use super::*;
+
+    speculate2::speculate! {
+        describe "impl HttpServerImpl" {
+            before {
+                let test_server = HttpServerImpl::new();
+            }
+
+            context "not_found()" {
+                it "returns an HTTP 404 response" {
+                    let response = test_server.not_found(
+                        HttpMethod::Get,
+                        &Url::parse("http://localhost").unwrap(),
+                    );
+                    assert_eq!(response.get_status(), HttpStatus::NotFound);
+                    /*
+                    assert_eq!(
+                        response.text,
+                        "vicocomo--http_status-404: \
+                            error--Other\nerror--Other--get--/"
+                    );
+                    */
+                }
+            }
+        }
+    }
 }

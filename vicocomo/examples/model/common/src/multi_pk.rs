@@ -1,5 +1,6 @@
 use super::models::{
     find_or_insert_default_parent, multi_pk::MultiPk, multi_pk_templ,
+    random::Random,
 };
 use chrono::NaiveDate;
 use vicocomo::{is_error, ActiveRecord, DatabaseIf, DbValue};
@@ -89,7 +90,7 @@ pub fn test_multi_pk(db: DatabaseIf) {
     m.i32_opt_nul = Some(Some(-32));
     m.default_parent_id = df.id;
     m.date_mand = NaiveDate::from_num_days_from_ce_opt(1).unwrap();
-    m.string_mand = "hello".to_string();
+    m.string_mand = "hello\n',world".to_string();
     m.u32_mand = 32;
     m.u64_mand = 64;
     m.usize_mand = 1;
@@ -103,7 +104,7 @@ pub fn test_multi_pk(db: DatabaseIf) {
             i32_opt_nul: Some(Some(-32)), default_parent_id: Some({}), \
             other_parent_id: None, bonus_parent: \"bonus nonstandard\", \
             date_mand: 0001-01-01, date_time_mand: 1970-01-01T00:00:00, \
-            string_mand: \"hello\", u32_mand: 32, u64_mand: 64, \
+            string_mand: \"hello\\n',world\", u32_mand: 32, u64_mand: 64, \
             usize_mand: 1 }}",
             df.id.unwrap(),
         ),
@@ -132,8 +133,10 @@ pub fn test_multi_pk(db: DatabaseIf) {
         &res.err().unwrap(),
         Model(
             CannotSave,
-            "MultiPk", Some("foreign-key-violation".to_string()),
-            "other_parent_id", [],
+            "MultiPk",
+            Some("foreign-key-violation".to_string()),
+            "other_parent_id",
+            [],
         )
     ));
     println!("    OK");
@@ -155,8 +158,10 @@ pub fn test_multi_pk(db: DatabaseIf) {
         &res.err().unwrap(),
         Model(
             CannotSave,
-            "MultiPk", Some("foreign-key-violation".to_string()),
-            "other_parent_id", [],
+            "MultiPk",
+            Some("foreign-key-violation".to_string()),
+            "other_parent_id",
+            [],
         )
     ));
     println!("    OK");
@@ -164,43 +169,99 @@ pub fn test_multi_pk(db: DatabaseIf) {
     // - - inserting, finding, and updating  - - - - - - - - - - - - - - - - -
 
     println!("\nbackup and restore --------------------------------------\n");
-    println!("to_sql() ..");
-    let sql = MultiPk::to_sql(db.clone());
-    assert!(sql.is_ok());
-    assert_eq!(
-        sql.as_ref().unwrap(),
-        "INSERT INTO multi_pks (\
-            id, id2, bool_mand, bool_mand_nul, \
-            f32_mand, f32_opt, f64_mand, f64_opt_nul, \
-            i32_mand, i32_opt_nul, default_parent_id, other_parent_id, \
-            bonus_parent, date_mand, date_time_mand, string_mand, \
-            u32_mand, u64_mand, usize_mand\
-        ) VALUES (\
-            1, 1, 0, NULL, \
-            0, 1, 0, 1, \
-            0, 1, 18, NULL, \
-            'bonus nonstandard', 0, 0, '', \
-            0, 0, 0\
-        ), (\
-            1, 42, 1, 0, \
-            32, 32, 64, NULL, \
-            -32, -32, 17, NULL, \
-            'bonus nonstandard', 1, 0, 'hello', \
-            32, 64, 17\
-        ), (\
-            1, 17, 1, 0, \
-            32, 32, 64, NULL, \
-            -32, -32, 17, NULL, \
-            'bonus nonstandard', 1, 0, 'hello', \
-            32, 64, 17\
-        );",
-    );
-    println!("    OK");
+    {
+        // keeping some data local to these tests
+        println!("try_to_sql() with data in table ..");
+        let sql = MultiPk::try_to_sql(db.clone());
+        assert!(sql.is_ok());
+        let sql = sql.unwrap();
+        assert_eq!(
+            sql,
+            "INSERT INTO multi_pks (\
+                id, id2, bool_mand, bool_mand_nul, \
+                f32_mand, f32_opt, f64_mand, f64_opt_nul, \
+                i32_mand, i32_opt_nul, default_parent_id, other_parent_id, \
+                bonus_parent, date_mand, date_time_mand, string_mand, \
+                u32_mand, u64_mand, usize_mand\
+            ) VALUES (\
+                1, 1, 0, NULL, \
+                0, 1, 0, 1, \
+                0, 1, 18, NULL, \
+                'bonus nonstandard', 0, 0, '', \
+                0, 0, 0\
+            ), (\
+                1, 42, 1, 0, \
+                32, 32, 64, NULL, \
+                -32, -32, 17, NULL, \
+                'bonus nonstandard', 1, 0, 'hello\n'',world', \
+                32, 64, 17\
+            ), (\
+                1, 17, 1, 0, \
+                32, 32, 64, NULL, \
+                -32, -32, 17, NULL, \
+                'bonus nonstandard', 1, 0, 'hello\n'',world', \
+                32, 64, 17\
+            );",
+        );
+        println!("    OK");
+        println!("try_to_sql() with empty table ..");
+        let rnd_sql = Random::try_to_sql(db.clone());
+        assert!(rnd_sql.is_ok());
+        assert!(rnd_sql.unwrap().is_empty());
+        println!("    OK");
 
-    println!("try_from_sql() ..");
-    let objs = MultiPk::load(db.clone());
-    let result = MultiPk::try_from_sql(db.clone(), sql.as_ref().unwrap());
-    assert!(result.is_ok());
-    assert_eq!(MultiPk::load(db.clone()), objs);
-    println!("    OK");
+        println!("try_sql_to_csv() from --- table name --- ..");
+        let csv = Random::try_sql_to_csv("", Some(b';'), true);
+        assert!(csv.is_ok());
+        let (table, csv) = csv.unwrap();
+        assert_eq!(table, "randoms");
+        assert_eq!(csv, "\r\n");
+        println!("    OK");
+        println!("try_sql_to_csv() form INERT SQK ..");
+        let csv = MultiPk::try_sql_to_csv(&sql, Some(b';'), true);
+        assert!(csv.is_ok());
+        let (table, csv) = csv.unwrap();
+        assert_eq!(table, "multi_pks");
+        assert_eq!(
+            csv,
+            "id;id2;bool_mand;bool_mand_nul;f32_mand;f32_opt;f64_mand;\
+                f64_opt_nul;i32_mand;i32_opt_nul;default_parent_id;\
+                other_parent_id;bonus_parent;date_mand;date_time_mand;\
+                string_mand;u32_mand;u64_mand;usize_mand\r\n\
+                1;1;0;;0;1;0;\
+                1;0;1;18;\
+                ;\"bonus nonstandard\";0;0;\
+                \"\";0;0;0\r\n\
+                1;42;1;0;32;32;64;\
+                ;-32;-32;17;\
+                ;\"bonus nonstandard\";1;0;\
+                \"hello\n',world\";32;64;17\r\n\
+                1;17;1;0;32;32;64;\
+                ;-32;-32;17;\
+                ;\"bonus nonstandard\";1;0\
+                ;\"hello\n',world\";32;64;17\r\n",
+        );
+        println!("    OK");
+
+        println!("try_csv_to_sql() ..");
+        let old = sql;
+        let sql = MultiPk::try_csv_to_sql(&csv, Some(b';'));
+        assert!(sql.is_ok());
+        let sql = sql.unwrap();
+        assert_eq!(sql, old);
+        println!("    OK");
+
+        println!("try_from_sql() ..");
+        let objs = MultiPk::load(db.clone());
+        let result = db.clone().exec("DELETE FROM multi_pks", &[]);
+        assert!(result.is_ok());
+        let result = MultiPk::try_from_sql(db.clone(), &sql);
+        eprintln!("{:?}", result);
+        assert!(result.is_ok());
+        assert_eq!(MultiPk::load(db.clone()), objs);
+        let result = MultiPk::try_from_sql(db.clone(), "invalid sql");
+        assert!(result.is_err());
+        assert_eq!(MultiPk::load(db.clone()), objs);
+        println!("    OK");
+    }
 }

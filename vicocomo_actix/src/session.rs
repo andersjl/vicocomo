@@ -1,5 +1,4 @@
 use vicocomo::{map_error, DatabaseIf, HttpDbSession};
-pub use vicocomo_actix_config::config;
 
 const SESSION_ID_KEY: &'static str = "__vicocomo__session_id";
 

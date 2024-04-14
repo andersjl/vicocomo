@@ -3,8 +3,8 @@
 
 // TODO: generalise get_on and set_on from andersjlindeberg
 
-use crate::{fix_slashes, Error, HttpServerIf, TemplEngIf};
-use serde::Serialize;
+use crate::{Error, HttpServerIf};
+use ljumvall_utils::fix_slashes;
 
 /// Make a value for a href attribute.
 ///
@@ -17,8 +17,8 @@ use serde::Serialize;
 ///   ](../http/server/struct.Config.html#url_root),
 /// - `path`, `name`, and `ext` are the arguments, and
 /// - `dddddddddd` is the file's mtime as unix [timestamp
-///   ](../utils/fn.timestamp.html), which is inserted to force the browser to
-///   reload the file on change.
+///   ](../../ljumvall_utils/fn.timestamp.html), which is inserted to force
+///   the browser to reload the file on change.
 /// An inserted timestamp will be removed by the server before looking up the
 /// file.
 ///
@@ -46,10 +46,11 @@ pub fn make_href(
     ext: Option<&str>,
 ) -> Result<String, Error> {
     use regex::Regex;
+    use std::sync::OnceLock;
 
-    lazy_static::lazy_static! {
-        static ref PATH_LAST: Regex = Regex::new(r"(?:/)?([^./]+)$").unwrap();
-    }
+    static PATH_LAST: OnceLock<Regex> = OnceLock::new();
+    let path_last =
+        PATH_LAST.get_or_init(|| Regex::new(r"(?:/)?([^./]+)$").unwrap());
 
     let add_timestamp = srv
         .app_config("strip_mtime")
@@ -62,7 +63,7 @@ pub fn make_href(
         })
         .unwrap_or(false);
     let ext = ext.unwrap_or_else(|| {
-        PATH_LAST
+        path_last
             .captures(url_path)
             .and_then(|c| c.get(1).map(|m| m.as_str()))
             .unwrap_or("")
@@ -76,7 +77,7 @@ pub fn make_href(
     let timestamp = if add_timestamp {
         format!(
             "-{}",
-            crate::timestamp(
+            ljumvall_utils::timestamp(
                 &(srv.prepend_file_root(
                     &srv.url_path_to_dir(&url_path).ok_or_else(|| {
                         Error::other(&format!(
@@ -96,7 +97,10 @@ pub fn make_href(
     ))
 }
 
-/// Fill the body of `srv` from `template` using `teng` and `data`.
+/*
+/// Fill the body of `srv` from `template` using `teng` and `data`, set the
+/// response status to 200 `OK` and the `Content-Type` to
+/// `text/<content_type>; charset=utf-8`
 ///
 /// If `teng.render()` returns an error, call `srv.resp_error()`.
 ///
@@ -105,12 +109,11 @@ pub fn render_template(
     teng: TemplEngIf,
     template: &str,
     data: &impl Serialize,
-) {
+    content_type: &str,
+) -> HttpResponse {
     match teng.render(template, data) {
-        Ok(s) => {
-            srv.resp_body(&s);
-            srv.resp_ok();
-        }
-        Err(e) => srv.resp_error(None, Some(&e)),
+        Ok(s) => HttpResponse::utf8(None, Some(content_type), s),
+        Err(e) => srv.resp_error(None, Some(e)),
     }
 }
+*/

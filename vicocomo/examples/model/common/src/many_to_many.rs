@@ -41,15 +41,18 @@ pub fn test_many_to_many(db: DatabaseIf) {
     println!("    OK");
     println!("disconnecting not connected -> Ok(0) ..");
     assert!(
-        format!("{:?}", pb.disconnect_from_single_pk(db.clone(), &sa)) == "Ok(0)"
+        format!("{:?}", pb.disconnect_from_single_pk(db.clone(), &sa))
+            == "Ok(0)"
     );
     println!("    OK");
     println!("disconnecting connected -> Ok(1) ..");
     assert!(
-        format!("{:?}", pb.disconnect_from_single_pk(db.clone(), &sb)) == "Ok(1)"
+        format!("{:?}", pb.disconnect_from_single_pk(db.clone(), &sb))
+            == "Ok(1)"
     );
     assert!(
-        format!("{:?}", pa.disconnect_from_single_pk(db.clone(), &sa)) == "Ok(1)"
+        format!("{:?}", pa.disconnect_from_single_pk(db.clone(), &sa))
+            == "Ok(1)"
     );
     assert!(format!("{:?}", pa.single_pks(db.clone(), None)) == pa_sb_assoc);
     println!("    OK");

@@ -1,4 +1,4 @@
-use crate::model::{Field, Model};
+use crate::model::{Field, Model, OnNone};
 use ::syn::{parse_quote, Expr, ItemFn};
 
 pub(crate) fn save_impl(
@@ -8,21 +8,17 @@ pub(crate) fn save_impl(
 ) {
     use ::quote::format_ident;
 
-    if model.readonly {
-        return;
-    }
-
     let Model {
         struct_id: _,
         ref table_name,
         has_many: _,
         before_delete: _,
         before_save: _,
-        readonly: _,
+        readonly,
         ref fields,
         uniques: _,
     } = model;
-    let fields = fields.iter().map(|f| f).collect::<Vec<_>>();
+    let fields = fields.iter().collect::<Vec<_>>();
 
     // --- insert code fragments ---------------------------------------------
 
@@ -98,108 +94,100 @@ pub(crate) fn save_impl(
         .iter()
         .map(|f| {
             let id = &f.id;
-            if f.opt {
-                parse_quote!(
-                    self.#id = Some(::std::convert::TryInto::try_into(
-                        output.drain(..1).next().unwrap()
-                    )?)
-                )
-            } else {
+            if f.onn == OnNone::Null {
                 parse_quote!(
                     self.#id = ::std::convert::TryInto::try_into(
                         output.drain(..1).next().unwrap()
                     )?
                 )
+            } else {
+                parse_quote!(
+                    self.#id = Some(::std::convert::TryInto::try_into(
+                        output.drain(..1).next().unwrap()
+                    )?)
+                )
             }
         })
         .collect();
 
-    struct_fn.push(parse_quote!(
-        #[doc(hidden)]
-        fn __vicocomo__handle_update_result(
-            &mut self,
-            db: ::vicocomo::DatabaseIf,
-            result: Result<Vec<Vec<::vicocomo::DbValue>>, ::vicocomo::Error>,
-        ) -> Result<(), ::vicocomo::Error> {
-            result
-                .and_then(|mut updated| {
-                    if updated.len() == 1 {
-                        let mut output = updated
-                            .drain(..1)
-                            .next()
-                            .unwrap();
-                        #( #upd_output_expr; )*
-                        Ok(())
-                    } else {
-                        Err(Self::__vicocomo__pk_error(
-                            ::vicocomo::ModelErrorKind::CannotSave,
-                            ::vicocomo::ActiveRecord::pk_value(self),
-                            true,
-                        ))
+    if *readonly {
+        trait_fn.push(parse_quote!(
+            fn insert_batch(
+                db: ::vicocomo::DatabaseIf,
+                data: &mut [Self],
+            ) -> Result<Vec<Self>, ::vicocomo::Error> {
+                Err(::vicocomo::Error::other("not-available"))
+            }
+        ));
+    } else {
+        #[allow(non_snake_case)]
+        trait_fn.push(parse_quote!(
+            fn insert_batch(
+                db: ::vicocomo::DatabaseIf,
+                data: &mut [Self],
+            ) -> Result<Vec<Self>, ::vicocomo::Error> {
+                let mut inserts: std::collections::HashMap<
+                    Vec<String>,
+                    Vec<Vec<::vicocomo::DbValue>>,
+                > = std::collections::HashMap::new();
+                for data_itm in data.iter_mut() {
+                    let mut insert_cols = Vec::new();
+                    let mut itm_pars: Vec<::vicocomo::DbValue> = Vec::new();
+                    #before_insert_expr;
+                    #( #push_expr__data_itm__none__insert_cols__itm_pars )*
+                    match inserts.get_mut(&insert_cols) {
+                        Some(ins_pars) => ins_pars.push(itm_pars),
+                        None => {
+                            inserts.insert(insert_cols, vec![itm_pars]);
+                        },
                     }
-                })
-        }
-    ));
+                }
+                let mut error = None;
+                let mut result = Vec::new();
+                for (ins_cols, ins_pars) in inserts.iter() {
+                    let mut db_pars = Vec::new();
+                    for these_pars in ins_pars.iter() {
+                        db_pars.extend(these_pars.clone().drain(..));
+                    }
+                    match db.clone().query(
+                        &format!(
+                            #ins_fmt,
+                            &ins_cols.join(", "),
+                            #ins_placeholders,
+                        ),
+                        &db_pars,
+                        &[ #( #db_types ),* ],
+                    ) {
+                        Ok(rows) => {
+                            result.extend(#rows_to_models_expr__rows?);
+                        }
+                        Err(err) => {
+                            error = Some(err);
+                            break;
+                        }
+                    }
+                }
+                if let Some(err) = error {
+                    for data_itm in data {
+                        if let Some(mapped) =
+                            data_itm.__vicocomo__conv_save_error(
+                                db.clone(),
+                                &err,
+                                false
+                            )
+                        {
+                            return Err(mapped);
+                        }
+                    }
+                    Err(err)
+                } else {
+                    Ok(result)
+                }
+            }
+        ));
+    }
 
-    #[allow(non_snake_case)]
-    trait_fn.push(parse_quote!(
-        fn insert_batch(
-            db: ::vicocomo::DatabaseIf,
-            data: &mut [Self],
-        ) -> Result<Vec<Self>, ::vicocomo::Error> {
-            let mut inserts: std::collections::HashMap<
-                Vec<String>,
-                Vec<Vec<::vicocomo::DbValue>>,
-            > = std::collections::HashMap::new();
-            for data_itm in data.iter_mut() {
-                let mut insert_cols = Vec::new();
-                let mut itm_pars: Vec<::vicocomo::DbValue> = Vec::new();
-                #before_insert_expr;
-                #( #push_expr__data_itm__none__insert_cols__itm_pars )*
-                match inserts.get_mut(&insert_cols) {
-                    Some(ins_pars) => ins_pars.push(itm_pars),
-                    None => { inserts.insert(insert_cols, vec![itm_pars]); },
-                }
-            }
-            let mut error = None;
-            let mut result = Vec::new();
-            for (ins_cols, ins_pars) in inserts.iter() {
-                let mut db_pars = Vec::new();
-                for these_pars in ins_pars.iter() {
-                    db_pars.extend(these_pars.clone().drain(..));
-                }
-                match db.clone().query(
-                    &format!(
-                        #ins_fmt,
-                        &ins_cols.join(", "),
-                        #ins_placeholders,
-                    ),
-                    &db_pars,
-                    &[ #( #db_types ),* ],
-                ) {
-                    Ok(rows) => result.extend(#rows_to_models_expr__rows?),
-                    Err(err) => {
-                        error = Some(err);
-                        break;
-                    }
-                }
-            }
-            if let Some(err) = error {
-                for data_itm in data {
-                    if let Some(mapped) =
-                        data_itm.__vicocomo__conv_save_error(db.clone(), &err, false)
-                    {
-                        return Err(mapped);
-                    }
-                }
-                Err(err)
-            } else {
-                Ok(result)
-            }
-        }
-    ));
-
-    if model.pk_fields().is_empty() {
+    if *readonly || model.pk_fields().is_empty() {
         trait_fn.push(parse_quote!(
             fn update(
                 &mut self,
@@ -219,6 +207,33 @@ pub(crate) fn save_impl(
             }
         ));
     } else {
+        struct_fn.push(parse_quote!(
+            #[doc(hidden)]
+            fn __vicocomo__handle_update_result(
+                &mut self,
+                db: ::vicocomo::DatabaseIf,
+                result: Result<Vec<Vec<::vicocomo::DbValue>>, ::vicocomo::Error>,
+            ) -> Result<(), ::vicocomo::Error> {
+                result
+                    .and_then(|mut updated| {
+                        if updated.len() == 1 {
+                            let mut output = updated
+                                .drain(..1)
+                                .next()
+                                .unwrap();
+                            #( #upd_output_expr; )*
+                            Ok(())
+                        } else {
+                            Err(Self::__vicocomo__pk_error(
+                                ::vicocomo::ModelErrorKind::CannotSave,
+                                ::vicocomo::ActiveRecord::pk_value(self),
+                                true,
+                            ))
+                        }
+                    })
+            }
+        ));
+
         #[allow(non_snake_case)]
         trait_fn.push(parse_quote!(
             fn update(&mut self, db: ::vicocomo::DatabaseIf)
@@ -244,7 +259,11 @@ pub(crate) fn save_impl(
                         &[ #( #upd_db_types ),* ],
                     )
                     .map_err(|err| {
-                        match self.__vicocomo__conv_save_error(db.clone(), &err, true) {
+                        match self.__vicocomo__conv_save_error(
+                            db.clone(),
+                            &err,
+                            true,
+                        ) {
                             Some(mapped) => mapped,
                             None => err,
                         }
@@ -287,6 +306,8 @@ pub(crate) fn save_impl(
     }
 }
 
+// --- private ---------------------------------------------------------------
+
 // Push to cols (String) and vals (DbValue) data for fields.
 //
 // If a field is vicocomo_optional, noop if None, the contained data is pushed
@@ -322,25 +343,46 @@ fn push_expr(
                 ),
                 None => (parse_quote!(()), parse_quote!(#col.to_string())),
             };
-            if f.opt {
-                parse_quote!(
-                    match #obj.#fld.as_ref() {
-                        Some(val) => {
+            match f.onn {
+                OnNone::Ignore => {
+                    parse_quote!(
+                        match #obj.#fld.as_ref() {
+                            Some(val) => {
+                                #par_ix_expr;
+                                #cols.push(#col_expr);
+                                #vals.push(val.clone().into());
+                            },
+                            None => (),
+                        }
+                    )
+                }
+                OnNone::Null => {
+                    parse_quote!(
+                        {
                             #par_ix_expr;
                             #cols.push(#col_expr);
-                            #vals.push(val.clone().into());
-                        },
-                        None => (),
-                    }
-                )
-            } else {
-                parse_quote!(
-                    {
-                        #par_ix_expr;
-                        #cols.push(#col_expr);
-                        #vals.push(#obj.#fld.clone().into());
-                    }
-                )
+                            #vals.push(#obj.#fld.clone().into());
+                        }
+                    )
+                }
+                OnNone::Random => {
+                    let ft = Model::strip_option(&f.ty);
+                    parse_quote!(
+                        {
+                            #par_ix_expr;
+                            #cols.push(#col_expr);
+                            #vals.push(
+                                match #obj.#fld.as_ref() {
+                                    Some(val) => val.clone().into(),
+                                    None => {
+                                        use ::rand::Rng;
+                                        ::rand::thread_rng().gen::<#ft>().into()
+                                    },
+                                }
+                            );
+                        }
+                    )
+                }
             }
         })
         .collect()

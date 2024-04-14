@@ -10,18 +10,18 @@ use ::std::collections::HashMap;
 ///
 /// A flash is forgotten when read, see [`get()`](#method.get).
 ///
-pub struct Flash<'a> {
-    server: HttpServerIf<'a>,
+pub struct Flash<'srv, 'req> {
+    server: HttpServerIf<'srv, 'req>,
     // { severity => [message, ... ], ... }
     flashes: HashMap<String, Vec<String>>,
 }
 
 const FLASH_KEY: &'static str = "__vicocomo__FlashObj";
 
-impl<'a> Flash<'a> {
+impl<'srv, 'req> Flash<'srv, 'req> {
     /// Initialize the flashes from the `srv` session and mark as not shown.
     ///
-    pub fn new(srv: HttpServerIf<'a>) -> Self {
+    pub fn new(srv: HttpServerIf<'srv, 'req>) -> Self {
         Self {
             server: srv,
             flashes: srv

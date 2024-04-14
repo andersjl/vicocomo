@@ -1,6 +1,7 @@
 //! Implement `vicocomo::DbConn` by way of the `rusqlite` crate.
 
 use rusqlite::{Connection, ToSql};
+use std::path::Path;
 use std::sync::Mutex;
 use vicocomo::{
     DbConn, DbType, DbValue, Error, SQLSTATE_FOREIGN_KEY_VIOLATION,
@@ -19,7 +20,7 @@ impl SqliteConn {
     /// ](https://docs.rs/rusqlite/latest/rusqlite/struct.Connection.html#flags)
     /// and enabled foreign key support.
     ///
-    pub fn new(path: &str) -> Result<Self, Error> {
+    pub fn new(path: &Path) -> Result<Self, Error> {
         Ok(Self(Mutex::new(Self::result(
             Connection::open(path).and_then(|conn| {
                 conn.execute("PRAGMA foreign_keys = ON", [])?;

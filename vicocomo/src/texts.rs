@@ -8,16 +8,19 @@
 //!
 //! # Defining texts
 //!
-//! The texts are defined in the file `config/texts.cfg` as a number of
-//! comma-separated key-value pairs optionally defining parameterized
-//! substitution, see the example below.
+//! The texts are defined in a text file, default `config/texts.cfg`, as a
+//! number of comma-separated key-value pairs optionally defining
+//! parameterized substitution, see the example below.
+//!
+//! To initialize the module you must call [`initialize`](fn.initialize.html)
+//! before using the [`t!()`](macro.t.html) macro.
 //!
 //! # Example
 //! ```
 //! use vicocomo::t;
 //! std::fs::create_dir_all("config").unwrap();
 //!
-//! std::fs::write(
+//! let _ = std::fs::write(
 //!     "config/texts.cfg",
 //!     r#"
 //!     "simple"           => "some text without parameters",
@@ -26,6 +29,7 @@
 //!     "literal-angles"   => "some text containing \< with <par> \>",
 //!     "#,
 //! );
+//! vicocomo::texts::initialize(None);
 //! assert_eq!(
 //!     t!("simple"),
 //!     "some text without parameters",
@@ -92,38 +96,43 @@ macro_rules! t {
         }
     };
 }
-use ::lazy_static::lazy_static;
-use ::regex::Regex;
-use ::std::collections::HashMap;
 
-lazy_static! {
-    #[doc(hidden)]
-    pub static ref DEFS: String =
-        ::std::fs::read_to_string("config/texts.cfg")
-            .unwrap_or_else(|_| String::new());
-}
+use regex::Regex;
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::OnceLock;
 
-lazy_static! {
-    #[doc(hidden)]
-    pub static ref TEXTS: HashMap<
-        &'static str,
-        (Vec<(&'static str, &'static str)>, &'static str,)
-    > = {
-        lazy_static! {
-            static ref KEY_VAL_PAIR: Regex = Regex::new(
-                r#""((?:[^"]|\\")*)"\s*=>\s*"((?:[^"]|\\")*)"(?:,|$)"#,
+static TEXTS: OnceLock<
+    HashMap<&'static str, (Vec<(&'static str, &'static str)>, &'static str)>,
+> = OnceLock::new();
+
+static DEFS: OnceLock<String> = OnceLock::new();
+
+/// Read `cfg` and initialize the localization mechanism from it.
+///
+/// The default file is `config/texts.cfg`.
+///
+pub fn initialize(cfg: Option<&Path>) {
+    TEXTS.get_or_init(|| {
+        let defs = DEFS.get_or_init(|| {
+            std::fs::read_to_string(
+                cfg.unwrap_or(Path::new("config/texts.cfg")),
             )
-            .unwrap();
-        }
+            .unwrap_or(String::new())
+        });
+        let key_val_pair: Regex = Regex::new(
+            r#""((?:[^"]|\\")*)"\s*=>\s*"((?:[^"]|\\")*)"(?:,|$)"#,
+        )
+        .unwrap();
         let mut map = HashMap::new();
-        for key_vals in KEY_VAL_PAIR.captures_iter(DEFS.as_str()) {
+        for key_vals in key_val_pair.captures_iter(defs.as_str()) {
             map.insert(
                 key_vals.get(1).unwrap().as_str(),
                 find_params(key_vals.get(2).unwrap().as_str()),
             );
         }
         map
-    };
+    });
 }
 
 // find < > delimited parameters in text and return a pair (
@@ -134,13 +143,13 @@ lazy_static! {
 pub fn find_params(
     text: &'static str,
 ) -> (Vec<(&'static str, &'static str)>, &'static str) {
-    lazy_static! {
-        static ref PARAM: Regex =
-            Regex::new(r"((?:[^\\<]|\\<)*)<((?:[^>]|\\>)*)>").unwrap();
-    }
+    static PARAM: OnceLock<Regex> = OnceLock::new();
+    let param = PARAM.get_or_init(|| {
+        Regex::new(r"((?:[^\\<]|\\<)*)<((?:[^>]|\\>)*)>").unwrap()
+    });
     let mut befores_names = Vec::new();
     let mut last = 0;
-    for captures in PARAM.captures_iter(&text) {
+    for captures in param.captures_iter(&text) {
         let par = captures.get(2).unwrap();
         befores_names.push((&text[last..(par.start() - 1)], par.as_str()));
         last = par.end() + 1;
@@ -152,7 +161,7 @@ pub fn find_params(
 #[doc(hidden)]
 pub fn get_text(key: &str, params: &[(&str, &str)]) -> String {
     let mut result = String::new();
-    match TEXTS.get(key) {
+    match TEXTS.get().and_then(|texts| texts.get(key)) {
         Some(entry) => {
             for (piece, par) in &entry.0 {
                 result += piece;

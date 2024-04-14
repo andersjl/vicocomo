@@ -1,0 +1,12 @@
+<html>
+  <head>
+    <title> Actix File Test </title>
+  </head>
+  <body>
+    <form action="/read" method="post" enctype="multipart/form-data">
+      {{{ read_file.file_field.data.label }}}
+      {{{ read_file.file_field.data.tag }}}
+      <input type="submit" name="commit" value="OK">
+    </form>
+  </body>
+</html>

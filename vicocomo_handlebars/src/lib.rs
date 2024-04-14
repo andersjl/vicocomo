@@ -22,9 +22,11 @@ impl vicocomo::TemplEng for HbTemplEng {
         !self.0.lock().unwrap().get_templates().is_empty()
     }
 
-    fn register_templ_dir(&self, path: &str, ext: &str)
-        -> Result<(), vicocomo::Error>
-    {
+    fn register_templ_dir(
+        &self,
+        path: &str,
+        ext: &str,
+    ) -> Result<(), vicocomo::Error> {
         let mut eng = self.0.lock().unwrap();
         eng.clear_templates();
         eng.register_templates_directory(&(String::from(".") + ext), path)

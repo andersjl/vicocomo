@@ -1,4 +1,4 @@
-use crate::model::{Model, OnDelete, UniqueFieldSet};
+use crate::model::{Model, OnDelete, OnNone, UniqueFieldSet};
 use ::syn::{Ident, ItemFn, LitInt};
 
 #[allow(non_snake_case)]
@@ -155,7 +155,7 @@ pub(crate) fn common(
                 let lit =
                     LitStr::new(&field.id.to_string(), Span::call_site());
                 these_uni_lits.push(lit.clone());
-                if field.opt {
+                if field.onn != OnNone::Null {
                     these_opt_ids.push(field.id.clone());
                     these_opt_lits.push(lit);
                 }

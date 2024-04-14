@@ -5,4 +5,4 @@
 pub mod input;
 pub mod utils;
 
-pub use utils::{Scripts, Styles};
+pub use utils::{HtmlTag, Scripts, Styles};
