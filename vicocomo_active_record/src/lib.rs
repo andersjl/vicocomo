@@ -252,6 +252,17 @@ mod to_fro_sql;
 /// ](../vicocomo/error/enum.Error.html#variant.Model) if this requirement is
 /// not met.
 ///
+/// ### `vicocomo_serialize`
+///
+/// The field is a JSON serializable type and the generated code wraps it in
+/// a [`JsonField`](../vicocomo/database/struct.JsonField.html) when
+/// converting to and from [`DbValue::Text`
+/// ](../vicocomo/database/enum.DbValue.html#variant.Text).
+///
+/// Currently a field that has this attribute cannot have any of the
+/// attributes `vicocomo_belongs_to`, `vicocomo_primary`, `vicocomo_random`,
+/// or `vicocomo_unique`.
+///
 /// ### `vicocomo_unique = "`*a label*`"`
 ///
 /// The tuple of fields whith the same label should be unique in the database.
@@ -492,6 +503,7 @@ mod to_fro_sql;
         vicocomo_random,
         vicocomo_readonly,
         vicocomo_required,
+        vicocomo_serialize,
         vicocomo_table_name,
         vicocomo_unique,
     )

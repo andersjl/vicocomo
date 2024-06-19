@@ -15,5 +15,5 @@ chrono.workspace = true
 regex.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
-vicocomo = { path = "../vicocomo", version = "0.6.0" }
-vicocomo_actix_config = { path = "config", version = "0.6.0" }
+vicocomo = { path = "../vicocomo", version = "1.0.0" }
+vicocomo_actix_config = { path = "config", version = "1.0.0" }

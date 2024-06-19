@@ -111,6 +111,12 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
                 }
             }
         }
+        impl ::std::convert::Into<DbValue> for #other {
+            fn into(self) -> DbValue {
+                let other = self;
+                DbValue::#variant(#other_to_value)
+            }
+        }
         impl ::std::convert::TryFrom<DbValue> for #other {
             type Error = #error_type;
             fn try_from(db_value: DbValue) -> Result<Self, Self::Error> {
@@ -120,12 +126,6 @@ pub fn db_value_convert_impl(input: TokenStream) -> TokenStream {
                         &format!(#wrong_variant, db_value),
                     )),
                 }
-            }
-        }
-        impl ::std::convert::Into<DbValue> for #other {
-            fn into(self) -> DbValue {
-                let other = self;
-                DbValue::#variant(#other_to_value)
             }
         }
     });

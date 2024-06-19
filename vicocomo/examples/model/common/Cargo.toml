@@ -2,7 +2,7 @@
 
 [package]
 name = "vicocomo_example_model_common"
-version = "0.6.0"
+version = "1.0.0"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2021"
 
@@ -11,5 +11,6 @@ chrono = "0.4.35"
 ljumvall_utils = { git = "https://github.com/andersjl/ljumvall.git", version = "0.1.2" }
 rand = "0.8.5"
 regex = "1.7.1"
+serde = "1.0.152"
 vicocomo = { path = "../../.." }
 

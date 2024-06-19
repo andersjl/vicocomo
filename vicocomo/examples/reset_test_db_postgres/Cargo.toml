@@ -2,7 +2,7 @@
 
 [package]
 name = "vicocomo_example_reset_test_db"
-version = "0.6.0"
+version = "1.0.0"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2021"
 

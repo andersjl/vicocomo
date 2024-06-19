@@ -21,6 +21,7 @@ use proc_macro::TokenStream;
 /// #[tauri::command]
 /// fn request(
 ///     app: tauri::AppHandle,
+///     window: tauri::Window,
 ///     storage: tauri::State<_>,
 ///     method: &str,
 ///     url: &str,
@@ -29,8 +30,9 @@ use proc_macro::TokenStream;
 ///     // glue code calling your controllers
 /// }
 /// ```
-/// The parameters `app` and `storage` are supplied by Tauri and should not be
-/// sent from Javascript. The command is invoked in Javascript as
+/// The parameters `app`, `window`, and `storage` are supplied by Tauri and
+/// should not be sent from Javascript. The command is invoked in Javascript
+/// as
 /// ```text
 /// let response = invoke(
 ///   'request',
@@ -88,7 +90,7 @@ use proc_macro::TokenStream;
 /// `enctype="multipart/form-data"` to send the POST url with parameters
 /// - `__VICOCOMO__upload_name="`*the file input name*`"` and, if the input
 ///   has the attribute `multiple`,
-/// - __VICOCOMO__upload_multiple`.
+/// - `__VICOCOMO__upload_multiple`.
 /// The javascript below does that. But beware that your controller will not
 /// get all information it would get from a browser. Specifically the content
 /// types are limited to `text/plain` if the file contents are valid UTF-8. or
@@ -96,7 +98,7 @@ use proc_macro::TokenStream;
 ///
 /// If a control in a form has a `change` event handler that submits the form,
 /// this will not work. If you remove the event handler and give the control
-/// the class `"vicocomo--submit-on-change", the javascript below will have
+/// the class `"vicocomo--submit-on-change"`, the javascript below will have
 /// the same effect.
 ///
 /// This Tauri adapter does not support routes declared `upload` as described
@@ -300,6 +302,7 @@ pub fn config(input: TokenStream) -> TokenStream {
             use ::std::sync::{Arc, Mutex, OnceLock};
             use ::vicocomo::{TemplEng, TemplEngIf};
             ::tauri::Builder::default()
+                .plugin(tauri_plugin_window_state::Builder::default().build())
                 .manage({
                     let teng = #teng_init;
                     let teng_ok = TemplEng::initialized(&teng);
@@ -323,6 +326,7 @@ pub fn config(input: TokenStream) -> TokenStream {
         #[::tauri::command(async)]
         fn request(
             app: ::tauri::AppHandle,
+            window: tauri::Window,
             storage: ::tauri::State<Storage>,
             method: &str,
             url: &str,
@@ -488,7 +492,10 @@ pub fn config(input: TokenStream) -> TokenStream {
                         server.targets(),
                     );
                     if req.is_err() {
-                        return tauri_response(server.not_found(method, &url));
+                        return tauri_response(
+                            None,
+                            server.not_found(method, &url),
+                        );
                     }
                     req.unwrap()
                 };
@@ -510,7 +517,9 @@ pub fn config(input: TokenStream) -> TokenStream {
                     body_str = "";
                 } else {
                     return fix_response(response)
-                        .map(|resp| tauri_response(resp))
+                        .map(|resp| {
+                            tauri_response(Some(&window), resp)
+                        })
                         .unwrap_or((0, String::new()));
                 };
             }

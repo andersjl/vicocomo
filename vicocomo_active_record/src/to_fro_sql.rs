@@ -16,19 +16,13 @@ pub(crate) fn to_fro_sql_impl(model: &Model, trait_fn: &mut Vec<ItemFn>) {
         field_value.push({
             let id = &fld.id;
             let id_name = LitStr::new(&id.to_string(), Span::call_site());
-            if fld.onn == OnNone::Null {
-                parse_quote!({
-                    let dbv: ::vicocomo::DbValue = self.#id.clone().into();
-                    dbv
-                })
+            let val: Expr = if fld.onn == OnNone::Null {
+                parse_quote!(self.#id)
             } else {
                 // strip (one) option, error if None
                 parse_quote!(
                     match self.#id.as_ref() {
-                        Some(val) => {
-                            let dbv: ::vicocomo::DbValue = val.clone().into();
-                            dbv
-                        }
+                        Some(val) => val,
                         None => {
                             return Err(::vicocomo::model_error!(
                                 Invalid,
@@ -38,6 +32,11 @@ pub(crate) fn to_fro_sql_impl(model: &Model, trait_fn: &mut Vec<ItemFn>) {
                         }
                     }
                 )
+            };
+            if fld.ser {
+                parse_quote!(::vicocomo::JsonField(#val.clone()).into())
+            } else {
+                parse_quote!(#val.clone().into())
             }
         });
     }
@@ -71,20 +70,6 @@ pub(crate) fn to_fro_sql_impl(model: &Model, trait_fn: &mut Vec<ItemFn>) {
         }
     ));
 
-    /*
-    let fn_values: ItemFn = parse_quote!(
-        fn values(
-            &self,
-        ) -> Result<Vec<::vicocomo::DbValue>, ::vicocomo::Error> {
-
-            let mut result = Vec::new();
-        #(  result.push(#field_value); )*
-            Ok(result)
-        }
-    );
-    //eprintln!("{}", vicocomo_derive_utils::tokens_to_string(&fn_values));
-    trait_fn.push(fn_values);
-    */
     trait_fn.push(parse_quote!(
         fn values(
             &self,

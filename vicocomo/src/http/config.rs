@@ -1144,12 +1144,13 @@ impl<'req> HttpRequestImpl<'req> {
                         {
                             route_pars.push((
                                 nam.clone(),
-                                decode_url_parameter(val).unwrap_or_else(|e| {
-                                    parameter_error = Some(
-                                        e.to_string() + ": " + val
-                                    );
-                                    String::new()
-                                })
+                                decode_url_parameter(val).unwrap_or_else(
+                                    |e| {
+                                        parameter_error =
+                                            Some(e.to_string() + ": " + val);
+                                        String::new()
+                                    },
+                                ),
                             ));
                         }
                         parameter_error.is_none()
@@ -1172,9 +1173,11 @@ impl<'req> HttpRequestImpl<'req> {
                 );
                 result
             })
-            .ok_or_else(|| Error::InvalidInput(
-                parameter_error.unwrap_or("route-not-found".to_string())
-            ))
+            .ok_or_else(|| {
+                Error::InvalidInput(
+                    parameter_error.unwrap_or("route-not-found".to_string()),
+                )
+            })
     }
 
     /// Return the handler created by [`new()`](#method.new).
@@ -1269,6 +1272,8 @@ pub enum HttpRespBody {
     None,
 }
 
+// TODO: skip the Display implementation and write a method as_str() that does
+// not allocate
 impl Display for HttpRespBody {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         match self {

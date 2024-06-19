@@ -3,7 +3,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use vicocomo::{ActiveRecord, DatabaseIf};
 pub use {
     default_parent::DefaultParent, multi_pk::MultiPk, no_pk::NoPk,
-    other_parent::NonstandardParent, random::Random, single_pk::SinglePk,
+    other_parent::NonstandardParent, random::Random, serialize::Serialize,
+    single_pk::SinglePk,
 };
 
 // belongs-to associations:
@@ -26,7 +27,7 @@ pub mod backup_and_restore {
 
     // The sole purpose of this model is to define the functions
     // Join::{try_from_csv, try_to_csv}.
-    #[derive(Debug, PartialEq, vicocomo::ActiveRecord)]
+    #[derive(vicocomo::ActiveRecord, Debug, PartialEq)]
     pub struct Join {
         pub default_parent_id: i64,
         pub single_pk_id: i32,
@@ -39,12 +40,13 @@ pub mod backup_and_restore {
         super::NoPk,
         super::NonstandardParent,
         super::Random,
+        super::Serialize,
         super::SinglePk,
     }
 }
 
 pub mod default_parent {
-    #[derive(Clone, Debug, PartialEq, vicocomo::ActiveRecord)]
+    #[derive(vicocomo::ActiveRecord, Clone, Debug, PartialEq)]
     #[vicocomo_has_many(remote_type = "MultiPk", on_delete = "cascade")]
     #[vicocomo_has_many(remote_type = "SinglePk", join_table = "joins")]
     pub struct DefaultParent {
@@ -58,7 +60,7 @@ pub mod default_parent {
 pub mod multi_pk {
     use chrono::{NaiveDate, NaiveDateTime};
 
-    #[derive(Clone, Debug, PartialEq, vicocomo::ActiveRecord)]
+    #[derive(vicocomo::ActiveRecord, Clone, Debug, PartialEq)]
     pub struct MultiPk {
         #[vicocomo_optional]
         #[vicocomo_primary]
@@ -114,7 +116,7 @@ pub mod multi_pk {
 }
 
 pub mod no_pk {
-    #[derive(PartialEq, vicocomo::ActiveRecord, Clone, Debug)]
+    #[derive(vicocomo::ActiveRecord, PartialEq, Clone, Debug)]
     pub struct NoPk {
         #[vicocomo_order_by(0, "desc")]
         pub data: i32,
@@ -122,7 +124,7 @@ pub mod no_pk {
 }
 
 pub mod other_parent {
-    #[derive(Clone, Debug, PartialEq, vicocomo::ActiveRecord)]
+    #[derive(vicocomo::ActiveRecord, Clone, Debug, PartialEq)]
     #[vicocomo_has_many(
         on_delete = "forget",
         remote_fk_col = "other_parent_id",
@@ -149,7 +151,7 @@ pub mod other_parent {
 }
 
 pub mod random {
-    #[derive(Clone, Debug, PartialEq, vicocomo::ActiveRecord)]
+    #[derive(vicocomo::ActiveRecord, Clone, Debug, PartialEq)]
     pub struct Random {
         #[vicocomo_random]
         #[vicocomo_primary]
@@ -159,8 +161,34 @@ pub mod random {
     }
 }
 
+pub mod serialize {
+    use serde::{Deserialize, Serialize as SerdeSerialize};
+    #[derive(Clone, Debug, Deserialize, PartialEq, SerdeSerialize)]
+    pub struct SerData {
+        pub pair: (u32, u32),
+        pub text: String,
+    }
+
+    #[derive(vicocomo::ActiveRecord, Clone, Debug, PartialEq)]
+    //#[vicocomo_readonly]
+    pub struct Serialize {
+        #[vicocomo_primary]
+        pub id: u32,
+        #[vicocomo_serialize]
+        pub not_null: SerData,
+        #[vicocomo_serialize]
+        pub nullable: Option<SerData>,
+        #[vicocomo_optional]
+        #[vicocomo_serialize]
+        pub optional: Option<SerData>,
+        #[vicocomo_optional]
+        #[vicocomo_serialize]
+        pub opt_null: Option<Option<SerData>>,
+    }
+}
+
 pub mod single_pk {
-    #[derive(Clone, Debug, PartialEq, vicocomo::ActiveRecord)]
+    #[derive(vicocomo::ActiveRecord, Clone, Debug, PartialEq)]
     #[vicocomo_before_delete]
     #[vicocomo_before_save]
     pub struct SinglePk {
@@ -427,6 +455,26 @@ pub fn setup(
             CREATE TABLE randoms
             (   id    BIGINT  PRIMARY KEY
             ,   data  BIGINT  NOT NULL
+            )",
+            &[],
+        )
+        .is_ok());
+    assert!(db
+        .clone()
+        .exec("DROP TABLE IF EXISTS serializes", &[])
+        .is_ok());
+    assert!(db
+        .clone()
+        .exec(
+            "
+            CREATE TABLE serializes
+            (   id        BIGINT  PRIMARY KEY
+            ,   not_null  TEXT  NOT NULL
+            ,   nullable  TEXT  NOT NULL -- sic!
+            ,   optional  TEXT  NOT NULL
+                    DEFAULT '{\"pair\": [0, 0], \"text\": \"\"}'
+            ,   opt_null  TEXT  NOT NULL -- sic!
+                    DEFAULT 'null'
             )",
             &[],
         )

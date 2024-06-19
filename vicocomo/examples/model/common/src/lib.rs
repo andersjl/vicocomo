@@ -18,6 +18,8 @@ pub mod one_to_many;
 pub use one_to_many::test_one_to_many;
 pub mod random;
 pub use random::test_random;
+pub mod serialize;
+pub use serialize::test_serialize;
 pub mod single_pk;
 pub use single_pk::test_single_pk;
 pub mod csv;

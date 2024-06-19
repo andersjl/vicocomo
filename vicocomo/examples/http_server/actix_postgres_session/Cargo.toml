@@ -2,7 +2,7 @@
 
 [package]
 name = "vicocomo_example_http_server_actix_postgres_session"
-version = "0.6.0"
+version = "1.0.0"
 authors = ["Anders Lindeberg <ajl@andersjlindeberg.se>"]
 edition = "2021"
 

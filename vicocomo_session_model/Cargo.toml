@@ -13,5 +13,5 @@ case.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
 syn = { workspace = true, features = ["full", "extra-traits"] }
-vicocomo_derive_utils = { path = "../vicocomo_derive_utils", version = "0.6.0" }
+vicocomo_derive_utils = { path = "../vicocomo_derive_utils", version = "1.0.0" }
 

@@ -89,27 +89,6 @@ pub(crate) fn save_impl(
 
     let upd_db_types = model.upd_db_types();
 
-    // use local vars: output
-    let upd_output_expr: Vec<Expr> = upd_fields
-        .iter()
-        .map(|f| {
-            let id = &f.id;
-            if f.onn == OnNone::Null {
-                parse_quote!(
-                    self.#id = ::std::convert::TryInto::try_into(
-                        output.drain(..1).next().unwrap()
-                    )?
-                )
-            } else {
-                parse_quote!(
-                    self.#id = Some(::std::convert::TryInto::try_into(
-                        output.drain(..1).next().unwrap()
-                    )?)
-                )
-            }
-        })
-        .collect();
-
     if *readonly {
         trait_fn.push(parse_quote!(
             fn insert_batch(
@@ -126,6 +105,7 @@ pub(crate) fn save_impl(
                 db: ::vicocomo::DatabaseIf,
                 data: &mut [Self],
             ) -> Result<Vec<Self>, ::vicocomo::Error> {
+                use ::vicocomo::JsonField;
                 let mut inserts: std::collections::HashMap<
                     Vec<String>,
                     Vec<Vec<::vicocomo::DbValue>>,
@@ -207,6 +187,7 @@ pub(crate) fn save_impl(
             }
         ));
     } else {
+        let (ids, vals, wraps) = model.row_to_value_expr(upd_fields);
         struct_fn.push(parse_quote!(
             #[doc(hidden)]
             fn __vicocomo__handle_update_result(
@@ -214,6 +195,7 @@ pub(crate) fn save_impl(
                 db: ::vicocomo::DatabaseIf,
                 result: Result<Vec<Vec<::vicocomo::DbValue>>, ::vicocomo::Error>,
             ) -> Result<(), ::vicocomo::Error> {
+                use ::vicocomo::JsonField;
                 result
                     .and_then(|mut updated| {
                         if updated.len() == 1 {
@@ -221,7 +203,17 @@ pub(crate) fn save_impl(
                                 .drain(..1)
                                 .next()
                                 .unwrap();
-                            #( #upd_output_expr; )*
+                        #(
+                            match output
+                                .drain(..1)
+                                .next()
+                                .unwrap()
+                                .try_into()
+                            {
+                                Ok(#wraps) => self.#ids = #vals,
+                                Err(err) => return(Err(err)),
+                            }
+                        )*
                             Ok(())
                         } else {
                             Err(Self::__vicocomo__pk_error(
@@ -240,6 +232,7 @@ pub(crate) fn save_impl(
                 -> Result<(), ::vicocomo::Error>
             {
                 use ::std::convert::TryInto;
+                use ::vicocomo::JsonField;
 
                 #return_if_self_has_no_primary_key_expr
                 let mut upd_cols: Vec<String> = Vec::new();
@@ -345,23 +338,33 @@ fn push_expr(
             };
             match f.onn {
                 OnNone::Ignore => {
+                    let value: Expr = if f.ser {
+                        parse_quote!(JsonField(val.clone()))
+                    } else {
+                        parse_quote!(val.clone())
+                    };
                     parse_quote!(
                         match #obj.#fld.as_ref() {
                             Some(val) => {
                                 #par_ix_expr;
                                 #cols.push(#col_expr);
-                                #vals.push(val.clone().into());
+                                #vals.push(#value.into());
                             },
                             None => (),
                         }
                     )
                 }
                 OnNone::Null => {
+                    let value: Expr = if f.ser {
+                        parse_quote!(JsonField(#obj.#fld.clone()))
+                    } else {
+                        parse_quote!(#obj.#fld.clone())
+                    };
                     parse_quote!(
                         {
                             #par_ix_expr;
                             #cols.push(#col_expr);
-                            #vals.push(#obj.#fld.clone().into());
+                            #vals.push(#value.into());
                         }
                     )
                 }

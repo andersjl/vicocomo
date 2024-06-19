@@ -165,12 +165,12 @@ pub(crate) fn common(
             uni_lit.push(these_uni_lits);
         }
         parse_quote!({
-            let mut missing_opt_fields: Vec<String> = Vec::new();
-            let mut opt_none: Vec<String> = Vec::new();
+            let mut missing_opt_fields: Vec<&'static str> = Vec::new();
+            let mut opt_none: Vec<&'static str> = Vec::new();
         #(
           #(
               if self.#opt_id.is_none() {
-                  opt_none.push(#opt_lit.to_string());
+                  opt_none.push(#opt_lit);
               }
           )*
             if opt_none.is_empty() {
@@ -202,7 +202,7 @@ pub(crate) fn common(
                         general: Some("unique-violation".to_string()),
                         field_errors: missing_opt_fields
                             .drain(..)
-                            .map(|f| (f, Vec::new()))
+                            .map(|f| (f.to_string(), Vec::new()))
                             .collect(),
                         assoc_errors: Vec::new(),
                     }

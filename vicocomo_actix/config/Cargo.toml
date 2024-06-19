@@ -14,6 +14,6 @@ proc-macro2.workspace = true
 quote.workspace = true
 regex.workspace = true
 syn = { workspace = true, features = ["extra-traits"] }
-vicocomo = { path = "../../vicocomo", version = "0.6.0" }
-vicocomo_derive_utils = { path = "../../vicocomo_derive_utils", version = "0.6.0" }
+vicocomo = { path = "../../vicocomo", version = "1.0.0" }
+vicocomo_derive_utils = { path = "../../vicocomo_derive_utils", version = "1.0.0" }
 

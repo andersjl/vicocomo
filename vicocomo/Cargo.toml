@@ -21,12 +21,12 @@ syn = { workspace = true, features = ["full", "extra-traits"] }
 url.workspace = true
 urlencoding.workspace = true
 v_htmlescape.workspace = true
-vicocomo_active_record = { path = "../vicocomo_active_record", version = "0.6.0" }
-vicocomo_db_macros = { path = "../vicocomo_db_macros", version = "0.6.0" }
-vicocomo_derive_utils = { path = "../vicocomo_derive_utils", version = "0.6.0" }
-vicocomo_html_macros = { path = "../vicocomo_html_macros", version = "0.6.0" }
-vicocomo_session_model = { path = "../vicocomo_session_model", version = "0.6.0" }
+vicocomo_active_record = { path = "../vicocomo_active_record", version = "1.0.0" }
+vicocomo_db_macros = { path = "../vicocomo_db_macros", version = "1.0.0" }
+vicocomo_derive_utils = { path = "../vicocomo_derive_utils", version = "1.0.0" }
+vicocomo_html_macros = { path = "../vicocomo_html_macros", version = "1.0.0" }
+vicocomo_session_model = { path = "../vicocomo_session_model", version = "1.0.0" }
 
 [dev-dependencies]
-ljumvall_test_utils = { git = "https://github.com/andersjl/ljumvall.git", version = "0.2.2" }
+ljumvall_test_utils = { git = "https://github.com/andersjl/ljumvall.git", version = "0.2.4" }
 speculate2 = "0.2.0"

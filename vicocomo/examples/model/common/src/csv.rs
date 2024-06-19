@@ -1,8 +1,8 @@
 use vicocomo::DatabaseIf;
 pub fn test_csv(db: DatabaseIf) {
     use super::models::{
-        backup, restore, DefaultParent, Join, MultiPk, NoPk,
-        NonstandardParent, Random, SinglePk,
+        backup, find_or_insert_default_parent, restore, DefaultParent, Join,
+        MultiPk, NoPk, NonstandardParent, Random, Serialize, SinglePk,
     };
     use std::str::from_utf8;
     use vicocomo::{check_backup, ActiveRecord, Error};
@@ -124,6 +124,14 @@ pub fn test_csv(db: DatabaseIf) {
     println!("\nbackup and restore to/from CSV  - - - - - - - - - - - - -\n");
 
     super::models::reset_db(db.clone());
+    let default_filler_id =
+        find_or_insert_default_parent(db.clone(), "default filler")
+            .id
+            .unwrap();
+    let used_default_id =
+        find_or_insert_default_parent(db.clone(), "used default")
+            .id
+            .unwrap();
 
     println!("check_backup()");
     assert!(check_backup(b"short").is_err());
@@ -154,33 +162,52 @@ pub fn test_csv(db: DatabaseIf) {
     let bkp_str = bkp_str;
     assert_eq!(
         bkp_str.unwrap(),
-        "--- joins ---\r\n\
-        \r\n\
-        --- default_parents ---\r\n\
-        id,name\r\n\
-        33,\"default filler\"\r\n\
-        34,\"used default\"\r\n\
-        --- multi_pks ---\r\n\
-        id,id2,bool_mand,bool_mand_nul,f32_mand,f32_opt,f64_mand,f64_opt_nul,\
-        i32_mand,i32_opt_nul,default_parent_id,other_parent_id,bonus_parent,\
-        date_mand,date_time_mand,string_mand,u32_mand,u64_mand,usize_mand\r\n\
-        1,1,0,,0,1,0,1,0,1,34,,\"bonus nonstandard\",0,0,\"\",0,0,0\r\n\
-        1,2,0,,0,1,0,1,0,1,34,,\"bonus nonstandard\",0,0,\"\",0,0,0\r\n\
-        --- no_pks ---\r\n\
-        data\r\n\
-        4713\r\n\
-        4712\r\n\
-        4711\r\n\
-        142\r\n\
-        117\r\n\
-        --- nonstandard_parents ---\r\n\
-        pk,nonstandard_parent_id\r\n\
-        \"bonus nonstandard\",\r\n\
-        \"nonstandard\",\r\n\
-        --- randoms ---\r\n\
-        \r\n\
-        --- single_pks ---\r\n\
-        \r\n",
+        format!(
+            "--- joins ---\r\n\
+            \r\n\
+            --- default_parents ---\r\n\
+            id,name\r\n\
+            {default_filler_id},\"default filler\"\r\n\
+            {used_default_id},\"used default\"\r\n\
+            --- multi_pks ---\r\n\
+            id,id2,bool_mand,bool_mand_nul,f32_mand,f32_opt,f64_mand,\
+            f64_opt_nul,i32_mand,i32_opt_nul,default_parent_id,\
+            other_parent_id,bonus_parent,date_mand,date_time_mand,\
+            string_mand,u32_mand,u64_mand,usize_mand\r\n\
+            1,1,0,,0,1,0,1,0,1,{used_default_id},,\"bonus nonstandard\",0,0,\
+            \"\",0,0,0\r\n\
+            1,2,0,,0,1,0,1,0,1,{used_default_id},,\"bonus nonstandard\",0,0,\
+            \"\",0,0,0\r\n\
+            --- no_pks ---\r\n\
+            data\r\n\
+            4713\r\n\
+            4712\r\n\
+            4711\r\n\
+            142\r\n\
+            117\r\n\
+            --- nonstandard_parents ---\r\n\
+            pk,nonstandard_parent_id\r\n\
+            \"bonus nonstandard\",\r\n\
+            \"nonstandard\",\r\n\
+            --- randoms ---\r\n\
+            \r\n\
+            --- serializes ---\r\n\
+            id,not_null,nullable,optional,opt_null\r\n\
+            1,\"{{\"\"pair\"\":[1,43],\"\"text\"\":\"\"not-null\"\"}}\",\
+            \"{{\"\"pair\"\":[1,43],\"\"text\"\":\"\"nullable\"\"}}\",\
+            \"{{\"\"pair\"\":[1,43],\"\"text\"\":\"\"optional\"\"}}\",\
+            \"{{\"\"pair\"\":[1,43],\"\"text\"\":\"\"optional\"\"}}\"\r\n\
+            2,\"{{\"\"pair\"\":[2,42],\"\"text\"\":\"\"not-null\"\"}}\",\
+            \"null\",\
+            \"{{\"\"pair\"\":[2,42],\"\"text\"\":\"\"optional\"\"}}\",\
+            \"null\"\r\n\
+            3,\"{{\"\"pair\"\":[3,42],\"\"text\"\":\"\"not-null\"\"}}\",\
+            \"null\",\
+            \"{{\"\"pair\"\":[0,0],\"\"text\"\":\"\"\"\"}}\",\
+            \"{{\"\"pair\"\":[3,42],\"\"text\"\":\"\"opt_null\"\"}}\"\r\n\
+            --- single_pks ---\r\n\
+            \r\n",
+        ),
     );
     println!("    OK");
 
@@ -208,34 +235,53 @@ pub fn test_csv(db: DatabaseIf) {
     println!("restore from CSV with models shuffled ..");
     let mut shuffled = curver.clone();
     shuffled.extend(
-        "--- multi_pks ---\r\n\
-        id,id2,bool_mand,bool_mand_nul,f32_mand,f32_opt,f64_mand,f64_opt_nul,\
-        i32_mand,i32_opt_nul,default_parent_id,other_parent_id,bonus_parent,\
-        date_mand,date_time_mand,string_mand,u32_mand,u64_mand,usize_mand\r\n\
-        1,1,0,,0,1,0,1,0,1,34,,\"bonus nonstandard\",0,0,\"\",0,0,0\r\n\
-        1,2,0,,0,1,0,1,0,1,34,,\"bonus nonstandard\",0,0,\"\",0,0,0\r\n\
-        --- single_pks ---\r\n\
-        \r\n\
-        --- nonstandard_parents ---\r\n\
-        pk,nonstandard_parent_id\r\n\
-        \"bonus nonstandard\",\r\n\
-        \"nonstandard\",\r\n\
-        --- randoms ---\r\n\
-        \r\n\
-        --- default_parents ---\r\n\
-        id,name\r\n\
-        33,\"default filler\"\r\n\
-        34,\"used default\"\r\n\
-        --- joins ---\r\n\
-        \r\n\
-        --- no_pks ---\r\n\
-        data\r\n\
-        4713\r\n\
-        4712\r\n\
-        4711\r\n\
-        142\r\n\
-        117\r\n"
-            .as_bytes(),
+        format!(
+            "--- multi_pks ---\r\n\
+            id,id2,bool_mand,bool_mand_nul,f32_mand,f32_opt,f64_mand,\
+            f64_opt_nul,i32_mand,i32_opt_nul,default_parent_id,\
+            other_parent_id,bonus_parent,date_mand,date_time_mand,\
+            string_mand,u32_mand,u64_mand,usize_mand\r\n\
+            1,1,0,,0,1,0,1,0,1,{used_default_id},,\"bonus nonstandard\",0,0,\
+            \"\",0,0,0\r\n\
+            1,2,0,,0,1,0,1,0,1,{used_default_id},,\"bonus nonstandard\",0,0,\
+            \"\",0,0,0\r\n\
+            --- serializes ---\r\n\
+            id,not_null,nullable,optional,opt_null\r\n\
+            1,\"{{\"\"pair\"\":[1,43],\"\"text\"\":\"\"not-null\"\"}}\",\
+            \"{{\"\"pair\"\":[1,43],\"\"text\"\":\"\"nullable\"\"}}\",\
+            \"{{\"\"pair\"\":[1,43],\"\"text\"\":\"\"optional\"\"}}\",\
+            \"{{\"\"pair\"\":[1,43],\"\"text\"\":\"\"optional\"\"}}\"\r\n\
+            2,\"{{\"\"pair\"\":[2,42],\"\"text\"\":\"\"not-null\"\"}}\",\
+            \"null\",\
+            \"{{\"\"pair\"\":[2,42],\"\"text\"\":\"\"optional\"\"}}\",\
+            \"null\"\r\n\
+            3,\"{{\"\"pair\"\":[3,42],\"\"text\"\":\"\"not-null\"\"}}\",\
+            \"null\",\
+            \"{{\"\"pair\"\":[0,0],\"\"text\"\":\"\"\"\"}}\",\
+            \"{{\"\"pair\"\":[3,42],\"\"text\"\":\"\"opt_null\"\"}}\"\r\n\
+            --- single_pks ---\r\n\
+            \r\n\
+            --- nonstandard_parents ---\r\n\
+            pk,nonstandard_parent_id\r\n\
+            \"bonus nonstandard\",\r\n\
+            \"nonstandard\",\r\n\
+            --- randoms ---\r\n\
+            \r\n\
+            --- default_parents ---\r\n\
+            id,name\r\n\
+            {default_filler_id},\"default filler\"\r\n\
+            {used_default_id},\"used default\"\r\n\
+            --- joins ---\r\n\
+            \r\n\
+            --- no_pks ---\r\n\
+            data\r\n\
+            4713\r\n\
+            4712\r\n\
+            4711\r\n\
+            142\r\n\
+            117\r\n",
+        )
+        .as_bytes(),
     );
     let res = restore(db.clone(), &shuffled);
     assert!(res.is_ok(), "{res:?}");

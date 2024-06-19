@@ -1,7 +1,8 @@
 //! # Tauri application configuration and generation
 
+use regex::Regex;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tauri::api::dialog::blocking::FileDialogBuilder;
 use url::{ParseError, Url};
 use vicocomo::{
@@ -196,10 +197,30 @@ pub fn get_db(
 // Converts a vicocomo::`HttpResponse to a response from the Tauri command
 // request().
 //
+// If window is Some and the body contains "<title> Some Title </title>", the
+// Tauri window title is set to "Some Title".
+//
+// Known bug: If the head tag has no title tag but the body has, the latter
+// will be set as the window title.
+//
 #[doc(hidden)]
-pub fn tauri_response(response: HttpResponse) -> (u32, String) {
-    (
-        response.get_status() as u32,
-        response.get_body().to_string(),
-    )
+pub fn tauri_response(
+    window: Option<&tauri::Window>,
+    response: HttpResponse,
+) -> (u32, String) {
+    let status = response.get_status() as u32;
+    let body = response.get_body().to_string();
+    if let Some(win) = window {
+        static TITLE: OnceLock<Regex> = OnceLock::new();
+        if let Some(title) = TITLE
+            .get_or_init(|| {
+                Regex::new(r"<title>\s*([^<]+\S)\s*</title>").unwrap()
+            })
+            .captures(&body)
+            .map(|c| c.get(1).unwrap().as_str())
+        {
+            let _ = win.set_title(title);
+        }
+    }
+    (status, body)
 }

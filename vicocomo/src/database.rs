@@ -1,9 +1,11 @@
 //! Trait and helper types to abstract an SQL database.
 //!
-use crate::{db_value_convert, Error};
+use crate::{db_value_convert, map_error, Error};
 use chrono::{
     DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Utc,
 };
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
 
@@ -331,6 +333,42 @@ db_value_convert! { in_db_value_module, String, Text }
 db_value_convert! { in_db_value_module, u32, Int }
 db_value_convert! { in_db_value_module, u64, Int }
 db_value_convert! { in_db_value_module, usize, Int }
+
+/// Facilitates conversions between [`DbValue::Text`
+/// ](enum.DbValue.html#variant.Text) and any JSON-serializable type.
+///
+/// There are no conversions between `Option<JsonField>` and
+/// [`DbValue::NulText](enum.DbValue.html#variant.NulText)`.
+///
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct JsonField<T>(pub T);
+
+impl<T: DeserializeOwned + Serialize> Into<DbValue> for JsonField<T> {
+    fn into(self) -> DbValue {
+        DbValue::Text(serde_json::to_string(&self.0).expect(&format!(
+            "serde_json.to_string() cannot handle {}",
+            std::any::type_name::<T>(),
+        )))
+    }
+}
+
+impl<T: ::std::fmt::Debug + DeserializeOwned + Serialize> TryFrom<DbValue>
+    for JsonField<T>
+{
+    type Error = Error;
+    fn try_from(db_value: DbValue) -> Result<Self, Self::Error> {
+        match db_value {
+            DbValue::Text(value) => Ok(Self(map_error!(
+                InvalidInput,
+                serde_json::from_str(&value),
+            )?)),
+            _ => Err(Error::invalid_input(&format!(
+                "cannot convert {db_value:?} into {}",
+                std::any::type_name::<T>(),
+            ))),
+        }
+    }
+}
 
 /// An implementation of [`DbConn`](trait.DbConn.html) that does nothing and
 /// returns [`Error`](../error/enum.Error.html).

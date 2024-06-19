@@ -17,7 +17,7 @@ pub use active_record::{
 pub use authorization::{PasswordDigest, UserRole};
 pub use controller::Controller;
 pub use database::{
-    try_exec_sql, DatabaseIf, DbConn, DbType, DbValue, NullConn,
+    try_exec_sql, DatabaseIf, DbConn, DbType, DbValue, JsonField, NullConn,
 };
 pub use error::{
     DatabaseError, Error, ModelError, ModelErrorKind,

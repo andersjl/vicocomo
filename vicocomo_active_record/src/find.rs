@@ -174,8 +174,10 @@ pub(crate) fn find_impl(
             let par_id = format_ident!("{}_par", fld_id);
             let par_ty = if field.onn == OnNone::Null {
                 &field.ty
+            } else if let Some(ref ty) = Model::strip_option(&field.ty) {
+                ty
             } else {
-                &Model::strip_option(&field.ty)
+                panic!("expected Option<_>, got {:?}", &field.ty);
             };
             find_pars.push(parse_quote!(#par_id: &#par_ty));
             par_vals.push(parse_quote!(#par_id.clone().into()));

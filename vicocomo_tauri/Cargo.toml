@@ -6,8 +6,9 @@ authors.workspace = true
 edition.workspace = true
 
 [dependencies]
+regex.workspace = true
 tauri.workspace = true
 url.workspace = true
-vicocomo = { path = "../vicocomo", version = "0.6.0" }
-vicocomo_sqlite = { path = "../vicocomo_sqlite", version = "0.6.0" }
-vicocomo_tauri_config = { path = "config", version = "0.6.0" }
+vicocomo = { path = "../vicocomo", version = "1.0.0" }
+vicocomo_sqlite = { path = "../vicocomo_sqlite", version = "1.0.0" }
+vicocomo_tauri_config = { path = "config", version = "1.0.0" }

@@ -15,6 +15,7 @@ const ATTR_COLUMN_ERROR: &'static str =
     "expected #[vicocomo_column = \"column_name\"]";
 const ATTR_DB_VALUE_ERROR: &'static str =
     "expected #[vicocomo_db_value = \"<DbValue variant as str>\"]";
+const ATTR_SERIALIZE_ERROR: &'static str = "expected #[vicocomo_serialize]";
 const ATTR_OPTIONAL_ERROR: &'static str = "expected #[vicocomo_optional]";
 const ATTR_ORDER_ERROR: &'static str =
     "expected #[vicocomo_order_by(<int>, <\"ASC\"/\"DESC\">)]";
@@ -33,6 +34,21 @@ pub(crate) enum OnNone {
     Ignore, // do not update the field
     Null,   // NULL
     Random, // if inserting an Option<i64>, random value, if not, panic
+}
+
+impl OnNone {
+    pub(crate) fn effective_type<'ty>(&self, ty: &'ty Type) -> &'ty Type {
+        match self {
+            OnNone::Null => ty,
+            _ => {
+                if let Some(t) = Model::strip_option(ty) {
+                    t
+                } else {
+                    panic!("expected Option<_>, got {:?}", ty);
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +83,8 @@ pub(crate) struct Field {
     pub(crate) ty: Type,
     pub(crate) col: LitStr,
     pub(crate) dbt: DbType,
+    // indictates that the field is serialized
+    pub(crate) ser: bool,
     // indictates that the field is (part of) the primary key
     pub(crate) pri: bool,
     // indicates that the field must not have a zero or empty value
@@ -185,11 +203,12 @@ impl Model {
         let mut fields = Vec::new();
         let mut unis: HashMap<String, Vec<Field>> = HashMap::new();
         for field in named_fields {
-            let mut dbt = None;
             let id = field.ident.expect("expected field identifier").clone();
             let ty = field.ty.clone();
             let mut col =
                 LitStr::new(id.to_string().as_str(), Span::call_site());
+            let mut dbt = None;
+            let mut ser = false;
             let mut pri = false;
             let mut req = false;
             let mut uni = None;
@@ -310,6 +329,12 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                                 _ => panic!("{}", ATTR_DB_VALUE_ERROR),
                             },
                             _ => panic!("{}", ATTR_DB_VALUE_ERROR),
+                        };
+                    }
+                    "vicocomo_serialize" => {
+                        match attr.parse_meta().expect(ATTR_SERIALIZE_ERROR) {
+                            Meta::Path(_) => ser = true,
+                            _ => panic!("{}", ATTR_SERIALIZE_ERROR),
                         };
                     }
                     "vicocomo_optional" => {
@@ -459,12 +484,20 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                 }
                 map
             });
-            let type_string = tokens_to_string(if onn == OnNone::Null {
-                &field.ty
-            } else {
-                Self::strip_option(&field.ty)
-            });
+            let effective_type = onn.effective_type(&field.ty);
+            if ser {
+                assert!(
+                    !(onn == OnNone::Random
+                        || pri
+                        || uni.is_some()
+                        || fk.is_some()),
+                    "a serialized field cannot be a primary or foreign key \
+                    or part of a unique field tuple",
+                );
+                dbt = Some(DbType::Text);
+            }
             let dbt = dbt.unwrap_or_else(|| {
+                let type_string = tokens_to_string(effective_type);
                 *DB_TYPES.get().unwrap().get(&type_string).unwrap_or_else(
                     || {
                         panic!(
@@ -481,6 +514,7 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                 ty,
                 col,
                 dbt,
+                ser,
                 pri,
                 req,
                 ord,
@@ -581,27 +615,23 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         )
     }
 
-    pub(crate) fn strip_option<'a>(ty: &'a Type) -> &'a Type {
+    // if Option<T> return Some(T) else return None
+    pub(crate) fn strip_option<'a>(ty: &'a Type) -> Option<&'a Type> {
         use ::syn::{GenericArgument, PathArguments::AngleBracketed};
-        match ty {
-            Type::Path(p) => match p.path.segments.first() {
-                Some(segm) if segm.ident == "Option" => {
-                    match &segm.arguments {
-                        AngleBracketed(args) => match args.args.first() {
-                            Some(arg) => match arg {
-                                GenericArgument::Type(t) => return t,
-                                _ => (),
-                            },
-                            _ => (),
-                        },
-                        _ => (),
+        if let Type::Path(p) = ty {
+            if let Some(segm) = p.path.segments.first() {
+                if segm.ident == "Option" {
+                    if let AngleBracketed(ref args) = segm.arguments {
+                        if let Some(arg) = args.args.first() {
+                            if let GenericArgument::Type(t) = arg {
+                                return Some(t);
+                            }
+                        }
                     }
                 }
-                _ => (),
-            },
-            _ => (),
+            }
         }
-        panic!("expected Option<_>, got {:?}", ty);
+        None
     }
 
     // public methods with receiver  - - - - - - - - - - - - - - - - - - - - -
@@ -712,6 +742,10 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         }
     }
 
+    pub(crate) fn fields(&self) -> Vec<&Field> {
+        self.fields.iter().collect()
+    }
+
     // Streamline field value to an Option<&FieldValueType> regardless of
     // whether optional or not or nullable or not.
     //
@@ -815,8 +849,10 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
                 .map(|pk| {
                     if pk.onn == OnNone::Null {
                         &pk.ty
+                    } else if let Some(ref ty) = Self::strip_option(&pk.ty) {
+                        ty
                     } else {
-                        &Self::strip_option(&pk.ty)
+                        panic!("expected Option<_>, got {:?}", &pk.ty);
                     }
                 })
                 .collect::<Vec<_>>()
@@ -844,52 +880,68 @@ _ => panic!("{}", ATTR_BELONGS_TO_ERROR),
         self.value(self.pk_fields().as_slice(), obj)
     }
 
+    // Return three vectors to simplify converting DbValues to field values.
+    // 1) the identifiers of the fields
+    // 2) the values of the fields
+    // 3) JsonField wrappers of serialized fields
+    // fields are the fields of interest
+    pub(crate) fn row_to_value_expr<'a>(
+        &'a self,
+        fields: Vec<&'a Field>,
+    ) -> (Vec<&Ident>, Vec<Expr>, Vec<Expr>) {
+        let mut ids: Vec<&'a Ident> = Vec::new();
+        let mut vals: Vec<Expr> = Vec::new();
+        let mut wraps: Vec<Expr> = Vec::new();
+        for f in fields {
+            ids.push(&f.id);
+            vals.push(if f.onn == OnNone::Null {
+                parse_quote!(vicocomo_local_val)
+            } else {
+                parse_quote!(Some(vicocomo_local_val))
+            });
+            wraps.push(if f.ser {
+                parse_quote!(JsonField(vicocomo_local_val))
+            } else {
+                parse_quote!(vicocomo_local_val)
+            });
+        }
+        (ids, vals, wraps)
+    }
+
     // rows should be a Vec<Vec<DbValue>>
     // returns Result<Vec<struct_id>, Error>
     pub(crate) fn rows_to_models_expr(&self, rows: Expr) -> Expr {
-        let retrieved = &self.fields;
-        let ids: Vec<&Ident> = retrieved.iter().map(|f| &f.id).collect();
-        let vals: Vec<Expr> = retrieved
-            .iter()
-            .map(|f| {
-                if f.onn == OnNone::Null {
-                    parse_quote!(vicocomo_local__val)
-                } else {
-                    parse_quote!(Some(vicocomo_local__val))
-                }
-            })
-            .collect();
-        parse_quote!(
-            {
-                use ::std::convert::TryInto;
+        let (ids, vals, wraps) = self.row_to_value_expr(self.fields());
+        parse_quote!({
+            use ::vicocomo::JsonField;
+            use ::std::convert::TryInto;
 
-                let mut error: Option<::vicocomo::Error> = None;
-                let mut models = Vec::new();
-                let mut rows: Vec<Vec<::vicocomo::DbValue>> = #rows;
-                for mut row in rows.drain(..) {
-                    #(
-                        let #ids;
-                        match row
-                            .drain(..1)
-                            .next()
-                            .unwrap()
-                            .try_into()
-                        {
-                            Ok(vicocomo_local__val) => #ids = #vals,
-                            Err(err) => {
-                                error = Some(err);
-                                break;
-                            },
-                        }
-                    )*
-                    models.push(Self { #( #ids ),* });
-                }
-                match error {
-                    Some(err) => Err(err),
-                    None => Ok(models),
-                }
+            let mut error: Option<::vicocomo::Error> = None;
+            let mut models = Vec::new();
+            let mut rows: Vec<Vec<::vicocomo::DbValue>> = #rows;
+            for mut row in rows.drain(..) {
+                #(
+                    let #ids;
+                    match row
+                        .drain(..1)
+                        .next()
+                        .unwrap()
+                        .try_into()
+                    {
+                        Ok(#wraps) => #ids = #vals,
+                        Err(err) => {
+                            error = Some(err);
+                            break;
+                        },
+                    }
+                )*
+                models.push(Self { #( #ids ),* });
             }
-        )
+            match error {
+                Some(err) => Err(err),
+                None => Ok(models),
+            }
+        })
     }
 
     pub(crate) fn upd_db_types(&self) -> Vec<Path> {

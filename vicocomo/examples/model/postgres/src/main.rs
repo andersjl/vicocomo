@@ -28,6 +28,7 @@ async fn main() {
     test_nonstandard_parent(db.clone());
     test_one_to_many(db.clone());
     test_random(db.clone());
+    test_serialize(db.clone());
     test_single_pk(db.clone());
     test_csv(db.clone());
 
